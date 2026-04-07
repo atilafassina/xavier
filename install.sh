@@ -53,7 +53,8 @@ check_existing() {
     read -r choice
     case "$choice" in
       u|U) info "Will re-run setup after scaffold check..." ;;
-      *)   info "Skipping vault setup. Updating skill symlinks..."
+      *)   info "Skipping vault setup. Updating symlinks..."
+           install_skill
            link_xavier_skills_and_refs
            exit 0 ;;
     esac
