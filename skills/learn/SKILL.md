@@ -7,7 +7,7 @@ requires: [config, shark, adapter, repo-conventions, team-conventions]
 
 `/xavier learn`
 
-Explore a codebase and produce knowledge notes in the Xavier vault. Detects the current repository, resolves team ownership, and spawns a background agent to map the architecture into Zettelkasten-style notes.
+Explore a codebase and produce knowledge notes in the Xavier vault. Detects the current repository, resolves team ownership, and spawns background agents to map the architecture, decisions, and dependencies into Zettelkasten-style notes.
 
 ## Step 1: Re-run Guard
 
@@ -27,7 +27,7 @@ basename $(git rev-parse --show-toplevel)
 
 1. Read the `teams` list from the resolved `config` context.
 2. Present the list of known teams to the user. Use `AskUserQuestion` to ask which team owns this repository. The user may pick an existing team or type a new team name.
-3. **If the user picks an existing team**: Record the team name for use in Step 3.
+3. **If the user picks an existing team**: Record the team name for use in later steps.
 4. **If the user types a new team name**:
    - Append the new team to the `teams` list in config.
    - Create `<vault>/knowledge/teams/<team>/conventions.md` with this stub content:
@@ -50,11 +50,24 @@ related:
 <!-- Add team-wide conventions, patterns, and guidelines here -->
 ```
 
-5. The repo notes created in Step 3 must include a wikilink back to the team: `[[knowledge/teams/<team>/conventions]]`.
+5. The repo notes created in Step 4 must include a wikilink back to the team: `[[knowledge/teams/<team>/conventions]]`.
 
-## Step 3: Architecture Remora
+## Step 3: Detect-and-Defer
 
-Spawn a background agent to explore the codebase and produce an architecture knowledge note.
+Check the `SHARK_TASK_HASH` environment variable:
+
+```bash
+echo "$SHARK_TASK_HASH"
+```
+
+- **If set** (non-empty): this agent is running inside an outer Shark loop. Do NOT start the Shark flow. Instead, run the designated remora inline (architecture, decisions, or dependencies based on the task context) and return results directly to the caller. Skip Steps 4-6.
+- **If unset** (empty): this agent is the top-level orchestrator. Proceed with the full Shark flow starting at Step 4.
+
+## Step 4: Spawn Research Remoras
+
+> **IMPORTANT**: Spawn all 3 research remoras concurrently in a **single message** with parallel tool calls. All three MUST use `run_in_background: true`.
+
+### Architecture Remora
 
 ```
 Agent(
@@ -102,13 +115,7 @@ Agent(
 )
 ```
 
-Once the remora completes, write its output to `<vault>/knowledge/repos/<repo-name>/architecture.md`.
-
-Tell the user the architecture note was created and that the decisions and dependencies remoras are being spawned next.
-
-## Step 4: Decisions Remora
-
-Spawn a background agent to explore the codebase and produce a decisions knowledge note.
+### Decisions Remora
 
 ```
 Agent(
@@ -161,11 +168,7 @@ Agent(
 )
 ```
 
-Once the remora completes, write its output to `<vault>/knowledge/repos/<repo-name>/decisions.md`.
-
-## Step 5: Dependencies Remora
-
-Spawn a background agent to read all dependency manifests and produce a dependencies knowledge note.
+### Dependencies Remora
 
 ```
 Agent(
@@ -221,11 +224,20 @@ Agent(
 )
 ```
 
-Once the remora completes, write its output to `<vault>/knowledge/repos/<repo-name>/dependencies.md`.
+## Step 5: Pilot Fish (Progressive Note Writing)
+
+As each remora completes, process its output immediately — do not wait for all remoras:
+
+1. Read the remora output
+2. Write the note to `<vault>/knowledge/repos/<repo-name>/` (architecture.md, decisions.md, or dependencies.md)
+3. Update the user on progress: "Note 1/3 complete (architecture)..." / "Note 2/3 complete (decisions)..." / "Note 3/3 complete (dependencies)..."
+4. After each note is written, update wikilinks in any previously-written sibling notes to ensure cross-references are accurate
+
+After all 3 remoras have completed and all notes are written, proceed to Step 6.
 
 ## Step 6: Add-dep Delegation
 
-After BOTH the decisions and dependencies remoras from Steps 4 and 5 have completed:
+After all 3 research remoras from Step 4 have completed and all notes are written:
 
 1. Read the generated `<vault>/knowledge/repos/<repo-name>/dependencies.md`.
 2. Present the full dependency list to the user.
