@@ -76,6 +76,7 @@ scaffold_vault() {
   mkdir -p "$XAVIER_HOME/tasks"
   mkdir -p "$XAVIER_HOME/review-state"
   mkdir -p "$XAVIER_HOME/loop-state"
+  mkdir -p "$XAVIER_HOME/shark-state"
 
   # Write minimal config.md (will be personalized by /xavier setup)
   if [ ! -f "$XAVIER_HOME/config.md" ]; then
@@ -289,7 +290,8 @@ print_summary() {
   echo "  ├── prd/"
   echo "  ├── tasks/"
   echo "  ├── review-state/"
-  echo "  └── loop-state/"
+  echo "  ├── loop-state/"
+  echo "  └── shark-state/"
   echo ""
   bold "Next steps:"
   echo "  1. Run /xavier setup in your AI agent to personalize"
