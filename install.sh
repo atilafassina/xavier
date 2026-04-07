@@ -231,7 +231,7 @@ install_skill() {
 # --- Symlink skills & references into ~/.xavier/ ---
 link_xavier_skills_and_refs() {
   if [ -z "$SCRIPT_DIR" ]; then
-    warn "Script was piped (curl | sh) — cannot create ~/.xavier symlinks."
+    warn "Script was piped (curl | sh) — cannot create $XAVIER_HOME symlinks."
     warn "Re-run the installer directly: sh /path/to/xavier/install.sh"
     return 0
   fi
