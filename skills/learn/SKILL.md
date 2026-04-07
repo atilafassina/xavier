@@ -104,6 +104,131 @@ Agent(
 
 Once the remora completes, write its output to `<vault>/knowledge/repos/<repo-name>/architecture.md`.
 
-Tell the user the architecture note was created and suggest next steps:
-- Review `[[knowledge/repos/<repo-name>/architecture]]`
-- Future skills will populate `[[knowledge/repos/<repo-name>/decisions]]` and `[[knowledge/repos/<repo-name>/dependencies]]`
+Tell the user the architecture note was created and that the decisions and dependencies remoras are being spawned next.
+
+## Step 4: Decisions Remora
+
+Spawn a background agent to explore the codebase and produce a decisions knowledge note.
+
+```
+Agent(
+  prompt: """
+  You are a technical decisions analyst. Explore the codebase at {repo root} and produce a decisions knowledge note.
+
+  Investigate:
+  1. **Framework choices** — what frameworks are used and why they were likely chosen
+  2. **Build tool selection** — bundlers, compilers, task runners
+  3. **Testing strategy** — frameworks, patterns, coverage approach
+  4. **Auth approach** — authentication/authorization strategy (if applicable)
+  5. **Deployment patterns** — Dockerfiles, CI config, serverless config
+  6. **Data model decisions** — ORM, schema, migrations
+
+  Write the output as a single Markdown file with Zettelkasten frontmatter. Use this exact frontmatter schema:
+
+  ---
+  repo: {repo-name}
+  type: knowledge
+  created: {ISO date}
+  updated: {ISO date}
+  inferred: true
+  tags:
+    - decisions
+    - {relevant tags}
+  related:
+    - "[[knowledge/repos/{repo-name}/architecture]]"
+    - "[[knowledge/repos/{repo-name}/dependencies]]"
+    - "[[knowledge/teams/{team}/conventions]]"
+  ---
+
+  All decisions are inferred from the codebase, not confirmed by the team — the `inferred: true` field in the frontmatter marks this.
+
+  After the frontmatter, write the body organized as:
+
+  # Decisions — {repo-name}
+
+  ## {Decision Title}
+  **Choice**: what was chosen
+  **Alternatives considered**: likely alternatives (inferred)
+  **Evidence**: files/patterns that reveal this decision
+
+  ...repeat for each decision discovered...
+
+  Keep it factual and concise. Under 400 lines.
+  """,
+  description: "xavier learn: decisions remora for {repo-name}",
+  run_in_background: true,
+  subagent_type: "Explore"
+)
+```
+
+Once the remora completes, write its output to `<vault>/knowledge/repos/<repo-name>/decisions.md`.
+
+## Step 5: Dependencies Remora
+
+Spawn a background agent to read all dependency manifests and produce a dependencies knowledge note.
+
+```
+Agent(
+  prompt: """
+  You are a dependency analyst. Read all `package.json` files (and any other dependency manifests) in the codebase at {repo root} and produce a comprehensive dependencies note.
+
+  For every direct dependency:
+  - Name
+  - Version
+  - Inferred purpose
+  - Consuming modules (which parts of the codebase import/use it)
+
+  For every direct devDependency:
+  - Name
+  - Version
+  - Inferred purpose
+
+  Write the output as a single Markdown file with Zettelkasten frontmatter. Use this exact frontmatter schema:
+
+  ---
+  repo: {repo-name}
+  type: knowledge
+  created: {ISO date}
+  updated: {ISO date}
+  tags:
+    - dependencies
+    - {relevant tags}
+  related:
+    - "[[knowledge/repos/{repo-name}/architecture]]"
+    - "[[knowledge/repos/{repo-name}/decisions]]"
+    - "[[knowledge/teams/{team}/conventions]]"
+  ---
+
+  After the frontmatter, write the body organized as:
+
+  # Dependencies — {repo-name}
+
+  ## Production Dependencies
+  | Package | Version | Purpose | Consuming Modules |
+  |---------|---------|---------|-------------------|
+  | ...     | ...     | ...     | ...               |
+
+  ## Dev Dependencies
+  | Package | Version | Purpose |
+  |---------|---------|---------|
+  | ...     | ...     | ...     |
+
+  Keep it factual and concise. Under 400 lines.
+  """,
+  description: "xavier learn: dependencies remora for {repo-name}",
+  run_in_background: true,
+  subagent_type: "Explore"
+)
+```
+
+Once the remora completes, write its output to `<vault>/knowledge/repos/<repo-name>/dependencies.md`.
+
+## Step 6: Add-dep Delegation
+
+After BOTH the decisions and dependencies remoras from Steps 4 and 5 have completed:
+
+1. Read the generated `<vault>/knowledge/repos/<repo-name>/dependencies.md`.
+2. Present the full dependency list to the user.
+3. Suggest approximately 5 key dependencies that would benefit from having dependency-skills. Focus on the packages most relevant for code reviews (e.g., core frameworks, state management, testing libraries, API clients).
+4. Use `AskUserQuestion` to let the user select which packages they want skills for. The user may pick from your suggestions or type additional package names.
+5. For each selected package, delegate to `/xavier add-dep <package-name>`. Do NOT duplicate the add-dep logic inline — invoke the skill directly.
