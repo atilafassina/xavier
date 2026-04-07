@@ -104,6 +104,13 @@ The vault maintains your configuration, knowledge, and state:
 └── *-state/               # Runtime state (loop, review, shark)
 ```
 
+## Previous Work
+
+Xavier builds on ideas and patterns from these open-source projects:
+
+- **[Shark](https://github.com/keugenek/shark)** by Evgeny Knyazev — the non-blocking execution pattern that keeps agents productive while tools run in the background. Xavier's review and loop skills use the Shark pattern.
+- **[Skills](https://github.com/mattpocock/skills)** by Matt Pocock — a collection of reusable agent skills for planning, development, and tooling workflows. Xavier's skill architecture draws from this work.
+
 ## Uninstall
 
 Run `bash uninstall.sh` from the repo, or `/xavier uninstall` from Claude Code.
