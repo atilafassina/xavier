@@ -227,6 +227,16 @@ install_skill() {
     ln -s "$SCRIPT_DIR/SKILL.md" "$COMMANDS_LINK"
     info "Created: $COMMANDS_LINK -> $SCRIPT_DIR/SKILL.md"
   fi
+
+  # Symlink 3: ~/.claude/commands/x.md -> $SCRIPT_DIR/SKILL.md (short alias)
+  ALIAS_LINK="$HOME/.claude/commands/x.md"
+  if [ -e "$ALIAS_LINK" ] || [ -L "$ALIAS_LINK" ]; then
+    warn "Symlink already exists: $ALIAS_LINK — skipping"
+  else
+    mkdir -p "$HOME/.claude/commands"
+    ln -s "$SCRIPT_DIR/SKILL.md" "$ALIAS_LINK"
+    info "Created: $ALIAS_LINK -> $SCRIPT_DIR/SKILL.md"
+  fi
 }
 
 # --- Symlink skills & references into ~/.xavier/ ---

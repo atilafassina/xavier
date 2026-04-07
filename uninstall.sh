@@ -51,8 +51,9 @@ echo ""
 # 1. Remove ~/.agents/skills/xavier symlink
 remove_link "$HOME/.agents/skills/xavier"
 
-# 2. Remove ~/.claude/commands/xavier.md symlink
+# 2. Remove ~/.claude/commands/xavier.md symlink and /x alias
 remove_link "$HOME/.claude/commands/xavier.md"
+remove_link "$HOME/.claude/commands/x.md"
 
 # 3. Remove per-skill symlinks in $XAVIER_HOME/skills/
 if [ -d "$XAVIER_HOME/skills" ]; then
