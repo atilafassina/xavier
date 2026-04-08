@@ -134,7 +134,6 @@ Report the failure to the user, clean up `$TMPDIR`, and **stop** — do not proc
 - `tasks/`
 - `loop-state/`
 - `shark-state/`
-- `review-state/`
 - `deps/`
 - `babysit-pr/`
 - `.obsidian/`
@@ -158,7 +157,6 @@ mkdir -p "$XAVIER_HOME/knowledge/teams"
 mkdir -p "$XAVIER_HOME/knowledge/reviews"
 mkdir -p "$XAVIER_HOME/prd"
 mkdir -p "$XAVIER_HOME/tasks"
-mkdir -p "$XAVIER_HOME/review-state"
 mkdir -p "$XAVIER_HOME/loop-state"
 mkdir -p "$XAVIER_HOME/shark-state"
 mkdir -p "$XAVIER_HOME/deps"

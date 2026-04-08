@@ -82,7 +82,6 @@ scaffold_vault() {
   mkdir -p "$XAVIER_HOME/knowledge/reviews"
   mkdir -p "$XAVIER_HOME/prd"
   mkdir -p "$XAVIER_HOME/tasks"
-  mkdir -p "$XAVIER_HOME/review-state"
   mkdir -p "$XAVIER_HOME/loop-state"
   mkdir -p "$XAVIER_HOME/shark-state"
 
@@ -365,7 +364,6 @@ print_summary() {
   echo "  ├── knowledge/{repos,teams,reviews}/"
   echo "  ├── prd/"
   echo "  ├── tasks/"
-  echo "  ├── review-state/"
   echo "  ├── loop-state/"
   echo "  └── shark-state/"
   echo ""

@@ -18,7 +18,7 @@ Export a vault note to the user's personal Obsidian vault with wikilink adaptati
 ## Step 2: Select Note to Export
 
 - **If a path argument was provided** (e.g., `/xavier export prd/my-feature`): resolve it relative to `~/.xavier/`. Verify the file exists.
-- **If no argument**: list exportable directories from `~/.xavier/` — show `prd/`, `tasks/`, `knowledge/repos/`, `knowledge/teams/`, `knowledge/reviews/`. **Exclude** internal directories: `personas/`, `adapters/`, `loop-state/`, `review-state/`, `skills/`. Present files as a numbered list using AskUserQuestion for the user to pick.
+- **If no argument**: list exportable directories from `~/.xavier/` — show `prd/`, `tasks/`, `knowledge/repos/`, `knowledge/teams/`, `knowledge/reviews/`. **Exclude** internal directories: `personas/`, `adapters/`, `loop-state/`, `skills/`. Present files as a numbered list using AskUserQuestion for the user to pick.
 
 ## Step 3: Adapt Wikilinks
 

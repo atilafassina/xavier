@@ -2,7 +2,6 @@
 name: performance
 type: persona
 scope: review
-emphasis: high
 tags: [performance, latency, memory, scaling, optimization]
 ---
 

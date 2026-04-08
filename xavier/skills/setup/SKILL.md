@@ -70,7 +70,6 @@ Create the full directory tree:
 │   └── reviews/
 ├── prd/
 ├── tasks/
-├── review-state/
 └── loop-state/
 ```
 
@@ -120,19 +119,11 @@ _No memories yet. Xavier will populate this as it learns about your codebase and
 
 ### Step 3c: Personas
 
-Install all three default personas from the references directory. Adjust emphasis based on the review-priorities answer:
+Copy the three default personas from the references directory into the vault:
 
-- **correctness-first**: correctness=high, security=medium, performance=medium
-- **security-first**: correctness=medium, security=high, performance=medium
-- **performance-first**: correctness=medium, security=medium, performance=high
-- **balanced**: all three=high
-
-Copy from the reference templates:
 - `~/.xavier/references/personas/correctness.md` -> `~/.xavier/personas/correctness.md`
 - `~/.xavier/references/personas/security.md` -> `~/.xavier/personas/security.md`
 - `~/.xavier/references/personas/performance.md` -> `~/.xavier/personas/performance.md`
-
-Before writing each persona, read the template and set the `emphasis` field in the frontmatter according to the priority mapping above.
 
 ### Step 3d: Detect Runtime & Wire Adapter
 

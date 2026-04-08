@@ -2,7 +2,6 @@
 name: security
 type: persona
 scope: review
-emphasis: high
 tags: [security, auth, injection, data-exposure, owasp]
 ---
 

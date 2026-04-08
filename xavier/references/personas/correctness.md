@@ -2,7 +2,6 @@
 name: correctness
 type: persona
 scope: review
-emphasis: high
 tags: [correctness, logic, bugs, edge-cases]
 ---
 
