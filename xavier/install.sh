@@ -62,6 +62,7 @@ check_existing() {
       u|U) info "Will re-run setup after scaffold check..." ;;
       *)   info "Skipping vault setup. Updating symlinks..."
            install_skill
+           install_command_aliases
            link_xavier_skills_and_refs
            exit 0 ;;
     esac
@@ -293,14 +294,7 @@ install_skill() {
   # Symlink 3: ~/.claude/commands/x.md -> SKILL.md (Claude Code short alias)
   create_symlink "$HOME/.claude/commands/x.md" "$SKILL_SOURCE" "$HOME/.claude/commands"
 
-  # Symlink 4: ~/.cursor/skills/xavier/SKILL.md -> SKILL.md (Cursor)
-  if [ "$INSTALL_MODE" = "clone" ]; then
-    create_symlink "$HOME/.cursor/skills/xavier/SKILL.md" "$SKILL_SOURCE" "$HOME/.cursor/skills/xavier"
-  else
-    mkdir -p "$HOME/.cursor/skills/xavier"
-    cp "$SKILL_SOURCE" "$HOME/.cursor/skills/xavier/SKILL.md"
-    info "Copied: $HOME/.cursor/skills/xavier/SKILL.md"
-  fi
+  # Cursor: per-command aliases handle discoverability (installed by install_command_aliases)
 }
 
 # --- Helper: create a symlink with broken-link cleanup ---
@@ -320,6 +314,71 @@ create_symlink() {
     ln -s "$target" "$link_path"
     info "Created: $link_path -> $target"
   fi
+}
+
+# --- Generate per-command aliases for Claude Code and Cursor ---
+install_command_aliases() {
+  if [ -z "$SCRIPT_DIR" ]; then
+    return 0
+  fi
+
+  info "Generating per-command aliases..."
+
+  # Command descriptions for alias files
+  # Format: command|description
+  COMMANDS="
+setup|Create and configure the Xavier vault
+review|Run Shark-pattern code review with concurrent reviewer personas
+babysit|Monitor a PR — poll CI status, auto-fix lint failures, surface review comments
+grill|Interview about a plan or design until reaching shared understanding
+prd|Create a PRD through user interview, codebase exploration, and module design
+tasks|Decompose a PRD into phased implementation tasks
+learn|Explore a codebase and produce knowledge notes in the vault
+loop|Execute a task file as an autonomous loop using the Shark pattern
+add-dep|Create a dependency-skill for a package with best practices and API patterns
+remove-dep|Delete a dependency-skill
+deps-update|Scan lockfile and regenerate stale dependency-skills
+export|Export a vault note to your personal Obsidian vault
+self-update|Update Xavier skills and references to the latest release
+uninstall|Remove the Xavier vault and all symlinks
+"
+
+  echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
+    [ -z "$cmd" ] && continue
+
+    # Claude Code: ~/.claude/commands/xavier-<cmd>.md
+    claude_alias="$HOME/.claude/commands/xavier-${cmd}.md"
+    if [ ! -e "$claude_alias" ]; then
+      mkdir -p "$HOME/.claude/commands"
+      cat > "$claude_alias" << ALIASEOF
+---
+name: xavier-${cmd}
+description: ${desc}
+---
+
+Run /xavier ${cmd} — load and follow the xavier skill router.
+ALIASEOF
+    fi
+
+    # Cursor: ~/.cursor/skills/xavier-<cmd>/SKILL.md
+    cursor_alias="$HOME/.cursor/skills/xavier-${cmd}/SKILL.md"
+    if [ ! -e "$cursor_alias" ]; then
+      mkdir -p "$HOME/.cursor/skills/xavier-${cmd}"
+      cat > "$cursor_alias" << ALIASEOF
+---
+name: xavier-${cmd}
+description: "${desc}. Use when user says /xavier ${cmd}."
+---
+
+Execute /xavier ${cmd}.
+
+1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
+2. Follow the Router Lifecycle with subcommand: ${cmd}
+ALIASEOF
+    fi
+  done
+
+  info "Command aliases installed for Claude Code and Cursor."
 }
 
 # --- Symlink or copy skills & references into ~/.xavier/ ---
@@ -461,6 +520,7 @@ main() {
   fi
 
   install_skill
+  install_command_aliases
   link_xavier_skills_and_refs
   print_summary
 }

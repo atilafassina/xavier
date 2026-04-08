@@ -61,15 +61,17 @@ No-op. The Agent tool delivers results on completion.
 
 Abstract operations mapped to Claude Code tools:
 
-| Operation | Tool |
-|-----------|------|
-| `run-command` | `Bash` |
-| `read-file` | `Read` |
-| `write-file` | `Write` |
-| `spawn-agent` | `Agent` |
-| `poll-agent` | No-op (auto-notifies) |
-| `search-text` | `Grep` |
-| `search-files` | `Glob` |
+
+| Operation      | Tool                  |
+| -------------- | --------------------- |
+| `run-command`  | `Bash`                |
+| `read-file`    | `Read`                |
+| `write-file`   | `Write`               |
+| `spawn-agent`  | `Agent`               |
+| `poll-agent`   | No-op (auto-notifies) |
+| `search-text`  | `Grep`                |
+| `search-files` | `Glob`                |
+
 
 ## Detection
 

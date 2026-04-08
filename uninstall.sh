@@ -63,7 +63,22 @@ if [ -d "$HOME/.cursor/skills/xavier" ] && [ -z "$(ls -A "$HOME/.cursor/skills/x
   track_removed "$HOME/.cursor/skills/xavier/ (empty directory)"
 fi
 
-# 4. Remove per-skill symlinks in $XAVIER_HOME/skills/
+# 4. Remove per-command alias files (Claude Code and Cursor)
+for alias_file in "$HOME/.claude/commands"/xavier-*.md; do
+  [ -e "$alias_file" ] || continue
+  rm "$alias_file"
+  info "Removed alias: $alias_file"
+  track_removed "$alias_file"
+done
+
+for alias_dir in "$HOME/.cursor/skills"/xavier-*/; do
+  [ -d "$alias_dir" ] || continue
+  rm -rf "$alias_dir"
+  info "Removed alias directory: $alias_dir"
+  track_removed "$alias_dir"
+done
+
+# 5. Remove per-skill symlinks in $XAVIER_HOME/skills/
 if [ -d "$XAVIER_HOME/skills" ]; then
   for link in "$XAVIER_HOME/skills/"*; do
     # Guard against empty glob
@@ -78,10 +93,10 @@ else
   track_skipped "$XAVIER_HOME/skills/ (directory not found)"
 fi
 
-# 5. Remove references symlink in $XAVIER_HOME/references
+# 6. Remove references symlink in $XAVIER_HOME/references
 remove_link "$XAVIER_HOME/references"
 
-# 6. Prompt before deleting the vault directory
+# 7. Prompt before deleting the vault directory
 echo ""
 if [ -d "$XAVIER_HOME" ]; then
   warn "The Xavier vault directory still exists at: $XAVIER_HOME"
