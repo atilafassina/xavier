@@ -1,6 +1,7 @@
 #!/bin/sh
 # Xavier Installer
-# Usage: curl -fsSL <url> | sh
+# Usage: curl -fsSL <url> | tar xz && bash xavier/install.sh
+#   or:  git clone <repo> && cd xavier && bash install.sh
 #
 # Scaffolds ~/.xavier/ vault, detects runtime, wires adapter, and triggers setup.
 # Requirements: git, POSIX shell. Works on macOS and Linux.
@@ -9,11 +10,17 @@ set -eu
 
 XAVIER_HOME="${XAVIER_HOME:-$HOME/.xavier}"
 
-# --- Resolve script directory (for symlink creation) ---
+# --- Resolve script directory (for symlink/copy creation) ---
 # When run from a file (not piped), SCRIPT_DIR points to the xavier/ directory
 SCRIPT_DIR=""
 if [ -n "${0:-}" ] && [ "$0" != "sh" ] && [ "$0" != "-" ] && [ "$0" != "/dev/stdin" ] && [ -f "$0" ]; then
   SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+fi
+
+# --- Detect install mode: clone (git repo) or tarball (no .git) ---
+INSTALL_MODE="tarball"
+if [ -n "$SCRIPT_DIR" ] && git -C "$SCRIPT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+  INSTALL_MODE="clone"
 fi
 
 # --- Colors (if terminal supports them) ---
@@ -197,7 +204,7 @@ init_git() {
   info "Git repository initialized with initial commit."
 }
 
-# --- Register skill symlinks ---
+# --- Register skill symlinks/copies ---
 install_skill() {
   if [ -z "$SCRIPT_DIR" ]; then
     warn "Script was piped (curl | sh) — cannot create skill symlinks."
@@ -206,7 +213,7 @@ install_skill() {
     return 0
   fi
 
-  info "Registering Xavier skill symlinks..."
+  info "Registering Xavier skill ($INSTALL_MODE mode)..."
 
   # Symlink 1: ~/.agents/skills/xavier/ -> $SCRIPT_DIR (the xavier/ directory)
   AGENTS_LINK="$HOME/.agents/skills/xavier"
@@ -218,28 +225,40 @@ install_skill() {
     info "Created: $AGENTS_LINK -> $SCRIPT_DIR"
   fi
 
-  # Symlink 2: ~/.claude/commands/xavier.md -> $SCRIPT_DIR/SKILL.md
+  # Determine SKILL.md source based on install mode
+  if [ "$INSTALL_MODE" = "clone" ]; then
+    SKILL_SOURCE="$SCRIPT_DIR/SKILL.md"
+  else
+    # Tarball mode: copy SKILL.md into XAVIER_HOME so it persists
+    if [ -f "$SCRIPT_DIR/SKILL.md" ]; then
+      cp "$SCRIPT_DIR/SKILL.md" "$XAVIER_HOME/SKILL.md"
+      info "Copied SKILL.md to $XAVIER_HOME/SKILL.md"
+    fi
+    SKILL_SOURCE="$XAVIER_HOME/SKILL.md"
+  fi
+
+  # Symlink 2: ~/.claude/commands/xavier.md -> SKILL.md
   COMMANDS_LINK="$HOME/.claude/commands/xavier.md"
   if [ -e "$COMMANDS_LINK" ] || [ -L "$COMMANDS_LINK" ]; then
     warn "Symlink already exists: $COMMANDS_LINK — skipping"
   else
     mkdir -p "$HOME/.claude/commands"
-    ln -s "$SCRIPT_DIR/SKILL.md" "$COMMANDS_LINK"
-    info "Created: $COMMANDS_LINK -> $SCRIPT_DIR/SKILL.md"
+    ln -s "$SKILL_SOURCE" "$COMMANDS_LINK"
+    info "Created: $COMMANDS_LINK -> $SKILL_SOURCE"
   fi
 
-  # Symlink 3: ~/.claude/commands/x.md -> $SCRIPT_DIR/SKILL.md (short alias)
+  # Symlink 3: ~/.claude/commands/x.md -> SKILL.md (short alias)
   ALIAS_LINK="$HOME/.claude/commands/x.md"
   if [ -e "$ALIAS_LINK" ] || [ -L "$ALIAS_LINK" ]; then
     warn "Symlink already exists: $ALIAS_LINK — skipping"
   else
     mkdir -p "$HOME/.claude/commands"
-    ln -s "$SCRIPT_DIR/SKILL.md" "$ALIAS_LINK"
-    info "Created: $ALIAS_LINK -> $SCRIPT_DIR/SKILL.md"
+    ln -s "$SKILL_SOURCE" "$ALIAS_LINK"
+    info "Created: $ALIAS_LINK -> $SKILL_SOURCE"
   fi
 }
 
-# --- Symlink skills & references into ~/.xavier/ ---
+# --- Symlink or copy skills & references into ~/.xavier/ ---
 link_xavier_skills_and_refs() {
   if [ -z "$SCRIPT_DIR" ]; then
     warn "Script was piped (curl | sh) — cannot create $XAVIER_HOME symlinks."
@@ -247,38 +266,64 @@ link_xavier_skills_and_refs() {
     return 0
   fi
 
-  info "Linking skills and references into $XAVIER_HOME..."
+  if [ "$INSTALL_MODE" = "clone" ]; then
+    info "Linking skills and references into $XAVIER_HOME (clone mode)..."
 
-  # --- Clean up broken symlinks in ~/.xavier/skills/ ---
-  if [ -d "$XAVIER_HOME/skills" ]; then
-    for link in "$XAVIER_HOME/skills/"*; do
-      [ -L "$link" ] && [ ! -e "$link" ] && {
-        warn "Removing broken symlink: $link"
-        rm "$link"
-      }
+    # --- Clean up broken symlinks in ~/.xavier/skills/ ---
+    if [ -d "$XAVIER_HOME/skills" ]; then
+      for link in "$XAVIER_HOME/skills/"*; do
+        [ -L "$link" ] && [ ! -e "$link" ] && {
+          warn "Removing broken symlink: $link"
+          rm "$link"
+        }
+      done
+    fi
+
+    # --- Clean up broken symlink at ~/.xavier/references ---
+    if [ -L "$XAVIER_HOME/references" ] && [ ! -e "$XAVIER_HOME/references" ]; then
+      warn "Removing broken symlink: $XAVIER_HOME/references"
+      rm "$XAVIER_HOME/references"
+    fi
+
+    # --- Symlink each skill directory ---
+    mkdir -p "$XAVIER_HOME/skills"
+    for skill_dir in "$SCRIPT_DIR/skills/"*/; do
+      [ -d "$skill_dir" ] || continue
+      skill_name="$(basename "$skill_dir")"
+      ln -sfn "$skill_dir" "$XAVIER_HOME/skills/$skill_name"
+      info "  skill: $skill_name -> $skill_dir"
     done
+
+    # --- Symlink references directory ---
+    ln -sfn "$SCRIPT_DIR/references" "$XAVIER_HOME/references"
+    info "  references -> $SCRIPT_DIR/references"
+
+    info "Skills and references linked."
+
+  else
+    info "Copying skills and references into $XAVIER_HOME (tarball mode)..."
+
+    # --- Copy each skill directory (replace existing) ---
+    mkdir -p "$XAVIER_HOME/skills"
+    for skill_dir in "$SCRIPT_DIR/skills/"*/; do
+      [ -d "$skill_dir" ] || continue
+      skill_name="$(basename "$skill_dir")"
+      # Remove existing (could be old symlink or directory)
+      rm -rf "$XAVIER_HOME/skills/$skill_name"
+      cp -R "$skill_dir" "$XAVIER_HOME/skills/$skill_name"
+      info "  skill: $skill_name (copied)"
+    done
+
+    # --- Copy references directory (replace existing) ---
+    if [ -d "$SCRIPT_DIR/references" ]; then
+      # Remove existing (could be old symlink or directory)
+      rm -rf "$XAVIER_HOME/references"
+      cp -R "$SCRIPT_DIR/references" "$XAVIER_HOME/references"
+      info "  references (copied)"
+    fi
+
+    info "Skills and references copied."
   fi
-
-  # --- Clean up broken symlink at ~/.xavier/references ---
-  if [ -L "$XAVIER_HOME/references" ] && [ ! -e "$XAVIER_HOME/references" ]; then
-    warn "Removing broken symlink: $XAVIER_HOME/references"
-    rm "$XAVIER_HOME/references"
-  fi
-
-  # --- Symlink each skill directory ---
-  mkdir -p "$XAVIER_HOME/skills"
-  for skill_dir in "$SCRIPT_DIR/skills/"*/; do
-    [ -d "$skill_dir" ] || continue
-    skill_name="$(basename "$skill_dir")"
-    ln -sfn "$skill_dir" "$XAVIER_HOME/skills/$skill_name"
-    info "  skill: $skill_name -> $skill_dir"
-  done
-
-  # --- Symlink references directory ---
-  ln -sfn "$SCRIPT_DIR/references" "$XAVIER_HOME/references"
-  info "  references -> $SCRIPT_DIR/references"
-
-  info "Skills and references linked."
 }
 
 # --- Summary ---
@@ -288,15 +333,23 @@ print_summary() {
   echo ""
   info "Vault location: $XAVIER_HOME"
   info "Runtime: $DETECTED_RUNTIME"
+  info "Install mode: $INSTALL_MODE"
   echo ""
+
+  if [ "$INSTALL_MODE" = "clone" ]; then
+    SKILL_REF_NOTE="symlinked from repo"
+  else
+    SKILL_REF_NOTE="copied from tarball"
+  fi
+
   echo "  Directory structure:"
   echo "  $XAVIER_HOME/"
   echo "  ├── config.md"
   echo "  ├── MEMORY.md"
   echo "  ├── personas/"
   echo "  ├── adapters/$DETECTED_RUNTIME/"
-  echo "  ├── skills/ (symlinked from repo)"
-  echo "  ├── references/ (symlinked from repo)"
+  echo "  ├── skills/ ($SKILL_REF_NOTE)"
+  echo "  ├── references/ ($SKILL_REF_NOTE)"
   echo "  ├── knowledge/{repos,teams,reviews}/"
   echo "  ├── prd/"
   echo "  ├── tasks/"

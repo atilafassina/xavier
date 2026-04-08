@@ -9,7 +9,7 @@ set -euo pipefail
 
 ERRORS=0
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SKILLS_DIR="$REPO_ROOT/skills"
+SKILLS_DIR="$REPO_ROOT/xavier/skills"
 
 # The 12-key vocabulary
 VALID_REQUIRES="config personas shark adapter recurring-patterns team-conventions repo-conventions prd-index tasks-index skills-index vault-memory"

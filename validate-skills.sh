@@ -21,7 +21,7 @@ fi
 # 2. Check frontmatter name matches directory name (xavier sub-skills)
 echo ""
 echo "=== Checking frontmatter name consistency ==="
-for skill_dir in "$REPO_ROOT"/skills/*/; do
+for skill_dir in "$REPO_ROOT"/xavier/skills/*/; do
   skill_file="$skill_dir/SKILL.md"
   [ -f "$skill_file" ] || continue
 

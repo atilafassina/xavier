@@ -10,13 +10,27 @@ AI agent orchestrator for Claude Code. Xavier manages code reviews, design inter
 
 ## Installation
 
+### Quick Install
+
+Download and install in one command:
+
+```sh
+curl -fsSL https://github.com/atilafassina/xavier/releases/latest/download/xavier.tar.gz | tar xz && bash xavier/install.sh
+```
+
+This extracts the tarball and copies skills and references into your vault. No persistent clone needed.
+
+### Install from source
+
+Clone the repo for a development setup with live symlinks:
+
 ```sh
 git clone https://github.com/atilafassina/xavier.git
 cd xavier
 bash install.sh
 ```
 
-The installer scaffolds a vault at `~/.xavier/`, detects your runtime, wires the adapter, and creates the necessary symlinks. You're ready to go.
+When installed from source, skills and references are symlinked back to the repo so changes are reflected immediately.
 
 ## Skills
 
@@ -54,6 +68,7 @@ The installer scaffolds a vault at `~/.xavier/`, detects your runtime, wires the
 | Command | Description |
 |---------|-------------|
 | `/xavier setup` | Create and configure the Xavier vault |
+| `/xavier self-update` | Update Xavier skills and references to the latest release |
 | `/xavier export` | Export a vault note to your personal Obsidian vault |
 | `/xavier uninstall` | Remove the Xavier vault and all symlinks |
 
