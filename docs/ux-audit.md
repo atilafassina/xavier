@@ -1196,3 +1196,161 @@ Step 2 processes symlinks independently, which is good. But there is no error ha
 **Phase 6 tag breakdown**: 7 user-facing, 4 executor-facing
 
 **Cumulative totals (Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5 + Phase 6)**: 96 findings — 33 silent-failure, 25 confusion, 38 friction
+
+---
+
+## Phase 7 — Cross-Cutting Patterns
+
+Phase 7 synthesizes recurring themes across Phases 1-6, grouping findings by root cause rather than symptom. Each pattern identifies a single systematic fix that addresses multiple findings at once.
+
+---
+
+### Pattern CC-1: Dead adapter abstraction — all skills hardcode `Agent()` calls
+- **Affected findings**: P2-2, P2-3, P2-4, P2-10, P3-4, P3-15, P3-16, P4-18
+- **Root cause**: The adapter contract (`ADAPTER-CONTRACT.md`) defines a `spawn()/poll()/collect()` abstraction to decouple skills from the Claude Code runtime. However, the Shark protocol itself names the Agent tool directly, and every skill that spawns agents follows the protocol's example. Because the canonical concurrency reference (Shark) bypasses the adapter, no skill author has reason to use it. The contract is never loaded by any `requires` key (P2-4), `poll()` and `collect()` are dead code (P2-3), and Claude Code-specific parameters like `subagent_type: "Explore"` (P3-15) have leaked into skill prompts with no adapter-level definition.
+- **Systematic fix**: Make a binary decision: either (a) commit to Claude Code as the only runtime and remove the adapter abstraction entirely — delete `ADAPTER-CONTRACT.md`, inline the Claude Code spawning conventions into the Shark protocol, and remove `adapter` from all `requires` lists; or (b) make the adapter real — update the Shark protocol to reference `adapter.spawn()`, add `subagent_type` and `env` to the `spawn()` contract, remove `poll()`/`collect()`, add an `adapter-contract` requires key, and update every skill's spawning code to use adapter vocabulary. Option (a) is recommended since Xavier has a single adapter and no concrete plan for others.
+- **Priority**: `high`
+
+### Pattern CC-2: `SHARK_TASK_HASH` checked everywhere, set nowhere — detect-and-defer is non-functional
+- **Affected findings**: P2-1, P3-12, P4-17
+- **Root cause**: The Shark protocol defines the detect-and-defer mechanism (check `SHARK_TASK_HASH` to determine nested execution) but never specifies who sets the variable or how it propagates to spawned agents. The adapter contract's `spawn()` has no `env` parameter. Every Shark-consuming skill (review, learn, loop, grill) checks the variable at startup, but since no spawning path sets it, the check always evaluates to "not nested." The learn skill compounds this by placing the check after an interactive prompt (P3-12), meaning even if the variable were set, a nested invocation would block on user input first.
+- **Systematic fix**: Add to the Shark protocol's "Remora Spawning Rules": "When spawning a remora or delegating to another skill, set `SHARK_TASK_HASH=<unique-task-id>` by prepending `export SHARK_TASK_HASH=...;` to the agent prompt." Add to every skill that checks `SHARK_TASK_HASH`: "This check MUST be Step 1 — before any user interaction or vault reads." Fix learn's step ordering (move detect-and-defer before team resolution). This single protocol addition activates the dormant detect-and-defer logic across all four consuming skills.
+- **Priority**: `critical`
+
+### Pattern CC-3: Zettelkasten schema drift — 4+ skills inline or prose-reference the schema without declaring it
+- **Affected findings**: P2-5, P2-6, P2-9, P4-3
+- **Root cause**: The Zettelkasten format reference (`references/formats/zettelkasten.md`) defines the canonical frontmatter schema, but the `requires` vocabulary has no key for it. Skills that write vault notes (learn, review, prd, tasks) each handle the schema differently: learn hardcodes the full schema inline in remora prompts; review hardcodes a frontmatter example; prd references the file by absolute path in prose; tasks uses the schema implicitly. None declare it in `requires`. This means schema changes in `zettelkasten.md` do not propagate — each skill carries its own frozen copy. The schema itself has internal inconsistencies (P2-6: `source` field documented under the wrong type heading).
+- **Systematic fix**: (1) Add a `zettelkasten` key to the router's requires vocabulary that loads `references/formats/zettelkasten.md`. (2) Add `zettelkasten` to the `requires` list of learn, review, prd, and tasks. (3) Remove all inline schema duplication from skill prompts — replace with "Use the Zettelkasten schema from the resolved `zettelkasten` context." (4) Fix the `zettelkasten.md` reference: add a "### Tasks" subsection for type-specific fields and move the `source` field documentation there.
+- **Priority**: `high`
+
+### Pattern CC-4: skills/ directory pollution — dependency skills mixed with command skills
+- **Affected findings**: P1-7, P5-9, P5-12, P5-15, P6-2, P6-3
+- **Root cause**: `add-dep` writes dependency-knowledge skills (e.g., `express`, `zod`) to `~/.xavier/skills/`, the same directory that houses Xavier's own command skills (review, setup, etc.). Since the router's help listing scans `skills/` indiscriminately, dependency packages appear as invokable commands (P1-7). `deps-update`'s orphan detection flags command skills as orphans (P5-12). `self-update`'s `rm -rf skills/` destroys all user-generated dependency skills (P5-15). `remove-dep` can accidentally delete command skills because it does not check `type: dependency` (P6-2, P6-3). The `type` field in frontmatter exists but is never used for filtering anywhere.
+- **Systematic fix**: Move dependency skills to a separate directory: `~/.xavier/deps/<package-name>/SKILL.md`. Update `add-dep` to write there, `remove-dep` to read there, `deps-update` to scan there, and `self-update` to preserve it. Add a `deps-index` requires key to the vocabulary. Update the router's help listing to only scan `skills/` (which now contains only commands). This single directory change eliminates the filtering problem across all six affected findings.
+- **Priority**: `critical`
+
+### Pattern CC-5: Implicit requires — skills read vault directories without declaring them
+- **Affected findings**: P1-5, P4-4, P4-16, P5-1, P5-2, P6-9
+- **Root cause**: The `requires` system is designed to pre-load context before skill execution, but multiple skills bypass it by reading vault directories directly during execution. PRD reads `knowledge/repos/` and `knowledge/teams/` without declaring `repo-conventions` or `team-conventions` (P4-4). Grill requires `adapter` (which implicitly needs `config`) but does not declare `config` (P4-16). Babysit reads `babysit-pr/` state files without any requires declaration (P5-1). Babysit delegates to loop without accounting for loop's transitive `shark` dependency (P5-2). Uninstall hardcodes `~/.xavier/` instead of loading config for the vault path (P6-9). The `adapter` key itself has an implicit dependency on `config` that is undocumented (P1-5).
+- **Systematic fix**: (1) Document in the router that `adapter` implicitly reads `config` — or better, make it self-contained by embedding the adapter name resolution. (2) Audit every skill's `requires` list against the directories and files it actually reads. Add missing declarations: prd needs `repo-conventions` and `team-conventions`; grill needs `config`; uninstall needs `config`. (3) Define a pattern for transitive dependencies: "If skill A delegates to skill B via the router, skill A does not need to declare B's requires. If A delegates inline, A must declare all of B's requires." (4) For ad-hoc state directories (babysit-pr, loop-state, review-state), either add requires keys or document self-creation as an accepted pattern.
+- **Priority**: `high`
+
+### Pattern CC-6: No session persistence for long interviews — abandoned sessions lose all progress
+- **Affected findings**: P4-2, P4-7, P4-14, P4-15
+- **Root cause**: The planning skills (prd, tasks, grill) all run multi-step interactive interviews that can consume significant time and context. None have checkpoint or draft mechanisms. PRD's 5-step interview has no intermediate saves (P4-2). Tasks' quiz loop has no iteration limit or escape hatch (P4-7). Grill's interview has no max question count (P4-14) and its output is never persisted to the vault (P4-15). If a session ends mid-interview (context window exhaustion, network drop, user walks away), all gathered information is lost. By contrast, the loop skill has explicit state persistence and resume capability.
+- **Systematic fix**: (1) Define a "draft" pattern for interactive skills: after the first substantive user input, write a draft file to the vault (e.g., `~/.xavier/prd/_draft-<name>.md`, `~/.xavier/knowledge/grills/_draft-<topic>.md`). Update the draft after each interview step. On re-invocation, detect existing drafts and offer to resume. (2) Add iteration limits with explicit exit commands to all interview loops: tasks gets a 5-round soft limit with "finalize?" prompt; grill gets a 20-question max with "wrap up" command. (3) Persist grill's shared-understanding output to `~/.xavier/knowledge/grills/`.
+- **Priority**: `medium`
+
+### Pattern CC-7: Missing safeguards on destructive operations
+- **Affected findings**: P5-3, P5-15, P5-16, P6-1, P6-2, P6-4, P6-5, P6-7, P6-10
+- **Root cause**: Destructive skills (remove-dep, uninstall, self-update, babysit's auto-commits) lack basic safety mechanisms that are standard for irreversible operations. remove-dep has zero safeguards: no confirmation, no type check, no backup, no error handling (P6-1 through P6-5). self-update does `rm -rf skills/` with no backup and no rollback (P5-15, P5-16). babysit's `git add -u` stages unrelated user changes (P5-3). uninstall deletes the vault before symlinks, maximizing data loss on partial failure (P6-10), and has no error handling for partial failure (P6-7).
+- **Systematic fix**: Establish a "destructive operations contract" that all destructive skills must follow: (1) **Confirm**: show what will be affected and ask for explicit yes/no. (2) **Backup**: commit current vault state (`git add -A && git commit -m "pre-<operation> checkpoint"`) before any deletion. (3) **Type-check**: for skills that target specific items, validate the target's type before acting. (4) **Error-handle**: wrap each destructive step in error checking; report failures explicitly. (5) **Order safely**: perform the least-destructive steps first. Apply this contract to remove-dep (needs all 5), self-update (needs backup + rollback), babysit (needs scoped staging), and uninstall (needs reordering + error handling).
+- **Priority**: `critical`
+
+### Pattern CC-8: Incompatible severity scales across personas and skills
+- **Affected findings**: P2-7, P2-8, P3-7
+- **Root cause**: The three reviewer personas use different severity taxonomies — correctness and performance use `critical/major/minor`, while security uses `critical/high/medium/low`. The review skill's Pilot Fish defines a merged 6-level scale (`critical > high > major > medium > minor > low`) but does not specify how to map persona outputs to it. The final verdict step (Step 6) collapses to a 3-level scale (`critical > major > minor`), contradicting the Pilot Fish's 6-level scale. Additionally, each persona uses a different output format template with different field names, making automated parsing unreliable (P2-8).
+- **Systematic fix**: (1) Standardize all personas on a single 4-level severity scale: `critical`, `high`, `medium`, `low`. (2) Standardize all personas on a single output format with consistent field names: `**File**`, `**Severity**`, `**Category**`, `**Description**`, `**Suggestion**`. (3) Update the Pilot Fish step to reference this standard format for parsing. (4) Update the verdict step to use the same 4-level scale. This single schema change propagates through all three personas and both review steps.
+- **Priority**: `medium`
+
+### Pattern CC-9: Skill-to-skill invocation has no defined mechanism
+- **Affected findings**: P3-14, P5-2, P4-12
+- **Root cause**: Multiple skills need to invoke other skills during execution: learn delegates to add-dep (P3-14), babysit delegates to loop (P5-2), tasks suggests running loop next (P4-12). But the router is designed for single-skill-per-invocation: it resolves requires, executes inline, and commits. There is no defined mechanism for a running skill to re-enter the router for a second skill. Each skill that delegates handles it differently — learn says "invoke the skill directly" (undefined), babysit says "delegate to `/xavier loop`" (unclear if through router or inline), tasks has a stop guardrail that the executor may ignore.
+- **Systematic fix**: Define a "delegation" mechanism in the router: "To invoke another skill from within a running skill, spawn a remora with the prompt `Run /xavier <command> <args>`. The remora will trigger the router independently, resolving its own requires. The parent skill should wait for completion if it needs the result, or use `run_in_background: true` if it does not." Add this to the router documentation. Update learn's Step 6, babysit's Step 1e, and tasks' Step 8 to use the defined pattern.
+- **Priority**: `high`
+
+### Pattern CC-10: No pre-flight validation for external tool dependencies
+- **Affected findings**: P3-2, P3-11, P5-4, P5-5, P5-8, P5-11
+- **Root cause**: Skills depend on external tools and conditions (git, gh, npm, package.json, lockfiles, WebSearch/WebFetch, network access) but do not validate their availability before starting work. Setup does not check for git before scaffolding (P3-2). Learn does not check for a git repo (P3-11). Babysit does not handle GitHub API rate limits (P5-4) or non-JS ecosystems (P5-5). add-dep has no fallback when web tools fail (P5-8). deps-update does not handle missing package.json (P5-11). In each case, the skill proceeds until it hits an error mid-execution, leaving partial state.
+- **Systematic fix**: Add a "pre-flight checks" pattern to the router or as a convention: every skill should validate its external dependencies in Step 1 (or Step 0) before doing any work. Define a standard pre-flight checklist in the router: (1) If the skill reads git state, verify `git rev-parse --show-toplevel` succeeds. (2) If the skill uses `gh`, verify `gh auth status` succeeds. (3) If the skill reads package.json or lockfiles, verify they exist. (4) If the skill uses WebSearch/WebFetch, note the fallback behavior. Skills should fail fast with clear messages rather than fail mid-execution with partial state.
+- **Priority**: `high`
+
+### Pattern CC-11: Duplicated detection logic with no shared reference
+- **Affected findings**: P4-11, P3-13, P5-5
+- **Root cause**: Multiple skills independently detect project characteristics (backpressure commands, monorepo structure, ecosystem type) by hardcoding detection tables inline. Tasks has a backpressure detection table mapping config files to test commands (P4-11). Loop has its own detection logic via the Shark protocol. Learn hardcodes JS-only monorepo detection (P3-13). Babysit hardcodes JS-only lint detection (P5-5). When a new language or build system needs support, every skill with detection logic must be updated independently — and they will inevitably drift.
+- **Systematic fix**: Extract shared detection logic into reference files: (1) `references/patterns/backpressure.md` — maps project files to test/lint/build commands for each supported ecosystem. (2) Expand monorepo detection in the same or a companion reference to cover Go, Rust, Python, Java, not just JS. (3) Add a `backpressure` key to the requires vocabulary. Have tasks, loop, and babysit all declare and reference it. This eliminates duplication and makes adding a new ecosystem a single-file change.
+- **Priority**: `medium`
+
+### Pattern CC-12: Dead or write-only state — data written to vault but never consumed
+- **Affected findings**: P3-3, P3-5, P3-8, P4-10
+- **Root cause**: Several skills write data to the vault that nothing ever reads. Setup writes persona emphasis tuning (`emphasis: high/medium`) but the review skill ignores it — all personas get equal weight (P3-3). Setup copies personas to `~/.xavier/personas/` but the router reads from `references/personas/` (P3-5). Review writes state to `review-state/` but no skill reads from that directory (P3-8). Tasks declares `tasks-index` in requires but never references it (P4-10). These create maintenance burden, git history noise, and user confusion without providing value.
+- **Systematic fix**: For each dead-state instance, make a keep-or-kill decision: (1) **Persona emphasis**: either wire it into the review skill (adjust Pilot Fish weighting or conditionally skip low-emphasis personas) or remove the tuning from setup. (2) **Persona copies**: fix the router to read from `~/.xavier/personas/` (the tuned copies) or have setup modify `references/personas/` directly. (3) **review-state/**: either have the review skill read it for continuity context or remove it and the `review-state/` directory. (4) **tasks-index**: either use it to show which PRDs already have decompositions or remove it from requires.
+- **Priority**: `medium`
+
+### Pattern CC-13: Inconsistent or missing `config` in requires across skills
+- **Affected findings**: P1-5, P4-16, P6-9
+- **Root cause**: The `config` requires key loads `config.md` which contains critical fields (adapter name, git-strategy, export-vault-path, team). Some skills that need config data do not declare it: grill requires `adapter` but not `config` (P4-16), even though adapter resolution depends on config (P1-5). Uninstall hardcodes `~/.xavier/` instead of reading the vault path from config (P6-9). The vault commit step at the end of every skill reads `git-strategy` from config, but skills with `requires: []` (like uninstall) never load config — the router must implicitly read it for the commit step.
+- **Systematic fix**: (1) Make `config` automatically loaded for every skill with a non-empty `requires` list (since the vault gate already reads `config.md` for validation). (2) For skills with `requires: []` that still need the vault path, add `config` to their requires. (3) Document that `adapter` implicitly depends on `config` — or better, make the router always load config as a prerequisite before resolving any other requires key.
+- **Priority**: `medium`
+
+---
+
+## Silent-Failure Review
+
+Every finding with severity `silent-failure` is listed below, with confirmation that it is addressed by a cross-cutting pattern or flagged as standalone.
+
+| Finding | Title | Addressed by |
+|---------|-------|--------------|
+| P1-2 | Vault gate checks config.md but not content validity | CC-13 (config always loaded + validated) |
+| P1-3 | No signal when critical context resolves to empty | CC-5 (implicit requires audit) + standalone: add `required` vs `optional` distinction to requires vocabulary |
+| P1-5 | Adapter resolution implicitly depends on config | CC-5, CC-13 |
+| P1-10 | No default git-strategy when field is missing | CC-13 (config validation at vault gate) |
+| P2-1 | SHARK_TASK_HASH checked everywhere, set nowhere | CC-2 |
+| P2-4 | ADAPTER-CONTRACT.md never loaded by any requires key | CC-1 |
+| P2-6 | Zettelkasten source field documented under wrong type | CC-3 |
+| P2-10 | Loop spawns agents without requiring adapter | CC-1, CC-5 |
+| P3-3 | Persona emphasis tuning has no downstream effect | CC-12 |
+| P3-5 | Personas copied to two locations, router reads wrong one | CC-12 |
+| P3-6 | No fallback when personas resolve to empty | CC-10 (pre-flight validation pattern) + standalone: add empty-personas guard to review Step 4 |
+| P3-10 | Review note filename hash does not match reviewed code | Standalone — use diff-content hash or timestamp instead of HEAD |
+| P3-11 | No error handling when not in a git repository | CC-10 |
+| P3-16 | Loop missing adapter in requires | CC-1, CC-5 |
+| P4-1 | PRD does not specify how to resolve repo for frontmatter | CC-10 (pre-flight: verify git repo or ask for project name) |
+| P4-8 | Tasks file overwrites existing without warning | CC-7 (destructive operations contract: confirm before overwrite) |
+| P4-15 | Grill shared-understanding not persisted to vault | CC-6 |
+| P4-16 | Grill requires adapter but not config | CC-5, CC-13 |
+| P4-17 | Grill detect-and-defer inherits unactivated SHARK_TASK_HASH | CC-2 |
+| P5-3 | Babysit git add -u can stage unrelated changes | CC-7 |
+| P5-4 | Babysit has no GitHub API rate-limit handling | CC-10 |
+| P5-7 | add-dep does not update skills-index after creating a skill | CC-4 (separate deps directory + deps-index eliminates stale-index issue) |
+| P5-8 | add-dep has no fallback when WebSearch/WebFetch fails | CC-10 |
+| P5-13 | deps-update does not handle partial regeneration failure | CC-7 (error handling requirement in destructive contract) |
+| P5-15 | self-update destroys user-generated dependency skills | CC-4, CC-7 |
+| P5-16 | self-update has no rollback on partial failure | CC-7 |
+| P5-22 | Export filename collision across source directories | Standalone — include source directory in export filename |
+| P6-1 | remove-dep has no confirmation prompt | CC-7 |
+| P6-2 | remove-dep does not distinguish dep vs command skills | CC-4, CC-7 |
+| P6-4 | remove-dep deletion is irreversible, no backup | CC-7 |
+| P6-5 | remove-dep no error handling for deletion failure | CC-7 |
+| P6-7 | Uninstall no error handling for partial failure | CC-7 |
+| P6-10 | Uninstall removal order risks data loss | CC-7 |
+
+**Result**: All 33 silent-failure findings are addressed. 30 are covered by cross-cutting patterns. 3 are standalone (P3-10, P5-22, and the P1-3 addendum about required vs optional requires). None are left unaddressed.
+
+---
+
+## Audit Summary
+
+- **Total findings**: 96
+- **By severity**: 33 silent-failure, 25 confusion, 38 friction
+- **Cross-cutting patterns**: 13
+- **Critical patterns requiring immediate attention**:
+  - **CC-2**: `SHARK_TASK_HASH` never set — detect-and-defer is completely non-functional across all 4 Shark-consuming skills
+  - **CC-4**: skills/ directory pollution — dependency skills mixed with command skills causes listing noise, dangerous deletions, and data loss on self-update
+  - **CC-7**: Missing safeguards on destructive operations — remove-dep has zero safety checks, self-update destroys user data without backup
+
+### Recommended fix order
+
+1. **CC-4** (skills/ directory split) — foundational change that unblocks CC-7 fixes for self-update and remove-dep
+2. **CC-7** (destructive operations contract) — prevents data loss, highest user-facing impact
+3. **CC-2** (SHARK_TASK_HASH activation) — unlocks the entire detect-and-defer mechanism
+4. **CC-1** (adapter abstraction decision) — removes dead code and clarifies spawning semantics
+5. **CC-3** (Zettelkasten requires key) — prevents schema drift across 4 skills
+6. **CC-5** (implicit requires audit) — correctness fix, prevents silent degradation
+7. **CC-9** (skill-to-skill delegation) — enables learn->add-dep and babysit->loop patterns
+8. **CC-10** (pre-flight validation) — fail-fast pattern, prevents partial-state failures
+9. **CC-13** (config always loaded) — small router change with wide impact
+10. **CC-12** (dead state cleanup) — reduces maintenance burden and confusion
+11. **CC-8** (severity scale standardization) — improves review output quality
+12. **CC-11** (shared detection references) — reduces duplication, enables multi-ecosystem support
+13. **CC-6** (session persistence) — improves UX for long interviews, lower urgency
