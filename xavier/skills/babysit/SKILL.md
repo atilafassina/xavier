@@ -137,7 +137,7 @@ When a failure is classified as **lint/format**:
 
 1. Detect fix commands from `package.json` scripts — look for keys like `lint:fix`, `format`, `prettier:fix`, `lint --fix`
 2. Run the detected fix commands locally
-3. Stage and commit changes: `git add -u && git commit -m "fix: lint"`
+3. Stage changed files explicitly by name (do NOT use `git add -u` or `git add -A` — list each file): `git add <file1> <file2> ... && git commit -m "fix: lint"`
 4. Count changed files (`git diff --stat HEAD~1`)
    - **≤10 files**: auto-push with `git push`
    - **>10 files**: abort push, log in Action Log, pass to Failure Investigation (2f)

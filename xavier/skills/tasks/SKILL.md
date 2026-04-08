@@ -60,6 +60,12 @@ Iterate until the user approves.
 
 ## Step 7: Write Tasks File
 
+**Before writing**, check if `~/.xavier/tasks/<filename>.md` already exists. If it does, use **AskUserQuestion** to confirm:
+
+> Task file `tasks/{filename}.md` already exists. Overwrite it? (yes/no)
+
+If the user declines, ask for an alternative filename or abort.
+
 Write to `~/.xavier/tasks/<filename>.md` with Zettelkasten frontmatter (see `~/.xavier/references/formats/zettelkasten.md`):
 
 ```yaml

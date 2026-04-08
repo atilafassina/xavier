@@ -88,6 +88,15 @@ Verify that `$TMPDIR/xavier/skills/` and `$TMPDIR/xavier/references/` exist afte
 
 Overwrite distributable files in the vault (`$XAVIER_HOME`). Only replace the following directories — nothing else.
 
+**Back up before replacing** so a partial failure can be rolled back:
+
+```bash
+# Create backup of current distributable directories
+cp -R "$XAVIER_HOME/skills/" "$TMPDIR/skills-backup/"
+cp -R "$XAVIER_HOME/references/" "$TMPDIR/references-backup/"
+[ -f "$XAVIER_HOME/SKILL.md" ] && cp "$XAVIER_HOME/SKILL.md" "$TMPDIR/SKILL-backup.md"
+```
+
 ```bash
 # Remove old distributable directories
 rm -rf "$XAVIER_HOME/skills/"
@@ -103,6 +112,18 @@ If the tarball contains `xavier/SKILL.md` (the router), copy it to the appropria
 ```bash
 cp "$TMPDIR/xavier/SKILL.md" "$XAVIER_HOME/SKILL.md"
 ```
+
+**Rollback on partial failure**: If any copy command above fails, restore from backup immediately:
+
+```bash
+# Rollback — restore previous versions
+rm -rf "$XAVIER_HOME/skills/" "$XAVIER_HOME/references/"
+cp -R "$TMPDIR/skills-backup/" "$XAVIER_HOME/skills/"
+cp -R "$TMPDIR/references-backup/" "$XAVIER_HOME/references/"
+[ -f "$TMPDIR/SKILL-backup.md" ] && cp "$TMPDIR/SKILL-backup.md" "$XAVIER_HOME/SKILL.md"
+```
+
+Report the failure to the user, clean up `$TMPDIR`, and **stop** — do not proceed to version update.
 
 ### Files and directories that MUST NOT be touched:
 
