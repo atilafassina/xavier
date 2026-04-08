@@ -1,7 +1,7 @@
 ---
-
-## name: learn
+name: learn
 requires: [config, shark, adapter, repo-conventions, team-conventions]
+---
 
 # Learn
 
@@ -55,7 +55,7 @@ related:
 <!-- Add team-wide conventions, patterns, and guidelines here -->
 ```
 
-1. The repo notes created in Step 4 must include a wikilink back to the team: `[[knowledge/teams/<team>/conventions]]`.
+5. The repo notes created in Step 4 must include a wikilink back to the team: `[[knowledge/teams/<team>/conventions]]`.
 
 ## Step 3: Detect-and-Defer
 

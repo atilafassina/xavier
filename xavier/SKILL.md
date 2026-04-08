@@ -1,7 +1,7 @@
 ---
-
-## name: xavier
+name: xavier
 description: AI Agent Orchestrator & Knowledge System. Use when user says "/xavier setup", "/xavier review", "/xavier grill", "/xavier add-dep", "/xavier remove-dep", "/xavier deps-update", "/xavier uninstall", or any "/xavier" command.
+---
 
 # Xavier — AI Agent Orchestrator
 

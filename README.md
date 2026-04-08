@@ -1,3 +1,7 @@
+<div align="right">
+  <img src="./docs/xavier.png" width=200 />
+</div>
+
 # Xavier
 
 Self-evolving AI orchestrator.

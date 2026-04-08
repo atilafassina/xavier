@@ -152,8 +152,13 @@ detect_runtimes() {
     warn "No known AI agent runtime detected."
     warn "Xavier will work but agent spawning will be limited."
   else
-    # Use the first detected runtime as the primary adapter
-    DETECTED_RUNTIME="$(echo "$DETECTED_RUNTIMES" | awk '{print $1}')"
+    # Use the first runtime that has an adapter implementation as primary
+    for rt in $DETECTED_RUNTIMES; do
+      if [ "$rt" = "claude-code" ] || [ "$rt" = "cursor" ]; then
+        DETECTED_RUNTIME="$rt"
+        break
+      fi
+    done
     info "Primary runtime: $DETECTED_RUNTIME"
   fi
 }
@@ -185,6 +190,12 @@ wire_adapters() {
 
 wire_single_adapter() {
   runtime="$1"
+
+  if [ "$runtime" != "claude-code" ] && [ "$runtime" != "cursor" ]; then
+    warn "No adapter implementation for $runtime — skipping"
+    return 0
+  fi
+
   info "Wiring $runtime adapter..."
   mkdir -p "$XAVIER_HOME/adapters/$runtime"
 
