@@ -1,6 +1,6 @@
 ---
 name: deps-update
-requires: [config, skills-index]
+requires: [config, deps-index]
 ---
 
 # Update Dependency Skills
@@ -17,7 +17,7 @@ Scan the current project's lockfile and regenerate stale dependency-skills.
 
 ## Step 2: Compare Against Existing Skills
 
-For each dependency that has a skill in `~/.xavier/skills/` (from the resolved `skills-index` context):
+For each dependency that has a skill in `~/.xavier/deps/` (from the resolved `deps-index` context):
 
 1. Read the skill's frontmatter `version` field
 2. Compare against the lockfile version

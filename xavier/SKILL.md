@@ -54,7 +54,7 @@ Skills never mention or execute vault commits — the router owns this exclusive
 
 > **Path note:** All paths below are relative to the resolved `XAVIER_HOME` (see step 0 of the Router Lifecycle). When you see `<vault>/`, substitute the resolved vault root (e.g., `~/.xavier/` by default, or whatever `$XAVIER_HOME` resolved to).
 
-The following 12 keys are the only valid values in a skill's `requires` list:
+The following 13 keys are the only valid values in a skill's `requires` list:
 
 | Key | What to load |
 |-----|-------------|
@@ -68,6 +68,7 @@ The following 12 keys are the only valid values in a skill's `requires` list:
 | `prd-index` | List all `.md` files in `<vault>/prd/` with titles and frontmatter |
 | `tasks-index` | List all `.md` files in `<vault>/tasks/` with titles and frontmatter |
 | `skills-index` | List all directories in `<vault>/skills/` |
+| `deps-index` | List all directories in `<vault>/deps/` |
 | `vault-memory` | Read `<vault>/MEMORY.md` |
 
 If a `requires` key cannot be resolved (e.g., directory is empty or doesn't exist), provide an empty result for that key — do not fail. The skill decides how to handle missing context.

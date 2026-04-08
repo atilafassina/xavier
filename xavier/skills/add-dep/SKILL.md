@@ -1,6 +1,6 @@
 ---
 name: add-dep
-requires: [config, skills-index]
+requires: [config, deps-index]
 ---
 
 # Add Dependency Skill
@@ -12,7 +12,7 @@ Create a dependency-skill for a Node package — a self-contained knowledge note
 ## Step 1: Validate
 
 1. Check that `<package-name>` was provided. If not, ask the user.
-2. Check if `~/.xavier/skills/<package-name>/` already exists (using the resolved `skills-index` context). If so, ask the user whether to regenerate or skip.
+2. Check if `~/.xavier/deps/<package-name>/` already exists (using the resolved `deps-index` context). If so, ask the user whether to regenerate or skip.
 
 ## Step 2: Gather Package Info
 
@@ -48,7 +48,7 @@ Agent(
 
 ## Step 4: Write the Skill
 
-Write the agent's output to `~/.xavier/skills/<package-name>/SKILL.md` with frontmatter:
+Write the agent's output to `~/.xavier/deps/<package-name>/SKILL.md` with frontmatter:
 
 ```markdown
 ---

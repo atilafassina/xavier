@@ -114,6 +114,7 @@ cp "$TMPDIR/xavier/SKILL.md" "$XAVIER_HOME/SKILL.md"
 - `loop-state/`
 - `shark-state/`
 - `review-state/`
+- `deps/`
 - `babysit-pr/`
 - `.obsidian/`
 
@@ -139,6 +140,7 @@ mkdir -p "$XAVIER_HOME/tasks"
 mkdir -p "$XAVIER_HOME/review-state"
 mkdir -p "$XAVIER_HOME/loop-state"
 mkdir -p "$XAVIER_HOME/shark-state"
+mkdir -p "$XAVIER_HOME/deps"
 mkdir -p "$XAVIER_HOME/babysit-pr"
 ```
 

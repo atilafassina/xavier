@@ -63,6 +63,7 @@ Create the full directory tree:
 │   └── performance.md
 ├── adapters/
 ├── skills/
+├── deps/
 ├── knowledge/
 │   ├── repos/
 │   ├── teams/
