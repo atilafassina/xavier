@@ -9,6 +9,10 @@ requires: [config, deps-index]
 
 Create a dependency-skill for a Node package — a self-contained knowledge note with best practices, API patterns, and doc links.
 
+## Step 0: Pre-flight
+
+Verify that a network fetch tool is available by running `curl --version` or `wget --version`. At least one must succeed. If neither is available, print: "Error: add-dep requires `curl` or `wget` to fetch package documentation. Install one and try again." and stop.
+
 ## Step 1: Validate
 
 1. Check that `<package-name>` was provided. If not, ask the user.

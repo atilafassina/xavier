@@ -7,6 +7,10 @@ requires: [shark, personas, adapter, recurring-patterns, repo-conventions, team-
 
 Run a Shark-pattern code review on the current diff.
 
+## Step 0: Pre-flight
+
+Check that the personas directory is non-empty — at least one of `~/.xavier/personas/` (global) or `.xavier/personas/` (repo-local) must contain `.md` files. If both are empty or missing, print: "Error: no review personas found. Ensure ~/.xavier/personas/ contains correctness.md, security.md, and performance.md." and stop.
+
 ## Step 1: Detect-and-Defer
 
 Follow the detect-and-defer protocol from the Shark reference. Check `SHARK_TASK_HASH`:
@@ -99,7 +103,7 @@ Present the synthesized review to the user:
 
 Write a review note to `~/.xavier/knowledge/reviews/` with the following format:
 
-**Filename**: `{repo-name}_{YYYY-MM-DD}_{short-hash}.md` where `short-hash` is the first 7 chars of `git rev-parse HEAD`.
+**Filename**: `{repo-name}_{YYYY-MM-DD}_{content-hash}.md` where `content-hash` is the first 7 chars of `echo "{diff}" | shasum | cut -c1-7` (a hash of the diff content). This prevents filename collisions when running multiple reviews on the same commit.
 
 ```markdown
 ---

@@ -26,14 +26,14 @@ Read the selected note's content. Find all wikilinks (`[[...]]`) and rewrite the
 
 1. **Scan the export destination** (`{export-vault-path}/x-inbox/`) for previously exported files to build an index of exported note names.
 2. For each wikilink in the source note:
-   - **If the linked note has been exported** (exists as `x-inbox/x-<name>.md`): rewrite to `[[x-inbox/x-<name>]]`
+   - **If the linked note has been exported** (exists as `x-inbox/x-<source-dir>-<name>.md`): rewrite to `[[x-inbox/x-<source-dir>-<name>]]`
    - **If the linked note has NOT been exported**: strip the wikilink brackets and leave the display text as plain text (e.g., `[[my-note|My Note]]` becomes `My Note`, `[[my-note]]` becomes `my-note`)
 3. Preserve all other Obsidian-flavored markdown: callouts (`> [!note]`), tags (`#tag`), frontmatter, embedded images, and code blocks.
 
 ## Step 4: Write Exported File
 
 1. Create the `x-inbox/` directory inside `{export-vault-path}` if it doesn't exist.
-2. The destination path is `{export-vault-path}/x-inbox/x-<filename>.md` where `<filename>` is the original filename without path (e.g., `prd/my-feature.md` → `x-my-feature.md`).
+2. The destination path is `{export-vault-path}/x-inbox/x-<source-dir>-<filename>.md` where `<source-dir>` is the immediate parent directory name and `<filename>` is the original filename without path (e.g., `prd/my-feature.md` → `x-prd-my-feature.md`, `knowledge/repos/xavier/architecture.md` → `x-xavier-architecture.md`). Including the source directory prevents collisions when exporting files with the same name from different directories.
 3. **If the destination file already exists**:
    - If `export-show-diff: true`: show a diff between existing and new content
    - Ask the user to confirm overwrite using AskUserQuestion (options: Overwrite, Skip)

@@ -9,6 +9,10 @@ requires: [config, shark, adapter, repo-conventions, team-conventions]
 
 Explore a codebase and produce knowledge notes in the Xavier vault. Detects the current repository, resolves team ownership, and spawns background agents to map the architecture, decisions, and dependencies into Zettelkasten-style notes.
 
+## Step 0: Pre-flight
+
+Run `git rev-parse --is-inside-work-tree` to verify the current directory is inside a git repository. If it fails, print: "Error: not inside a git repository. Run this command from within a repo." and stop.
+
 ## Step 1: Re-run Guard
 
 1. Resolve the repository name:

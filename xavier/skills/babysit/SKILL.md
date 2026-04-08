@@ -10,6 +10,10 @@ requires: [config]
 
 Monitor a pull request in a polling loop. Each cycle checks CI status, processes review comments, and auto-fixes lint/format failures when safe.
 
+## Step 0: Pre-flight
+
+Verify that `gh` and `git` CLI tools are available by running `gh --version` and `git --version`. If either command fails, print: "Error: babysit requires both `gh` and `git` CLI tools. Install the missing tool and try again." and stop.
+
 ## Step 1: Setup
 
 ### 1a. Detect Repository

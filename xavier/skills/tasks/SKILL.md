@@ -9,6 +9,10 @@ requires: [config, tasks-index, prd-index, repo-conventions, team-conventions]
 
 Decompose a PRD into a phased implementation task list using tracer-bullet vertical slices.
 
+## Step 0: Pre-flight
+
+Check that the PRD list from the resolved `prd-index` context is non-empty (i.e., `~/.xavier/prd/` contains at least one `.md` file). If empty, print: "Error: no PRDs found in ~/.xavier/prd/. Create a PRD first before generating tasks." and stop.
+
 ## Step 1: Select PRD
 
 List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context) showing filename, title, date, and tags from frontmatter. Present as a numbered list using AskUserQuestion. If the user already specified a PRD by name, skip the listing and read it directly.
