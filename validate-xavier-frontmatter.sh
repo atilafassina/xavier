@@ -79,6 +79,49 @@ for skill_dir in "$SKILLS_DIR"/*/; do
   fi
 done
 
+# Check that note-writing skills include all 6 base Zettelkasten fields in their templates
+echo ""
+echo "=== Checking base Zettelkasten fields in note-writing skill templates ==="
+NOTE_WRITING_SKILLS="learn review prd tasks"
+BASE_FIELDS="repo type created updated tags related"
+
+for skill_name in $NOTE_WRITING_SKILLS; do
+  skill_file="$SKILLS_DIR/$skill_name/SKILL.md"
+  [ -f "$skill_file" ] || continue
+
+  # Extract YAML template blocks from the skill body (after the skill's own frontmatter).
+  # These are code blocks that start with ```yaml or ``` followed by --- on the next line.
+  # We look for YAML blocks containing "type:" which indicates a note template (not a bash block).
+  # We skip the skill's own frontmatter (the very first --- ... --- block at the top of the file).
+  body="$(awk 'BEGIN{c=0} /^---$/{c++; if(c==2){getline; found=1}} found{print}' "$skill_file")"
+
+  # Extract all YAML/markdown code blocks from the body that contain "type:" (note templates)
+  # Opening: ```yaml or ```markdown or ```  Closing: ```
+  templates="$(echo "$body" | awk '
+    /^```(yaml|markdown)/ && !in_block { in_block=1; block=""; next }
+    /^```$/ && in_block { if (block ~ /type:/) print block; in_block=0; next }
+    in_block { block = block "\n" $0 }
+  ')"
+
+  if [ -z "$templates" ]; then
+    echo "WARN: $skill_name has no YAML note templates found"
+    continue
+  fi
+
+  skill_ok=true
+  for field in $BASE_FIELDS; do
+    if ! echo "$templates" | grep -q "^${field}:"; then
+      echo "FAIL: $skill_name/SKILL.md template is missing base field '$field'"
+      ERRORS=$((ERRORS + 1))
+      skill_ok=false
+    fi
+  done
+
+  if $skill_ok; then
+    echo "PASS: $skill_name (base Zettelkasten fields)"
+  fi
+done
+
 echo ""
 if [ $ERRORS -gt 0 ]; then
   echo "XAVIER FRONTMATTER: $ERRORS error(s) found"

@@ -75,6 +75,11 @@ type: tasks
 source: "[[prd/<filename>]]"
 created: {ISO date}
 updated: {ISO date}
+tags:
+  - tasks
+  - {feature-related tags}
+related:
+  - "[[prd/<filename>]]"
 ---
 ```
 

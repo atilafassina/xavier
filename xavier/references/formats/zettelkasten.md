@@ -38,7 +38,10 @@ related:
 - `recurring`: list of findings that appeared in past reviews
 
 ### PRDs
-- `source`: wikilink to the originating PRD (for task files)
+(No additional type-specific fields beyond the base schema.)
+
+### Tasks
+- `source`: wikilink to the originating PRD (e.g., `"[[prd/my-feature]]"`)
 
 ### Dependencies
 - `version`: package version
