@@ -217,7 +217,11 @@ install_skill() {
 
   # Symlink 1: ~/.agents/skills/xavier/ -> $SCRIPT_DIR (the xavier/ directory)
   AGENTS_LINK="$HOME/.agents/skills/xavier"
-  if [ -e "$AGENTS_LINK" ] || [ -L "$AGENTS_LINK" ]; then
+  if [ -L "$AGENTS_LINK" ] && [ ! -e "$AGENTS_LINK" ]; then
+    warn "Removing broken symlink: $AGENTS_LINK"
+    rm "$AGENTS_LINK"
+  fi
+  if [ -e "$AGENTS_LINK" ]; then
     warn "Symlink already exists: $AGENTS_LINK — skipping"
   else
     mkdir -p "$HOME/.agents/skills"
@@ -239,7 +243,11 @@ install_skill() {
 
   # Symlink 2: ~/.claude/commands/xavier.md -> SKILL.md
   COMMANDS_LINK="$HOME/.claude/commands/xavier.md"
-  if [ -e "$COMMANDS_LINK" ] || [ -L "$COMMANDS_LINK" ]; then
+  if [ -L "$COMMANDS_LINK" ] && [ ! -e "$COMMANDS_LINK" ]; then
+    warn "Removing broken symlink: $COMMANDS_LINK"
+    rm "$COMMANDS_LINK"
+  fi
+  if [ -e "$COMMANDS_LINK" ]; then
     warn "Symlink already exists: $COMMANDS_LINK — skipping"
   else
     mkdir -p "$HOME/.claude/commands"
@@ -249,7 +257,11 @@ install_skill() {
 
   # Symlink 3: ~/.claude/commands/x.md -> SKILL.md (short alias)
   ALIAS_LINK="$HOME/.claude/commands/x.md"
-  if [ -e "$ALIAS_LINK" ] || [ -L "$ALIAS_LINK" ]; then
+  if [ -L "$ALIAS_LINK" ] && [ ! -e "$ALIAS_LINK" ]; then
+    warn "Removing broken symlink: $ALIAS_LINK"
+    rm "$ALIAS_LINK"
+  fi
+  if [ -e "$ALIAS_LINK" ]; then
     warn "Symlink already exists: $ALIAS_LINK — skipping"
   else
     mkdir -p "$HOME/.claude/commands"
