@@ -15,7 +15,7 @@ Execute a task file (or freeform task) as an autonomous loop using the Shark pat
    - A task file from `~/.xavier/tasks/` — list available files and let the user pick, or accept a path argument
    - A freeform task description (at least 2 sentences)
 2. **If task file**: extract phases, completion criteria, and backpressure commands from the file (same extraction as ralph-loop)
-3. **If freeform**: ask the user for completion criteria, backpressure commands, and max iterations
+3. **If freeform**: ask the user for completion criteria, backpressure commands, and max iterations. If the user does not specify backpressure commands, auto-detect them using `references/patterns/backpressure-detection.md`.
 4. **Max iterations**: default 10. Warn at >25 about cost implications
 5. **Pause before phase**: optional phase number to pause at (default: No)
 

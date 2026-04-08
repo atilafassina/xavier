@@ -28,17 +28,7 @@ List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context)
 ## Step 3: Explore Codebase & Detect Backpressure
 
 1. Explore the codebase to understand current architecture, existing patterns, and integration layers
-2. Detect backpressure commands by scanning project root for config files:
-
-| Config file | What to check | Suggested commands |
-|---|---|---|
-| `package.json` | `scripts` keys (`test`, `build`, `lint`, `typecheck`) | `npm test` / `npm run build` / etc. |
-| `Cargo.toml` | presence | `cargo test`, `cargo clippy -- -D warnings` |
-| `pyproject.toml` | tools in optional-dependencies | `pytest`, `mypy .`, `ruff check .` |
-| `go.mod` | presence | `go test ./...`, `go vet ./...` |
-| `Makefile` | targets like `test`, `check`, `lint` | `make test` / `make check` |
-
-Only include commands that actually exist in the project.
+2. Detect backpressure commands using the detection table in `references/patterns/backpressure-detection.md`. Only include commands that actually exist in the project.
 
 ## Step 4: Identify Architectural Decisions
 

@@ -21,7 +21,7 @@ Run `git rev-parse --is-inside-work-tree` to verify the current directory is ins
 basename $(git rev-parse --show-toplevel)
 ```
 
-2. Check the root `package.json` for a `workspaces` field. If present (non-empty array), set a `monorepo: true` flag that affects Steps 4 and 7. If absent or empty, set `monorepo: false`.
+2. Detect monorepo status using the detection table in `references/patterns/monorepo-detection.md`. If a monorepo marker is found, set a `monorepo: true` flag that affects Steps 4 and 7. If no marker matches, set `monorepo: false`.
 3. Check if `<vault>/knowledge/repos/<repo-name>/` already contains notes (look for any `.md` files in the directory).
 4. **If notes exist**: Warn the user that knowledge notes already exist for this repo. Use `AskUserQuestion` to confirm whether to overwrite or abort.
    - If the user chooses to abort, stop execution and inform them that no changes were made.
