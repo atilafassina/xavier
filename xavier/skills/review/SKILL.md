@@ -83,7 +83,7 @@ The pilot fish aggregates findings as each reviewer completes. It does NOT wait 
 
 1. **Categorize** all findings by type: correctness, security, performance
 2. **Deduplicate**: if two reviewers flag the same line/issue, merge into a single finding and note which reviewers flagged it
-3. **Rank by severity**: critical > high > major > medium > minor > low (normalize across persona severity scales)
+3. **Rank by severity**: critical > high > medium > low
 4. **Determine final verdict**: the most severe individual verdict wins
    - If ANY reviewer says **rethink** -> final verdict is **rethink**
    - If ANY reviewer says **request changes** (and none say rethink) -> **request changes**
@@ -95,7 +95,7 @@ Present the synthesized review to the user:
 
 1. Show the final verdict: **approve**, **request changes**, or **rethink**
 2. Show per-reviewer verdicts: `correctness: approve | security: request changes | performance: approve`
-3. List findings grouped by severity (critical > major > minor), with category tags
+3. List findings grouped by severity (critical > high > medium > low), with category tags
 4. Show the total finding count and breakdown by category
 5. Highlight any findings flagged by multiple reviewers (high confidence)
 
@@ -159,5 +159,5 @@ reviewers: [correctness, security, performance]
 
 Last review completed at {ISO datetime}.
 Verdict: {verdict}
-Findings: {count} ({critical}/{major}/{minor})
+Findings: {count} ({critical}/{high}/{medium}/{low})
 ```

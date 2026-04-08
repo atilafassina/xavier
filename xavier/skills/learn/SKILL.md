@@ -247,7 +247,7 @@ After all 3 research remoras from Step 4 have completed and all notes are writte
 2. Present the full dependency list to the user.
 3. Suggest approximately 5 key dependencies that would benefit from having dependency-skills. Focus on the packages most relevant for code reviews (e.g., core frameworks, state management, testing libraries, API clients).
 4. Use `AskUserQuestion` to let the user select which packages they want skills for. The user may pick from your suggestions or type additional package names.
-5. For each selected package, delegate to `/xavier add-dep <package-name>`. Do NOT duplicate the add-dep logic inline — invoke the skill directly.
+5. For each selected package, delegate to the `add-dep` skill: the executor reads `<vault>/skills/add-dep/SKILL.md` and follows its instructions inline, passing `<package-name>` as the argument. Do NOT duplicate the add-dep logic inline. Since `learn` runs within a Shark flow (Step 3 checks `SHARK_TASK_HASH`), the delegated `add-dep` inherits the existing `SHARK_TASK_HASH` and will not start a nested Shark loop — it acts as a simple inline executor. See `references/patterns/skill-delegation.md` for the full mechanism.
 
 ## Step 7: Monorepo Workspace Dependencies
 

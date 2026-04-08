@@ -83,7 +83,7 @@ Tell the user to start the polling loop:
 
 > State initialized. Starting polling loop with 10-minute interval.
 
-Then delegate to `/xavier loop` — the loop task is this babysit cycle (Step 2), repeated every 10 minutes, with max iterations equal to `max-rounds`.
+Then delegate to the `loop` skill: the executor reads `<vault>/skills/loop/SKILL.md` and follows its instructions inline. The loop task is this babysit cycle (Step 2), repeated every 10 minutes, with max iterations equal to `max-rounds`. Note: `babysit` does not use the Shark pattern itself (no `shark` in its requires), so `SHARK_TASK_HASH` will not be set — the delegated `loop` skill may start its own Shark flow if it uses the pattern. See `references/patterns/skill-delegation.md` for the full mechanism.
 
 ---
 
