@@ -20,14 +20,21 @@ The Shark pattern is an orchestration model where a central coordinator (the sha
 
 ## Detect-and-Defer
 
-Before starting a Shark flow, check the environment variable `SHARK_TASK_HASH`:
+The adapter's `spawn()` and `collect()` functions automatically set `SHARK_TASK_HASH` in each spawned agent's environment. Individual skills and agents never set this variable themselves — the adapter is the sole owner.
+
+**Flow:**
+1. The shark spawns a remora via the adapter (`spawn()` or `collect()`)
+2. The adapter injects `SHARK_TASK_HASH` into the remora's prompt preamble
+3. The spawned agent checks the variable before doing anything:
 
 ```bash
 echo "$SHARK_TASK_HASH"
 ```
 
-- **If set** (non-empty): this agent is running inside an outer Shark loop. Do NOT start a new Shark flow. Act as a simple executor — do the work inline and return results to the caller.
-- **If unset** (empty): this agent is the top-level orchestrator. Proceed with the full Shark flow.
+4. **If set** (non-empty): this agent was spawned as a remora inside an outer Shark loop. Do NOT start a new Shark flow. Act as a simple executor — do the work inline and return results to the caller.
+5. **If unset** (empty): this agent is the top-level orchestrator. Proceed with the full Shark flow.
+
+This prevents nested shark orchestration: a remora cannot accidentally become a shark.
 
 ## Evaluation Loop
 
