@@ -1,14 +1,19 @@
+<div align="right">
+  <img src="./docs/xavier.png" width=200 />
+</div>
+
 # Xavier
+Self-evolving AI orchestrator.
 
-AI agent orchestrator for Claude Code. Xavier manages code reviews, design interviews, dependency knowledge, and task planning through a personal knowledge vault.
-
-## Prerequisites
-
-- **git** — required for vault initialization and state tracking
-- **macOS or Linux**
-- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — primary supported runtime
+🔮 codebase **exploration** | dependency **knowledge** | design **interviews** | task **planning** |code **reviews**
 
 ## Installation
+### Prerequisites
+
+- **git** — required for vault initialization and state tracking
+- POSIX (MacOS, Linux, or Windows WSL)
+- **[GitHub CLI (gh)](https://cli.github.com/)**
+
 
 ### Quick Install
 
@@ -18,7 +23,7 @@ Download and install in one command:
 curl -fsSL https://github.com/atilafassina/xavier/releases/latest/download/xavier.tar.gz | tar xz && bash xavier/install.sh
 ```
 
-This extracts the tarball and copies skills and references into your vault. No persistent clone needed.
+This extracts the tarball and copies skills and references into your vault. No persistent clone needed and works perfectly with `/xavier self-update`.
 
 ### Install from source
 
@@ -31,6 +36,53 @@ bash xavier/install.sh
 ```
 
 When installed from source, skills and references are symlinked back to the repo so changes are reflected immediately.
+
+## How It Works
+
+ Xavier follows the **Shark pattern**: a central orchestrator that delegates work to concurrent background agents (remoras), never implementing
+ anything itself. Results are verified through backpressure — only test, lint, and typecheck output counts as truth.
+
+ Three pillars drive every Xavier workflow:
+
+ ### Personas — Concurrent Specialized Reviewers
+
+ When you run `/xavier review`, Xavier spawns **3 reviewer agents in parallel**, each examining your diff through a different lens:
+
+ - **Correctness** — bugs, logic errors, edge cases, type safety
+ - **Security** — injection, auth, data exposure, CWE references
+ - **Performance** — algorithmic complexity, memory, I/O, bundle size
+
+ All three receive the same diff but review independently. Findings are deduplicated, ranked by severity, and synthesized into a single verdict
+ (`approve`, `request changes`, or `rethink`). Personas can be customized per-repo by adding `.xavier/personas/` to your project root.
+
+ ### Learning — Codebase Exploration Agents
+
+ `/xavier learn` spawns **3 research remoras concurrently** to map an unfamiliar codebase:
+
+ - **Architecture** — modules, entry points, key patterns, integration boundaries
+ - **Decisions** — framework choices, testing strategy, auth, deployment patterns
+ - **Dependencies** — all direct/dev packages with consuming modules
+
+ Notes are written progressively as each remora completes (pilot fish pattern). Monorepos are detected automatically, with per-workspace
+ analysis. After learning, Xavier suggests key packages for dedicated dependency-skills (`/xavier add-dep`).
+
+ ### Knowledge Base
+
+ Everything Xavier discovers lives in `~/.xavier/` as interconnected Markdown notes:
+
+ ```
+ ~/.xavier/knowledge/
+ ├── repos/{name}/architecture.md    # codebase structure
+ ├── repos/{name}/decisions.md       # inferred technical choices
+ ├── repos/{name}/dependencies.md    # package catalog
+ ├── reviews/                        # review history per repo
+ └── teams/{team}/conventions.md     # shared team patterns
+ ```
+
+ Notes use standardized frontmatter (`repo`, `type`, `tags`, `related` wikilinks) and link to each other for cross-referencing. Review notes
+ feed an **active learning loop** — recurring patterns from your last 10 reviews are extracted and injected into future reviewer prompts, so
+ Xavier gets sharper over time. The vault is git-tracked and can be exported to Obsidian via `/xavier export`.
+
 
 ## Skills
 
