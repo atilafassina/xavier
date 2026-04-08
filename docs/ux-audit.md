@@ -758,3 +758,251 @@ Phase 4 traces the three planning skills (`prd`, `tasks`, `grill`) through happy
 **Phase 4 tag breakdown**: 6 user-facing, 12 executor-facing
 
 **Cumulative totals (Phase 1 + Phase 2 + Phase 3 + Phase 4)**: 61 findings — 19 silent-failure, 17 confusion, 25 friction
+
+---
+
+## Phase 5 — Skills Tier 3 (Maintenance)
+
+Phase 5 traces the five maintenance skills (babysit, add-dep, deps-update, self-update, export) through happy and failure paths.
+
+### Skill: babysit
+
+**Happy path**: User runs `/xavier babysit 20`. Router resolves config. Skill detects repo from `git remote -v`, asks for PR number, validates via `gh pr view`, creates state file at `~/.xavier/babysit-pr/<repo>-<pr>.md`, then delegates to `/xavier loop` with 10-minute interval. Each cycle checks branch, PR state, CI status, auto-fixes lint when safe (<=10 files), investigates other failures read-only, surfaces new review comments, and logs everything.
+
+**Failure paths traced**: PR already merged (caught at 1b), no CI configured (2d returns no checks — handled), lint fix introduces new errors (caught at 2e step 5 — falls through to 2f), rate limiting (not handled), branch mismatch (pauses correctly).
+
+### Finding P5-1: babysit requires only `config` but reads vault dir `~/.xavier/babysit-pr/`
+- **Severity**: `friction`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/babysit/SKILL.md`, Step 1d
+- **Description**: The skill creates and reads `~/.xavier/babysit-pr/` state files but does not declare any vault-directory dependency in its `requires` list. The router has no `babysit-state` key in the requires vocabulary either, so state directory creation is ad-hoc via inline `mkdir -p`. This is consistent with `loop-state/` usage in `loop`, but means the router cannot pre-validate or pre-create the directory.
+- **Suggested fix**: Either add a `babysit-state` requires key or document that skills may self-create state directories as an accepted pattern.
+
+### Finding P5-2: babysit delegates to `/xavier loop` but loop requires `shark` — implicit transitive dependency
+- **Severity**: `confusion`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/babysit/SKILL.md`, Step 1e
+- **Description**: babysit's `requires` is `[config]` but it delegates to `/xavier loop` which requires `[config, shark]`. When babysit hands off to loop, the router must re-resolve requires for loop. If this is a direct delegation (not a full `/xavier loop` invocation through the router), the shark context will never be loaded, silently breaking the loop's Shark protocol.
+- **Suggested fix**: Clarify whether babysit triggers loop through the router (which re-resolves requires) or as an inline delegation. If inline, babysit must add `shark` to its own requires. If through the router, document the re-invocation pattern.
+
+### Finding P5-3: babysit `git add -u` can stage unrelated changes
+- **Severity**: `silent-failure`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/babysit/SKILL.md`, Step 2e (Lint Auto-Fix)
+- **Description**: The lint auto-fix step runs `git add -u && git commit -m "fix: lint"` which stages all tracked file modifications, not just lint-fix changes. If the user has uncommitted work on the branch, it gets swept into the lint-fix commit and auto-pushed.
+- **Suggested fix**: Stage only files that the lint-fix commands actually changed. Run `git diff --name-only` before and after the fix command, then `git add` only the difference.
+
+### Finding P5-4: babysit has no GitHub API rate-limit handling
+- **Severity**: `silent-failure`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/babysit/SKILL.md`, Step 2 (Polling Cycle)
+- **Description**: Each 10-minute cycle makes multiple `gh` API calls (`gh pr view`, `gh pr checks`, `gh api .../comments`). Over 50 rounds this is 150+ API calls. If rate-limited, `gh` commands fail silently or with errors that the skill does not detect or back off from.
+- **Suggested fix**: Check `gh` exit codes. On rate-limit errors (HTTP 403 with rate-limit headers), log a warning, extend the polling interval, and continue rather than treating the cycle as a no-op.
+
+### Finding P5-5: babysit lint detection is JS-only but rule 6 is buried
+- **Severity**: `friction`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/babysit/SKILL.md`, Rule 6
+- **Description**: The skill hardcodes fix-command detection to `package.json` scripts (rule 6: "JS ecosystem only (v1)"). This is stated only in the Rules section at the bottom. If a user runs babysit on a Python or Go repo, lint failures will be detected but auto-fix will silently skip because no `package.json` exists. No error or warning is shown.
+- **Suggested fix**: At Step 1 (Setup), check for `package.json`. If absent, warn the user that auto-fix is unavailable for this ecosystem and lint failures will be routed to manual investigation.
+
+### Finding P5-6: babysit commit message is non-descriptive
+- **Severity**: `friction`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/babysit/SKILL.md`, Step 2e
+- **Description**: Lint-fix commits use the generic message `"fix: lint"` with no context about which checks failed or what was changed. Over multiple rounds, the git log becomes a wall of identical `fix: lint` entries.
+- **Suggested fix**: Include the check name and file count in the commit message, e.g., `"fix(babysit): eslint — 3 files"`.
+
+---
+
+### Skill: add-dep
+
+**Happy path**: User runs `/xavier add-dep zod`. Router resolves config and skills-index. Skill checks if `~/.xavier/skills/zod/` exists (via skills-index), uses WebSearch + WebFetch to gather docs, spawns an Agent to distill a dependency-skill reference, writes `~/.xavier/skills/zod/SKILL.md` with frontmatter.
+
+**Failure paths traced**: package not found (WebSearch returns no results — not handled), skill already exists (asks user — handled), write permission errors (not handled), malformed package metadata (not handled).
+
+### Finding P5-7: add-dep does not update skills-index after creating a new skill
+- **Severity**: `silent-failure`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/add-dep/SKILL.md`, Step 4
+- **Description**: The skill requires `skills-index` (a directory listing of `<vault>/skills/`) for its existence check in Step 1, but after writing a new skill file in Step 4, it never refreshes or signals that skills-index is now stale. If a subsequent skill (e.g., deps-update) runs in the same session, the cached skills-index won't include the newly created skill.
+- **Suggested fix**: After Step 4, explicitly note that the skills-index has been invalidated, or re-read the directory listing to update the resolved context.
+
+### Finding P5-8: add-dep has no fallback when WebSearch or WebFetch fails
+- **Severity**: `silent-failure`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/add-dep/SKILL.md`, Step 2
+- **Description**: Steps 2.2 and 2.3 rely on WebSearch and WebFetch to find and read package documentation. If either tool fails (network error, no results, blocked site), the skill has no fallback. The agent in Step 3 would receive no documentation context and produce a low-quality or hallucinated skill file with no warning to the user.
+- **Suggested fix**: If WebSearch returns no results or WebFetch fails, warn the user and offer alternatives: provide a doc URL manually, use the package's README from `node_modules/`, or abort.
+
+### Finding P5-9: add-dep creates dependency skills inside the skills/ directory alongside Xavier's own skills
+- **Severity**: `confusion`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/add-dep/SKILL.md`, Step 4
+- **Description**: Dependency skills are written to `~/.xavier/skills/<package-name>/SKILL.md`, the same directory that houses Xavier's own command skills (review, babysit, export, etc.). This means `skills-index` (which lists all directories in `<vault>/skills/`) conflates command skills with dependency-knowledge skills. The router's help listing (scan skills/ for commands) would show dependency packages as commands. self-update's `rm -rf "$XAVIER_HOME/skills/"` would delete all user-generated dependency skills.
+- **Suggested fix**: Use a separate directory for dependency skills, e.g., `~/.xavier/deps/` or `~/.xavier/skills-deps/`, to keep them isolated from router command skills. Alternatively, use the `type: dependency` frontmatter field to filter them out of command listings — but self-update's `rm -rf` still destroys them.
+
+### Finding P5-10: add-dep does not validate that the package actually exists in any registry
+- **Severity**: `friction`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/add-dep/SKILL.md`, Step 2
+- **Description**: Step 2.1 checks `package.json` to see if the package is already a dependency but does not validate that the package name is a real published package. A typo like `/xavier add-dep zdo` would proceed through WebSearch, potentially find unrelated results, and create a skill file for a nonexistent package.
+- **Suggested fix**: Run `npm view <package-name> name version` (or equivalent) as a validation step. If it fails, warn the user the package was not found in the registry.
+
+---
+
+### Skill: deps-update
+
+**Happy path**: User runs `/xavier deps-update`. Router resolves config and skills-index. Skill reads lockfile (or falls back to package.json), compares versions against existing dependency skills' frontmatter, marks stale ones, asks user if >5 stale, regenerates by re-running add-dep Steps 2-4, reports results including orphaned skills.
+
+**Failure paths traced**: no lockfile and no package.json (not handled), no stale deps (reports zero — handled), regeneration fails for some deps (not handled), partial update (not handled).
+
+### Finding P5-11: deps-update has no handling when neither lockfile nor package.json exists
+- **Severity**: `confusion`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/deps-update/SKILL.md`, Step 1
+- **Description**: Step 1 checks for lockfiles, then falls back to `package.json`. If none exist (e.g., running from the wrong directory, or a non-JS project), the skill has no error handling. It would proceed with an empty dependency list, find nothing stale, and report "0 checked, 0 stale" — giving a false sense that everything is up to date.
+- **Suggested fix**: If no lockfile and no `package.json` are found, stop with a clear error: "No lockfile or package.json found in the current directory. Run this command from a project root."
+
+### Finding P5-12: deps-update orphan detection cannot distinguish command skills from dependency skills
+- **Severity**: `confusion`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/deps-update/SKILL.md`, Step 3
+- **Description**: The skill compares skills in `~/.xavier/skills/` against the lockfile and marks skills not in the lockfile as "orphaned." Since dependency skills live alongside command skills (see P5-9), every Xavier command skill (review, babysit, export, etc.) would be flagged as orphaned and suggested for removal.
+- **Suggested fix**: Filter skills by `type: dependency` frontmatter before orphan detection, or use a separate directory for dependency skills.
+
+### Finding P5-13: deps-update does not handle partial regeneration failure
+- **Severity**: `silent-failure`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/deps-update/SKILL.md`, Step 3
+- **Description**: When regenerating stale skills, the skill re-runs add-dep's Steps 2-4 for each one. If WebSearch/WebFetch fails for some packages (network issues, rate limiting), those skills may be silently left with outdated or corrupted content. The Step 4 report does not distinguish between successfully regenerated and failed regenerations.
+- **Suggested fix**: Track success/failure per package during regeneration. In the report, list which packages were successfully updated and which failed, with the reason.
+
+### Finding P5-14: deps-update confirmation threshold is static at 5
+- **Severity**: `friction`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/deps-update/SKILL.md`, Step 3
+- **Description**: The skill asks for user confirmation only when there are more than 5 stale skills. For 1-5 stale skills, it regenerates without asking. Each regeneration involves WebSearch + WebFetch + Agent spawning, which has real cost and latency. Even 3-4 regenerations could take significant time and API calls.
+- **Suggested fix**: Always show the list of stale packages and ask for confirmation, or make the threshold configurable via config.
+
+---
+
+### Skill: self-update
+
+**Happy path**: User runs `/xavier self-update`. Router resolves config. Skill reads current version from config.md, fetches latest release tag via `gh api`, compares versions, shows update summary with release notes, asks user to confirm, downloads tarball, extracts, replaces `skills/` and `references/` directories, updates version in config, ensures vault directories, cleans up temp dir, reports success.
+
+**Failure paths traced**: already up to date (handled at Step 3), network failure (handled at Step 6), symlink permission error (not handled), breaking changes (not handled).
+
+### Finding P5-15: self-update `rm -rf skills/` destroys user-generated dependency skills
+- **Severity**: `silent-failure`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/self-update/SKILL.md`, Step 8
+- **Description**: Step 8 runs `rm -rf "$XAVIER_HOME/skills/"` then copies new skills from the tarball. Since add-dep writes dependency skills into the same `skills/` directory (see P5-9), every user-generated dependency skill is permanently deleted during self-update. The "Files that MUST NOT be touched" list does not mention dependency skills.
+- **Suggested fix**: Before removing `skills/`, back up dependency skills (those with `type: dependency` frontmatter) to a temp location and restore them after copying new skills. Better yet, resolve P5-9 by using a separate directory for dependency skills.
+
+### Finding P5-16: self-update has no rollback mechanism on partial failure
+- **Severity**: `silent-failure`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/self-update/SKILL.md`, Steps 8-9
+- **Description**: If the update fails partway through Step 8 (e.g., after `rm -rf skills/` but before `cp -R` completes), the vault is left in a broken state with no skills directory. There is no backup of the old skills/references before deletion and no rollback procedure.
+- **Suggested fix**: Back up `skills/` and `references/` to a temp location before removal. If any subsequent step fails, restore from backup. Only delete backups after Step 12 (success).
+
+### Finding P5-17: self-update version comparison is naive string equality
+- **Severity**: `friction`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/self-update/SKILL.md`, Step 3
+- **Description**: Step 3 says "compare the current installed version against the target version" and stops if "they are equal." There is no semver-aware comparison. If the current version is `1.0.0` and the target is `0.9.0` (a downgrade), the skill would proceed with the "update." Similarly, pre-release versions like `1.0.0-beta.1` are compared as plain strings.
+- **Suggested fix**: Add semver-aware comparison. If the target is older than current, warn the user this is a downgrade and ask for explicit confirmation.
+
+### Finding P5-18: self-update `XAVIER_HOME` is not resolved consistently
+- **Severity**: `confusion`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/self-update/SKILL.md`, Steps 8-10
+- **Description**: The skill uses `$XAVIER_HOME` in bash commands but the router resolves XAVIER_HOME in Step 0 and stores the path internally. The skill's bash snippets reference the shell variable directly. If the environment variable is not actually exported (e.g., the router used the `~/.xavier/` default without setting the env var), all bash commands referencing `$XAVIER_HOME` will fail or use an empty string, potentially running `rm -rf /skills/`.
+- **Suggested fix**: The skill should use the resolved vault path from the router context rather than referencing the shell variable. Or the router should ensure `$XAVIER_HOME` is exported before skill execution.
+
+### Finding P5-19: self-update does not verify tarball integrity
+- **Severity**: `friction`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/self-update/SKILL.md`, Steps 6-7
+- **Description**: The tarball is downloaded via `curl` and extracted without any checksum or signature verification. A corrupted download or MITM attack could install malicious or broken skill files.
+- **Suggested fix**: If the GitHub release includes a checksum file, verify the tarball against it after download. At minimum, verify the tarball extracts successfully and contains the expected directory structure before proceeding to replacement.
+
+---
+
+### Skill: export
+
+**Happy path**: User runs `/xavier export prd/my-feature`. Router resolves config. Skill reads `export-vault-path` from config, resolves the source file relative to `~/.xavier/`, reads content, adapts wikilinks (rewrites exported ones to `x-inbox/x-<name>`, strips unexported ones), creates `x-inbox/` directory, writes to `{export-vault-path}/x-inbox/x-my-feature.md`, tells user the file location.
+
+**Failure paths traced**: export path missing from config (asks user — handled), wikilinks can't resolve (stripped to plain text — handled), target already exists (asks for overwrite — handled), partial export (not handled).
+
+### Finding P5-20: export excludes `personas/` and `adapters/` from listing but they live under `references/`
+- **Severity**: `friction`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/export/SKILL.md`, Step 2
+- **Description**: Step 2 excludes `personas/`, `adapters/`, `loop-state/`, `review-state/`, `skills/` from the exportable directories listing. But personas and adapters actually live at `references/personas/` and `references/adapters/`. The exclusion pattern would need to match `references/personas/`, not just `personas/`. Meanwhile, `references/` as a whole is not excluded, so users could navigate into it and export internal reference files.
+- **Suggested fix**: Exclude `references/` entirely from the exportable list, or use full relative paths in the exclusion list (`references/personas/`, `references/adapters/`).
+
+### Finding P5-21: export wikilink adaptation silently drops link context
+- **Severity**: `friction`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/export/SKILL.md`, Step 3
+- **Description**: When a wikilink target has not been exported, the link is stripped to plain text (e.g., `[[my-note]]` becomes `my-note`). The user's export has no indication that these were originally links. If the user later exports the linked note, the earlier export is not updated — the plain-text reference remains stale.
+- **Suggested fix**: Preserve stripped wikilinks with a visual marker (e.g., `*my-note*` or `my-note [not exported]`) so the user knows these were links. Optionally, after export, list all unresolved wikilinks and suggest additional notes to export.
+
+### Finding P5-22: export filename collision when different paths share a filename
+- **Severity**: `silent-failure`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/export/SKILL.md`, Step 4
+- **Description**: The destination filename is derived from the source filename only, ignoring the path: `prd/my-feature.md` and `tasks/my-feature.md` both become `x-my-feature.md`. Exporting both would silently overwrite the first with the second (or trigger the overwrite prompt without explaining they are different source files).
+- **Suggested fix**: Include the source directory in the export filename (e.g., `x-prd-my-feature.md`, `x-tasks-my-feature.md`) or detect the collision and warn the user.
+
+### Finding P5-23: export does not handle frontmatter adaptation
+- **Severity**: `friction`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/export/SKILL.md`, Step 3
+- **Description**: Step 3 says "Preserve all other Obsidian-flavored markdown: ... frontmatter." Xavier vault notes use Xavier-specific frontmatter fields (e.g., `type`, `source`, `uid`) from the Zettelkasten schema. These fields are meaningless in the user's personal vault and could interfere with their Obsidian setup (e.g., Dataview queries, templates).
+- **Suggested fix**: Add an option to strip or namespace Xavier-specific frontmatter fields during export, or add an `x-source` field pointing back to the Xavier vault origin.
+
+### Finding P5-24: export `export-show-diff` default false means overwrites happen without visibility
+- **Severity**: `friction`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/export/SKILL.md`, Step 4
+- **Description**: When a destination file already exists, the skill asks the user to confirm overwrite. But with `export-show-diff: false` (the default), the user has no way to see what changed before deciding. They must blindly choose "Overwrite" or "Skip."
+- **Suggested fix**: Default `export-show-diff` to `true`, or at minimum show a brief summary (e.g., "Source was modified on {date}, existing export is from {date}") to help the user decide.
+
+---
+
+### Phase 5 Summary Table
+
+| ID | Title | Severity | Tag |
+|----|-------|----------|-----|
+| P5-1 | babysit reads vault dir without declaring requires | `friction` | `executor-facing` |
+| P5-2 | babysit delegates to loop without transitive shark dependency | `confusion` | `executor-facing` |
+| P5-3 | babysit `git add -u` can stage unrelated changes | `silent-failure` | `user-facing` |
+| P5-4 | babysit has no GitHub API rate-limit handling | `silent-failure` | `user-facing` |
+| P5-5 | babysit lint detection is JS-only but rule is buried | `friction` | `user-facing` |
+| P5-6 | babysit commit message is non-descriptive | `friction` | `user-facing` |
+| P5-7 | add-dep does not update skills-index after creating a skill | `silent-failure` | `executor-facing` |
+| P5-8 | add-dep has no fallback when WebSearch/WebFetch fails | `silent-failure` | `user-facing` |
+| P5-9 | add-dep creates dependency skills alongside command skills | `confusion` | `user-facing` |
+| P5-10 | add-dep does not validate package exists in registry | `friction` | `user-facing` |
+| P5-11 | deps-update has no handling when no lockfile or package.json exists | `confusion` | `user-facing` |
+| P5-12 | deps-update orphan detection conflates command and dependency skills | `confusion` | `user-facing` |
+| P5-13 | deps-update does not handle partial regeneration failure | `silent-failure` | `user-facing` |
+| P5-14 | deps-update confirmation threshold is static at 5 | `friction` | `user-facing` |
+| P5-15 | self-update destroys user-generated dependency skills | `silent-failure` | `user-facing` |
+| P5-16 | self-update has no rollback on partial failure | `silent-failure` | `user-facing` |
+| P5-17 | self-update version comparison is naive string equality | `friction` | `executor-facing` |
+| P5-18 | self-update XAVIER_HOME not resolved consistently | `confusion` | `executor-facing` |
+| P5-19 | self-update does not verify tarball integrity | `friction` | `user-facing` |
+| P5-20 | export exclusion paths don't match actual directory structure | `friction` | `executor-facing` |
+| P5-21 | export wikilink adaptation silently drops link context | `friction` | `user-facing` |
+| P5-22 | export filename collision across source directories | `silent-failure` | `user-facing` |
+| P5-23 | export does not handle frontmatter adaptation | `friction` | `user-facing` |
+| P5-24 | export-show-diff defaults to false, overwrites lack visibility | `friction` | `user-facing` |
+
+**Phase 5 severity breakdown**: 8 silent-failure, 5 confusion, 11 friction
+**Phase 5 tag breakdown**: 16 user-facing, 8 executor-facing
+
+**Cumulative totals (Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5)**: 85 findings — 27 silent-failure, 22 confusion, 36 friction
