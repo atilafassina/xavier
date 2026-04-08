@@ -51,11 +51,19 @@ echo ""
 # 1. Remove ~/.agents/skills/xavier symlink
 remove_link "$HOME/.agents/skills/xavier"
 
-# 2. Remove ~/.claude/commands/xavier.md symlink and /x alias
+# 2. Remove ~/.claude/commands/xavier.md symlink and /x alias (Claude Code)
 remove_link "$HOME/.claude/commands/xavier.md"
 remove_link "$HOME/.claude/commands/x.md"
 
-# 3. Remove per-skill symlinks in $XAVIER_HOME/skills/
+# 3. Remove ~/.cursor/skills/xavier/SKILL.md (Cursor)
+remove_link "$HOME/.cursor/skills/xavier/SKILL.md"
+if [ -d "$HOME/.cursor/skills/xavier" ] && [ -z "$(ls -A "$HOME/.cursor/skills/xavier" 2>/dev/null)" ]; then
+  rmdir "$HOME/.cursor/skills/xavier"
+  info "Removed empty directory: $HOME/.cursor/skills/xavier"
+  track_removed "$HOME/.cursor/skills/xavier/ (empty directory)"
+fi
+
+# 4. Remove per-skill symlinks in $XAVIER_HOME/skills/
 if [ -d "$XAVIER_HOME/skills" ]; then
   for link in "$XAVIER_HOME/skills/"*; do
     # Guard against empty glob
@@ -70,10 +78,10 @@ else
   track_skipped "$XAVIER_HOME/skills/ (directory not found)"
 fi
 
-# 4. Remove references symlink in $XAVIER_HOME/references
+# 5. Remove references symlink in $XAVIER_HOME/references
 remove_link "$XAVIER_HOME/references"
 
-# 5. Prompt before deleting the vault directory
+# 6. Prompt before deleting the vault directory
 echo ""
 if [ -d "$XAVIER_HOME" ]; then
   warn "The Xavier vault directory still exists at: $XAVIER_HOME"

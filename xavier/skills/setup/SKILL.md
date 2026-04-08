@@ -45,7 +45,7 @@ Run this interview whether this is a fresh setup or a preference update. Use Ask
 
 ## Step 2c: Detect Existing Global Skills
 
-Check if `~/.agents/skills/` or any global skill directories exist. If found, list them and note coexistence — Xavier does not conflict with existing skill installations.
+Check if `~/.agents/skills/`, `~/.claude/commands/`, or `~/.cursor/skills/` directories exist. If found, list them and note coexistence — Xavier does not conflict with existing skill installations.
 
 ## Step 3: Scaffold the Vault
 
@@ -127,40 +127,59 @@ Copy the three default personas from the references directory into the vault:
 
 ### Step 3d: Detect Runtime & Wire Adapter
 
-Detect the active AI agent runtime and install the appropriate adapter:
+Detect the active AI agent runtime and install the appropriate adapter. Xavier supports multiple runtimes — detect all that are available, wire adapters for each, and select a primary.
 
 1. **Detection**: Check which tools are available in the current session:
    - If `Agent` tool AND `Bash` tool are available → runtime is **claude-code**
-   - Otherwise → runtime is **unknown** (warn the user, skip adapter wiring)
+   - If `Task` tool AND `Shell` tool are available → runtime is **cursor**
+   - If neither set of tools is detected → runtime is **unknown** (warn the user, skip adapter wiring)
 
-2. **Wire the adapter**: Copy the adapter files from `~/.xavier/references/adapters/claude-code/` to `~/.xavier/adapters/claude-code/`
+   A session may match only one runtime. Use the first match as the primary adapter.
 
-3. **Update config**: Set the `adapter` field in `~/.xavier/config.md` to the detected runtime name (e.g., `claude-code`)
+2. **Wire adapters**: For each detected runtime, copy the adapter files from `~/.xavier/references/adapters/<runtime>/` to `~/.xavier/adapters/<runtime>/`
 
-4. **Smoke test**: Spawn a trivial agent through the adapter to verify it works:
+3. **Update config**: Set the `adapter` field in `~/.xavier/config.md` to the primary runtime name (e.g., `claude-code` or `cursor`). If multiple runtimes were detected, also set `available-adapters` to the full list.
+
+4. **Smoke test**: Spawn a trivial agent through the detected adapter to verify it works.
+
+   For **claude-code**:
    ```
    spawn(
      task: "Reply with exactly: 'Xavier adapter smoke test passed'",
      options: { name: "xavier smoke test", background: false }
    )
    ```
+
+   For **cursor**:
+   ```
+   spawn(
+     task: "Reply with exactly: 'Xavier adapter smoke test passed'",
+     options: { name: "xavier smoke test", background: false, subagent_type: "generalPurpose" }
+   )
+   ```
+
    If the agent returns the expected output, the adapter is working. Report success. If it fails, warn the user but don't block setup.
 
 ### Step 3e: Register Skill Symlinks
 
-Create symlinks so Xavier is registered as a global skill. Derive the repo path from the skill's own base directory (go up from this skill file through `skills/setup/` to reach the `xavier/` directory, and up one more for the repo root).
+Create symlinks so Xavier is registered as a global skill across all supported runtimes. Derive the repo path from the skill's own base directory (go up from this skill file through `skills/setup/` to reach the `xavier/` directory, and up one more for the repo root).
 
 1. **Symlink 1**: `~/.agents/skills/xavier/` → the `xavier/` directory in the repo
    - Create parent directory `~/.agents/skills/` if it doesn't exist
    - If the symlink already exists, warn the user and skip — do NOT overwrite
    - If it doesn't exist, create it: `ln -s <repo>/xavier ~/.agents/skills/xavier`
 
-2. **Symlink 2**: `~/.claude/commands/xavier.md` → `xavier/SKILL.md` in the repo
+2. **Symlink 2** (Claude Code): `~/.claude/commands/xavier.md` → `xavier/SKILL.md` in the repo
    - Create parent directory `~/.claude/commands/` if it doesn't exist
    - If the symlink already exists, warn the user and skip — do NOT overwrite
    - If it doesn't exist, create it: `ln -s <repo>/xavier/SKILL.md ~/.claude/commands/xavier.md`
 
-3. **Report**: Tell the user what was created and what was skipped.
+3. **Symlink 3** (Cursor): `~/.cursor/skills/xavier/SKILL.md` → `xavier/SKILL.md` in the repo
+   - Create parent directory `~/.cursor/skills/xavier/` if it doesn't exist
+   - If the symlink already exists, warn the user and skip — do NOT overwrite
+   - If it doesn't exist, create it: `ln -s <repo>/xavier/SKILL.md ~/.cursor/skills/xavier/SKILL.md`
+
+4. **Report**: Tell the user what was created and what was skipped.
 
 ### Step 3f: Initialize Git
 

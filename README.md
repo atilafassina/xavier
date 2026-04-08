@@ -1,19 +1,17 @@
-<div align="right">
-  <img src="./docs/xavier.png" width=200 />
-</div>
-
 # Xavier
+
 Self-evolving AI orchestrator.
 
 🔮 codebase **exploration** | dependency **knowledge** | design **interviews** | task **planning** |code **reviews**
 
 ## Installation
+
 ### Prerequisites
 
 - **git** — required for vault initialization and state tracking
 - POSIX (MacOS, Linux, or Windows WSL)
 - **[GitHub CLI (gh)](https://cli.github.com/)**
-
+- At least one supported AI agent runtime (see [Supported Runtimes](#supported-runtimes))
 
 ### Quick Install
 
@@ -37,98 +35,114 @@ bash xavier/install.sh
 
 When installed from source, skills and references are symlinked back to the repo so changes are reflected immediately.
 
+### Supported Runtimes
+
+The installer auto-detects all available runtimes and wires adapters for each. If multiple runtimes are found, the first detected is set as the primary adapter in `config.md` — you can switch by editing the `adapter` field.
+
+| Runtime | Status | Detection | Adapter |
+|---------|--------|-----------|---------|
+| **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** | Full support | `claude` on PATH | `Agent` + `Bash` tools |
+| **[Cursor](https://www.cursor.com/)** | Full support | `cursor` on PATH | `Task` + `Shell` tools |
+| **Codex** | Stub | `codex` on PATH | Not yet available |
+
+Both Claude Code and Cursor can be installed simultaneously — Xavier registers skills in the appropriate paths for each runtime (`~/.claude/commands/` for Claude Code, `~/.cursor/skills/` for Cursor).
+
 ## How It Works
 
  Xavier follows the **Shark pattern**: a central orchestrator that delegates work to concurrent background agents (remoras), never implementing
  anything itself. Results are verified through backpressure — only test, lint, and typecheck output counts as truth.
 
+ A runtime **adapter** layer abstracts the differences between AI agent runtimes. Skills use generic operations (`spawn`, `collect`, `poll`) that the adapter maps to the correct tool for the active runtime — `Agent` for Claude Code, `Task` for Cursor. This means all 14 skills work identically regardless of which runtime you use.
+
  Three pillars drive every Xavier workflow:
 
- ### Personas — Concurrent Specialized Reviewers
+### Personas — Concurrent Specialized Reviewers
 
  When you run `/xavier review`, Xavier spawns **3 reviewer agents in parallel**, each examining your diff through a different lens:
 
- - **Correctness** — bugs, logic errors, edge cases, type safety
- - **Security** — injection, auth, data exposure, CWE references
- - **Performance** — algorithmic complexity, memory, I/O, bundle size
+- **Correctness** — bugs, logic errors, edge cases, type safety
+- **Security** — injection, auth, data exposure, CWE references
+- **Performance** — algorithmic complexity, memory, I/O, bundle size
 
  All three receive the same diff but review independently. Findings are deduplicated, ranked by severity, and synthesized into a single verdict
  (`approve`, `request changes`, or `rethink`). Personas can be customized per-repo by adding `.xavier/personas/` to your project root.
 
- ### Learning — Codebase Exploration Agents
+### Learning — Codebase Exploration Agents
 
  `/xavier learn` spawns **3 research remoras concurrently** to map an unfamiliar codebase:
 
- - **Architecture** — modules, entry points, key patterns, integration boundaries
- - **Decisions** — framework choices, testing strategy, auth, deployment patterns
- - **Dependencies** — all direct/dev packages with consuming modules
+- **Architecture** — modules, entry points, key patterns, integration boundaries
+- **Decisions** — framework choices, testing strategy, auth, deployment patterns
+- **Dependencies** — all direct/dev packages with consuming modules
 
  Notes are written progressively as each remora completes (pilot fish pattern). Monorepos are detected automatically, with per-workspace
  analysis. After learning, Xavier suggests key packages for dedicated dependency-skills (`/xavier add-dep`).
 
- ### Knowledge Base
+### Knowledge Base
 
  Everything Xavier discovers lives in `~/.xavier/` as interconnected Markdown notes:
-
- ```
- ~/.xavier/knowledge/
- ├── repos/{name}/architecture.md    # codebase structure
- ├── repos/{name}/decisions.md       # inferred technical choices
- ├── repos/{name}/dependencies.md    # package catalog
- ├── reviews/                        # review history per repo
- └── teams/{team}/conventions.md     # shared team patterns
- ```
 
  Notes use standardized frontmatter (`repo`, `type`, `tags`, `related` wikilinks) and link to each other for cross-referencing. Review notes
  feed an **active learning loop** — recurring patterns from your last 10 reviews are extracted and injected into future reviewer prompts, so
  Xavier gets sharper over time. The vault is git-tracked and can be exported to Obsidian via `/xavier export`.
 
-
 ## Skills
 
 ### Code Review
 
-| Command | Description |
-|---------|-------------|
-| `/xavier review` | Run Shark-pattern code review on your current diff with 3 concurrent reviewer personas |
-| `/xavier babysit` | Monitor a PR, poll CI status, auto-fix lint failures, and surface review comments |
+
+| Command           | Description                                                                            |
+| ----------------- | -------------------------------------------------------------------------------------- |
+| `/xavier review`  | Run Shark-pattern code review on your current diff with 3 concurrent reviewer personas |
+| `/xavier babysit` | Monitor a PR, poll CI status, auto-fix lint failures, and surface review comments      |
+
 
 ### Design & Planning
 
-| Command | Description |
-|---------|-------------|
-| `/xavier grill` | Interview you about a plan or design until reaching shared understanding |
-| `/xavier prd` | Create a PRD through user interview, codebase exploration, and module design |
-| `/xavier tasks` | Decompose a PRD into phased implementation tasks using tracer-bullet slices |
+
+| Command         | Description                                                                  |
+| --------------- | ---------------------------------------------------------------------------- |
+| `/xavier grill` | Interview you about a plan or design until reaching shared understanding     |
+| `/xavier prd`   | Create a PRD through user interview, codebase exploration, and module design |
+| `/xavier tasks` | Decompose a PRD into phased implementation tasks using tracer-bullet slices  |
+
 
 ### Knowledge
 
-| Command | Description |
-|---------|-------------|
+
+| Command         | Description                                                        |
+| --------------- | ------------------------------------------------------------------ |
 | `/xavier learn` | Explore a codebase and produce knowledge notes in the Xavier vault |
+
 
 ### Dependency Management
 
-| Command | Description |
-|---------|-------------|
-| `/xavier add-dep <package>` | Create a dependency-skill for a Node package with best practices and API patterns |
-| `/xavier remove-dep <package>` | Delete a dependency-skill |
-| `/xavier deps-update` | Scan lockfile and regenerate stale dependency-skills |
+
+| Command                        | Description                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------- |
+| `/xavier add-dep <package>`    | Create a dependency-skill for a Node package with best practices and API patterns |
+| `/xavier remove-dep <package>` | Delete a dependency-skill                                                         |
+| `/xavier deps-update`          | Scan lockfile and regenerate stale dependency-skills                              |
+
 
 ### Execution
 
-| Command | Description |
-|---------|-------------|
+
+| Command        | Description                                                       |
+| -------------- | ----------------------------------------------------------------- |
 | `/xavier loop` | Execute a task file as an autonomous loop using the Shark pattern |
+
 
 ### Vault & Setup
 
-| Command | Description |
-|---------|-------------|
-| `/xavier setup` | Create and configure the Xavier vault |
+
+| Command               | Description                                               |
+| --------------------- | --------------------------------------------------------- |
+| `/xavier setup`       | Create and configure the Xavier vault                     |
 | `/xavier self-update` | Update Xavier skills and references to the latest release |
-| `/xavier export` | Export a vault note to your personal Obsidian vault |
-| `/xavier uninstall` | Remove the Xavier vault and all symlinks |
+| `/xavier export`      | Export a vault note to your personal Obsidian vault       |
+| `/xavier uninstall`   | Remove the Xavier vault and all symlinks                  |
+
 
 ## Usage
 
@@ -186,4 +200,4 @@ Xavier builds on ideas and patterns from these open-source projects:
 
 ## Uninstall
 
-Run `bash uninstall.sh` from the repo, or `/xavier uninstall` from Claude Code.
+Run `bash uninstall.sh` from the repo, or `/xavier uninstall` from your AI agent. The uninstaller removes symlinks for all runtimes (Claude Code, Cursor) and optionally deletes the vault.

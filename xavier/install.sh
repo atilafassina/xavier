@@ -123,41 +123,72 @@ MEMEOF
   info "Vault directory structure created."
 }
 
-# --- Detect runtime ---
-detect_runtime() {
-  info "Detecting AI agent runtime..."
+# --- Detect runtimes (multi-runtime) ---
+detect_runtimes() {
+  info "Detecting AI agent runtimes..."
 
-  # Check for Claude Code
-  if command -v claude >/dev/null 2>&1; then
-    DETECTED_RUNTIME="claude-code"
-    info "Detected: Claude Code"
-    return 0
-  fi
-
-  # Check for Codex (stub)
-  if command -v codex >/dev/null 2>&1; then
-    DETECTED_RUNTIME="codex"
-    warn "Detected: Codex (adapter not yet available — will use stub)"
-    return 0
-  fi
-
+  DETECTED_RUNTIMES=""
   DETECTED_RUNTIME="unknown"
-  warn "No known AI agent runtime detected."
-  warn "Xavier will work but agent spawning will be limited."
-  return 0
+
+  if command -v claude >/dev/null 2>&1; then
+    DETECTED_RUNTIMES="${DETECTED_RUNTIMES} claude-code"
+    info "Detected: Claude Code"
+  fi
+
+  if command -v cursor >/dev/null 2>&1; then
+    DETECTED_RUNTIMES="${DETECTED_RUNTIMES} cursor"
+    info "Detected: Cursor"
+  fi
+
+  if command -v codex >/dev/null 2>&1; then
+    DETECTED_RUNTIMES="${DETECTED_RUNTIMES} codex"
+    warn "Detected: Codex (adapter not yet available — will use stub)"
+  fi
+
+  # Trim leading space
+  DETECTED_RUNTIMES="$(echo "$DETECTED_RUNTIMES" | sed 's/^ //')"
+
+  if [ -z "$DETECTED_RUNTIMES" ]; then
+    warn "No known AI agent runtime detected."
+    warn "Xavier will work but agent spawning will be limited."
+  else
+    # Use the first detected runtime as the primary adapter
+    DETECTED_RUNTIME="$(echo "$DETECTED_RUNTIMES" | awk '{print $1}')"
+    info "Primary runtime: $DETECTED_RUNTIME"
+  fi
 }
 
-# --- Wire adapter ---
-wire_adapter() {
-  if [ "$DETECTED_RUNTIME" = "unknown" ]; then
+# --- Wire adapters for all detected runtimes ---
+wire_adapters() {
+  if [ -z "$DETECTED_RUNTIMES" ]; then
     return 0
   fi
 
-  info "Wiring $DETECTED_RUNTIME adapter..."
-  mkdir -p "$XAVIER_HOME/adapters/$DETECTED_RUNTIME"
+  for runtime in $DETECTED_RUNTIMES; do
+    wire_single_adapter "$runtime"
+  done
 
-  # For claude-code, write the adapter instruction file
-  if [ "$DETECTED_RUNTIME" = "claude-code" ]; then
+  # Update config with primary runtime and list available adapters
+  if command -v sed >/dev/null 2>&1; then
+    sed -i.bak "s/- \*\*adapter\*\*: .*/- **adapter**: $DETECTED_RUNTIME/" "$XAVIER_HOME/config.md" 2>/dev/null && rm -f "$XAVIER_HOME/config.md.bak"
+  fi
+
+  # Append available-adapters line if multiple runtimes detected
+  RUNTIME_COUNT="$(echo "$DETECTED_RUNTIMES" | wc -w | tr -d ' ')"
+  if [ "$RUNTIME_COUNT" -gt 1 ]; then
+    ADAPTERS_LIST="$(echo "$DETECTED_RUNTIMES" | tr ' ' ', ')"
+    if ! grep -q "available-adapters" "$XAVIER_HOME/config.md" 2>/dev/null; then
+      sed -i.bak "s/- \*\*adapter\*\*: .*/- **adapter**: $DETECTED_RUNTIME\n- **available-adapters**: [$ADAPTERS_LIST]/" "$XAVIER_HOME/config.md" 2>/dev/null && rm -f "$XAVIER_HOME/config.md.bak"
+    fi
+  fi
+}
+
+wire_single_adapter() {
+  runtime="$1"
+  info "Wiring $runtime adapter..."
+  mkdir -p "$XAVIER_HOME/adapters/$runtime"
+
+  if [ "$runtime" = "claude-code" ]; then
     cat > "$XAVIER_HOME/adapters/claude-code/adapter.md" << 'ADAPTEREOF'
 ---
 name: claude-code
@@ -178,12 +209,28 @@ Spawn all agents in a single message (parallel tool calls), wait for notificatio
 ADAPTEREOF
   fi
 
-  # Update config with detected runtime
-  if command -v sed >/dev/null 2>&1; then
-    sed -i.bak "s/- \*\*adapter\*\*: .*/- **adapter**: $DETECTED_RUNTIME/" "$XAVIER_HOME/config.md" 2>/dev/null && rm -f "$XAVIER_HOME/config.md.bak"
+  if [ "$runtime" = "cursor" ]; then
+    cat > "$XAVIER_HOME/adapters/cursor/adapter.md" << 'ADAPTEREOF'
+---
+name: cursor
+type: adapter
+runtime: cursor
+---
+
+# Cursor Runtime Adapter
+
+## spawn(task, options) -> handle
+Use the Task tool with subagent_type: "generalPurpose", run_in_background: true. The handle is the task ID.
+
+## poll(handle) -> status
+Use Await(task_id: handle) or read the output_file. Check for exit_code footer to determine completion. Use incremental backoff (2s, 4s, 8s...).
+
+## collect(tasks[]) -> results[]
+Spawn all tasks in a single message (parallel Task tool calls) with run_in_background: true. Poll each handle to completion.
+ADAPTEREOF
   fi
 
-  info "Adapter wired: $DETECTED_RUNTIME"
+  info "Adapter wired: $runtime"
 }
 
 # --- Initialize git ---
@@ -207,7 +254,7 @@ init_git() {
 install_skill() {
   if [ -z "$SCRIPT_DIR" ]; then
     warn "Script was piped (curl | sh) — cannot create skill symlinks."
-    warn "Run /xavier setup from Claude Code to register symlinks, or"
+    warn "Run /xavier setup from your AI agent to register symlinks, or"
     warn "re-run the installer directly: sh /path/to/xavier/install.sh"
     return 0
   fi
@@ -215,18 +262,7 @@ install_skill() {
   info "Registering Xavier skill ($INSTALL_MODE mode)..."
 
   # Symlink 1: ~/.agents/skills/xavier/ -> $SCRIPT_DIR (the xavier/ directory)
-  AGENTS_LINK="$HOME/.agents/skills/xavier"
-  if [ -L "$AGENTS_LINK" ] && [ ! -e "$AGENTS_LINK" ]; then
-    warn "Removing broken symlink: $AGENTS_LINK"
-    rm "$AGENTS_LINK"
-  fi
-  if [ -e "$AGENTS_LINK" ]; then
-    warn "Symlink already exists: $AGENTS_LINK — skipping"
-  else
-    mkdir -p "$HOME/.agents/skills"
-    ln -s "$SCRIPT_DIR" "$AGENTS_LINK"
-    info "Created: $AGENTS_LINK -> $SCRIPT_DIR"
-  fi
+  create_symlink "$HOME/.agents/skills/xavier" "$SCRIPT_DIR" "$HOME/.agents/skills"
 
   # Determine SKILL.md source based on install mode
   if [ "$INSTALL_MODE" = "clone" ]; then
@@ -240,32 +276,38 @@ install_skill() {
     SKILL_SOURCE="$XAVIER_HOME/SKILL.md"
   fi
 
-  # Symlink 2: ~/.claude/commands/xavier.md -> SKILL.md
-  COMMANDS_LINK="$HOME/.claude/commands/xavier.md"
-  if [ -L "$COMMANDS_LINK" ] && [ ! -e "$COMMANDS_LINK" ]; then
-    warn "Removing broken symlink: $COMMANDS_LINK"
-    rm "$COMMANDS_LINK"
-  fi
-  if [ -e "$COMMANDS_LINK" ]; then
-    warn "Symlink already exists: $COMMANDS_LINK — skipping"
-  else
-    mkdir -p "$HOME/.claude/commands"
-    ln -s "$SKILL_SOURCE" "$COMMANDS_LINK"
-    info "Created: $COMMANDS_LINK -> $SKILL_SOURCE"
-  fi
+  # Symlink 2: ~/.claude/commands/xavier.md -> SKILL.md (Claude Code)
+  create_symlink "$HOME/.claude/commands/xavier.md" "$SKILL_SOURCE" "$HOME/.claude/commands"
 
-  # Symlink 3: ~/.claude/commands/x.md -> SKILL.md (short alias)
-  ALIAS_LINK="$HOME/.claude/commands/x.md"
-  if [ -L "$ALIAS_LINK" ] && [ ! -e "$ALIAS_LINK" ]; then
-    warn "Removing broken symlink: $ALIAS_LINK"
-    rm "$ALIAS_LINK"
-  fi
-  if [ -e "$ALIAS_LINK" ]; then
-    warn "Symlink already exists: $ALIAS_LINK — skipping"
+  # Symlink 3: ~/.claude/commands/x.md -> SKILL.md (Claude Code short alias)
+  create_symlink "$HOME/.claude/commands/x.md" "$SKILL_SOURCE" "$HOME/.claude/commands"
+
+  # Symlink 4: ~/.cursor/skills/xavier/SKILL.md -> SKILL.md (Cursor)
+  if [ "$INSTALL_MODE" = "clone" ]; then
+    create_symlink "$HOME/.cursor/skills/xavier/SKILL.md" "$SKILL_SOURCE" "$HOME/.cursor/skills/xavier"
   else
-    mkdir -p "$HOME/.claude/commands"
-    ln -s "$SKILL_SOURCE" "$ALIAS_LINK"
-    info "Created: $ALIAS_LINK -> $SKILL_SOURCE"
+    mkdir -p "$HOME/.cursor/skills/xavier"
+    cp "$SKILL_SOURCE" "$HOME/.cursor/skills/xavier/SKILL.md"
+    info "Copied: $HOME/.cursor/skills/xavier/SKILL.md"
+  fi
+}
+
+# --- Helper: create a symlink with broken-link cleanup ---
+create_symlink() {
+  link_path="$1"
+  target="$2"
+  parent_dir="$3"
+
+  if [ -L "$link_path" ] && [ ! -e "$link_path" ]; then
+    warn "Removing broken symlink: $link_path"
+    rm "$link_path"
+  fi
+  if [ -e "$link_path" ]; then
+    warn "Symlink already exists: $link_path — skipping"
+  else
+    mkdir -p "$parent_dir"
+    ln -s "$target" "$link_path"
+    info "Created: $link_path -> $target"
   fi
 }
 
@@ -343,7 +385,12 @@ print_summary() {
   bold "Xavier installed successfully!"
   echo ""
   info "Vault location: $XAVIER_HOME"
-  info "Runtime: $DETECTED_RUNTIME"
+  if [ -n "$DETECTED_RUNTIMES" ]; then
+    info "Detected runtimes: $DETECTED_RUNTIMES"
+    info "Primary adapter: $DETECTED_RUNTIME"
+  else
+    info "Runtime: none detected"
+  fi
   info "Install mode: $INSTALL_MODE"
   echo ""
 
@@ -358,7 +405,7 @@ print_summary() {
   echo "  ├── config.md"
   echo "  ├── MEMORY.md"
   echo "  ├── personas/"
-  echo "  ├── adapters/$DETECTED_RUNTIME/"
+  echo "  ├── adapters/ (${DETECTED_RUNTIMES:-none})"
   echo "  ├── skills/ ($SKILL_REF_NOTE)"
   echo "  ├── references/ ($SKILL_REF_NOTE)"
   echo "  ├── knowledge/{repos,teams,reviews}/"
@@ -389,13 +436,14 @@ main() {
   fi
 
   DETECTED_RUNTIME="unknown"
+  DETECTED_RUNTIMES=""
 
   if [ "$EXISTING" = "false" ]; then
     scaffold_vault
   fi
 
-  detect_runtime
-  wire_adapter
+  detect_runtimes
+  wire_adapters
 
   if [ "$EXISTING" = "false" ]; then
     init_git

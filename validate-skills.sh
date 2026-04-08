@@ -164,6 +164,55 @@ else
   ERRORS=$((ERRORS + VAULT_PATH_ERRORS))
 fi
 
+# 6. Validate adapter files
+echo ""
+echo "=== Checking adapter files ==="
+ADAPTER_ERRORS=0
+
+for adapter_dir in "$REPO_ROOT"/xavier/references/adapters/*/; do
+  [ -d "$adapter_dir" ] || continue
+  adapter_name="$(basename "$adapter_dir")"
+  adapter_file="$adapter_dir/adapter.md"
+
+  if [ ! -f "$adapter_file" ]; then
+    echo "FAIL: Adapter directory '$adapter_name' has no adapter.md"
+    ADAPTER_ERRORS=$((ADAPTER_ERRORS + 1))
+    continue
+  fi
+
+  # Check required frontmatter keys: name, type, runtime
+  for key in name type runtime; do
+    if ! awk '/^---$/{c++; next} c==1{print}' "$adapter_file" | grep -q "^${key}:"; then
+      echo "FAIL: $adapter_name/adapter.md missing frontmatter key '$key'"
+      ADAPTER_ERRORS=$((ADAPTER_ERRORS + 1))
+    fi
+  done
+
+  # Check required method sections: spawn, collect, poll
+  for method in "spawn" "collect" "poll"; do
+    if ! grep -qi "## ${method}" "$adapter_file"; then
+      echo "FAIL: $adapter_name/adapter.md missing '## ${method}' section"
+      ADAPTER_ERRORS=$((ADAPTER_ERRORS + 1))
+    fi
+  done
+
+  # Check for Tool Dispatch table
+  if ! grep -qi "Tool Dispatch" "$adapter_file"; then
+    echo "FAIL: $adapter_name/adapter.md missing 'Tool Dispatch' section"
+    ADAPTER_ERRORS=$((ADAPTER_ERRORS + 1))
+  fi
+
+  if [ $ADAPTER_ERRORS -eq 0 ]; then
+    echo "PASS: $adapter_name"
+  fi
+done
+
+if [ $ADAPTER_ERRORS -eq 0 ]; then
+  echo "PASS: All adapter files valid"
+else
+  ERRORS=$((ERRORS + ADAPTER_ERRORS))
+fi
+
 echo ""
 if [ $ERRORS -gt 0 ]; then
   echo "FAILED: $ERRORS error(s) found"
