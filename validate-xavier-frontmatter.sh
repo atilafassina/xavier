@@ -58,8 +58,17 @@ for skill_dir in "$SKILLS_DIR"/*/; do
 
   req_valid=true
   while IFS= read -r req; do
-    if ! echo "$VALID_REQUIRES" | grep -qw "$req"; then
-      echo "FAIL: $dir_name/SKILL.md has invalid requires key: '$req'"
+    # Strip :required or :optional annotation before validating key name
+    req_base="$(echo "$req" | sed 's/:required$//;s/:optional$//')"
+    # Validate the annotation itself (only :required or :optional allowed)
+    req_annotation="$(echo "$req" | grep -o ':[a-z]*$' || true)"
+    if [ -n "$req_annotation" ] && [ "$req_annotation" != ":required" ] && [ "$req_annotation" != ":optional" ]; then
+      echo "FAIL: $dir_name/SKILL.md has invalid requires annotation: '$req' (only :required or :optional allowed)"
+      ERRORS=$((ERRORS + 1))
+      req_valid=false
+    fi
+    if ! echo "$VALID_REQUIRES" | grep -qw "$req_base"; then
+      echo "FAIL: $dir_name/SKILL.md has invalid requires key: '$req_base'"
       ERRORS=$((ERRORS + 1))
       req_valid=false
     fi

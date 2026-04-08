@@ -1,6 +1,6 @@
 ---
 name: loop
-requires: [config, shark]
+requires: [config, shark, tasks-index]
 ---
 
 # Loop

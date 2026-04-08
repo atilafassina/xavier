@@ -1,6 +1,6 @@
 ---
 name: export
-requires: [config]
+requires: [config, prd-index, tasks-index, repo-conventions:optional, team-conventions:optional, recurring-patterns:optional]
 ---
 
 # Export

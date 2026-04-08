@@ -1,6 +1,6 @@
 ---
 name: prd
-requires: [config, prd-index]
+requires: [config, prd-index, repo-conventions, team-conventions]
 ---
 
 # PRD

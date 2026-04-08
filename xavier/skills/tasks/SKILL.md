@@ -1,6 +1,6 @@
 ---
 name: tasks
-requires: [config, tasks-index, prd-index]
+requires: [config, tasks-index, prd-index, repo-conventions, team-conventions]
 ---
 
 # Tasks

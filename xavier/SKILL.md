@@ -77,6 +77,22 @@ The following 13 keys are the only valid values in a skill's `requires` list:
 | `deps-index` | List all directories in `<vault>/deps/` |
 | `vault-memory` | Read `<vault>/MEMORY.md` |
 
+### Annotations: required vs optional
+
+Requires keys support `:required` and `:optional` annotations to signal how the router should handle empty resolution:
+
+```yaml
+requires: [config, personas:required, recurring-patterns:optional]
+```
+
+- **Bare keys** (no annotation) default to `:required`.
+- **`:required`** — the router warns when this key resolves to empty context (e.g., directory has no files). The skill still executes, but the user sees a diagnostic.
+- **`:optional`** — the router silently provides an empty result when the key resolves to nothing. No warning.
+
+### Rule: declare all vault-path reads
+
+Skills MUST NOT read vault paths that are not covered by their `requires` list. Every vault directory a skill reads from must have a corresponding requires key declared in the frontmatter. Skills that only WRITE to a vault path (e.g., writing a new file to `tasks/`) do not need the corresponding index key — only skills that READ or LIST from those paths do.
+
 If a `requires` key cannot be resolved (e.g., directory is empty or doesn't exist), provide an empty result for that key — do not fail. The skill decides how to handle missing context.
 
 ---
