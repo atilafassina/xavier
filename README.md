@@ -27,7 +27,7 @@ Clone the repo for a development setup with live symlinks:
 ```sh
 git clone https://github.com/atilafassina/xavier.git
 cd xavier
-bash install.sh
+bash xavier/install.sh
 ```
 
 When installed from source, skills and references are symlinked back to the repo so changes are reflected immediately.
@@ -48,6 +48,12 @@ When installed from source, skills and references are symlinked back to the repo
 | `/xavier grill` | Interview you about a plan or design until reaching shared understanding |
 | `/xavier prd` | Create a PRD through user interview, codebase exploration, and module design |
 | `/xavier tasks` | Decompose a PRD into phased implementation tasks using tracer-bullet slices |
+
+### Knowledge
+
+| Command | Description |
+|---------|-------------|
+| `/xavier learn` | Explore a codebase and produce knowledge notes in the Xavier vault |
 
 ### Dependency Management
 
