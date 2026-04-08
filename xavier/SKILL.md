@@ -37,7 +37,13 @@ Follow these steps exactly for every `/xavier <command>` invocation:
 
 Then stop — do not execute the skill.
 
-**6. Resolve requires**: for each key in the `requires` list, load the corresponding context using the [Requires Vocabulary](#requires-vocabulary) below. Make the resolved context available for the skill's execution.
+**6. Resolve requires**:
+
+**6a. Auto-load config**: Read and parse `<XAVIER_HOME>/config.md`. Make the config context available for all subsequent resolution steps. Validate that the following fields exist: `name`, `teams`, `git-strategy`, `adapter`. Warn (do not fail) on any missing fields.
+
+**6b. Resolve adapter** (if `adapter` is in the requires list): Read the adapter name from the config's `adapter` field. Load the adapter from `<XAVIER_HOME>/references/adapters/<adapter-name>/adapter.md`. This is a sub-step of config resolution — the adapter key depends on the config being loaded first.
+
+**6c. Resolve remaining keys**: For each other key in the `requires` list (excluding `config` and `adapter`, which are already resolved), load the corresponding context using the [Requires Vocabulary](#requires-vocabulary) below. Make all resolved context available for the skill's execution.
 
 **7. Execute inline**: read the skill body (everything after the frontmatter) and follow its instructions directly in the current conversation, with all resolved context available.
 
@@ -58,10 +64,10 @@ The following 13 keys are the only valid values in a skill's `requires` list:
 
 | Key | What to load |
 |-----|-------------|
-| `config` | Read `<vault>/config.md` |
+| `config` | Read `<vault>/config.md` — **auto-loaded** for any skill with non-empty requires |
 | `personas` | Read all `.md` files in `<vault>/references/personas/` (or repo overrides from `.xavier/personas/` if present) |
 | `shark` | Read `<vault>/references/patterns/shark.md` |
-| `adapter` | Read the adapter from `<vault>/references/adapters/` matching the `adapter` field in config |
+| `adapter` | Read the adapter from `<vault>/references/adapters/` matching the `adapter` field in config — resolved as a sub-step of config |
 | `recurring-patterns` | Extract recurring patterns from the 10 most recent review notes in `<vault>/knowledge/reviews/` for the current repo |
 | `team-conventions` | Read files in `<vault>/knowledge/teams/` matching the current repo or team |
 | `repo-conventions` | Read files in `<vault>/knowledge/repos/` matching the current repo |
