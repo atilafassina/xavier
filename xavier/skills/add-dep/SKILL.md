@@ -25,8 +25,8 @@ Create a dependency-skill for a Node package — a self-contained knowledge note
 Spawn an agent to analyze the documentation and produce a dependency-skill:
 
 ```
-Agent(
-  prompt: """
+spawn(
+  task: """
   You are creating a dependency-skill reference for the Node package "{package-name}".
 
   Based on the documentation provided, create a comprehensive but concise reference that includes:
@@ -41,8 +41,7 @@ Agent(
   ## Documentation
   {fetched documentation content}
   """,
-  description: "xavier dep-skill {package-name}",
-  run_in_background: false
+  options: { name: "xavier dep-skill {package-name}", background: false }
 )
 ```
 

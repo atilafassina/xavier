@@ -52,10 +52,9 @@ If pause-before-phase is set and the current iteration enters that phase, stop a
 The shark identifies the current phase's work, then spawns a **single remora** (background agent) to execute it:
 
 ```
-Agent(
-  prompt: "You are executing Phase {N} of a task plan.\n## Task\n{phase description}\n## Acceptance Criteria\n{criteria}\n## Learnings from Prior Iterations\n{learnings}\n\nMake the changes, then report what you did.",
-  description: "xavier loop phase {N}",
-  run_in_background: true
+spawn(
+  task: "You are executing Phase {N} of a task plan.\n## Task\n{phase description}\n## Acceptance Criteria\n{criteria}\n## Learnings from Prior Iterations\n{learnings}\n\nMake the changes, then report what you did.",
+  options: { name: "xavier loop phase {N}", background: true }
 )
 ```
 

@@ -38,13 +38,15 @@ Before starting the interview, spawn research remoras to build a fact base from 
 2. **Spawn research remoras**: Spawn one remora per research axis, all in a **single message** with parallel tool calls using `run_in_background: true`.
 
 ```
-// Spawn all research remoras in ONE message — parallel background agents
-Agent(
-  prompt: "Explore the codebase to answer: {research question}. Repo root: {cwd}. Return a concise factual summary (under 300 words). Do NOT make recommendations — just report what you find.",
-  description: "xavier research: {short label}",
-  run_in_background: true,
-  subagent_type: "Explore"
-)
+// All research remoras spawned concurrently via adapter collect()
+collect([
+  {
+    task: "Explore the codebase to answer: {research question 1}. Repo root: {cwd}. Return a concise factual summary (under 300 words). Do NOT make recommendations — just report what you find.",
+    name: "xavier research: {short label}",
+    subagent_type: "Explore"
+  },
+  // ... one entry per research question
+])
 ```
 
 3. **Collect results**: As each remora completes, record its findings. Once all have reported, compile a **Research Brief** — a structured summary of codebase facts organized by research axis. Keep it under 500 words total.

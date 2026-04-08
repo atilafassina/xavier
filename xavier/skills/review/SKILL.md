@@ -47,22 +47,21 @@ Spawn **3 reviewer agents concurrently** via the runtime adapter. All three must
 The reviewer prompt includes a `## Recurring Patterns` section between the context block and the diff. This section is **only included if patterns were extracted** (i.e., 2+ reviews existed and patterns were found):
 
 ```
-// Spawn all 3 in ONE message — parallel background agents
-Agent(
-  prompt: "You are a code reviewer...\n## Persona\n{persona.md}\n## Context\n{context block}\n## Recurring Patterns\n{patterns, or omit this section entirely}\n## Diff\n{diff}",
-  description: "xavier correctness",
-  run_in_background: true
-)
-Agent(
-  prompt: "You are a code reviewer...\n## Persona\n{persona.md}\n## Context\n{context block}\n## Recurring Patterns\n{patterns, or omit this section entirely}\n## Diff\n{diff}",
-  description: "xavier security",
-  run_in_background: true
-)
-Agent(
-  prompt: "You are a code reviewer...\n## Persona\n{persona.md}\n## Context\n{context block}\n## Recurring Patterns\n{patterns, or omit this section entirely}\n## Diff\n{diff}",
-  description: "xavier performance",
-  run_in_background: true
-)
+// All 3 spawned concurrently via adapter collect()
+collect([
+  {
+    task: "You are a code reviewer...\n## Persona\n{persona.md}\n## Context\n{context block}\n## Recurring Patterns\n{patterns, or omit this section entirely}\n## Diff\n{diff}",
+    name: "xavier correctness"
+  },
+  {
+    task: "You are a code reviewer...\n## Persona\n{persona.md}\n## Context\n{context block}\n## Recurring Patterns\n{patterns, or omit this section entirely}\n## Diff\n{diff}",
+    name: "xavier security"
+  },
+  {
+    task: "You are a code reviewer...\n## Persona\n{persona.md}\n## Context\n{context block}\n## Recurring Patterns\n{patterns, or omit this section entirely}\n## Diff\n{diff}",
+    name: "xavier performance"
+  }
+])
 ```
 
 Each reviewer receives the same diff, context block, and recurring patterns, but reviews through the lens of their persona only. Reviewers should pay extra attention to recurring patterns — these represent issues that keep coming back.

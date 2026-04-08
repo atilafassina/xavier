@@ -12,8 +12,8 @@ The Shark pattern is an orchestration model where a central coordinator (the sha
 
 ## Remora Spawning Rules
 
-- Spawn remoras via the Agent tool with `run_in_background: true`
-- When spawning multiple independent remoras, spawn them all in a **single message** with parallel tool calls
+- Spawn remoras via the adapter's `spawn()` function
+- When spawning multiple independent remoras, use the adapter's `collect()` function to spawn them all concurrently
 - Each remora receives: task description, acceptance criteria, relevant context, and learnings from prior failures
 - Remoras do NOT spawn other remoras — only the shark spawns agents
 - Remoras report what they did, not whether they succeeded — the shark evaluates via backpressure

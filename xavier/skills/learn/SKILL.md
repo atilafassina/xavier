@@ -68,162 +68,161 @@ echo "$SHARK_TASK_HASH"
 
 > **IMPORTANT**: Spawn all 3 research remoras concurrently in a **single message** with parallel tool calls. All three MUST use `run_in_background: true`.
 
+```
+collect([
+  {
+    task: """
+    You are an architecture analyst. Explore the codebase at {repo root} and produce a comprehensive architecture note.
+
+    Investigate:
+    1. **Stack summary** — languages, frameworks, build tools, runtime
+    2. **Module map** — top-level directory structure and what each module/package does. **In monorepo mode**: use workspace packages (from the `workspaces` field in root `package.json`) as the primary modules instead of top-level src directories.
+    3. **Entry points** — main files, CLI entry points, server start files, handler roots
+    4. **Key patterns** — architectural patterns used (MVC, event-driven, plugin system, etc.), state management, error handling conventions
+    5. **Integration boundaries** — external services, APIs consumed/exposed, database connections, message queues
+
+    Write the output as a single Markdown file with Zettelkasten frontmatter. Use this exact frontmatter schema:
+
+    ---
+    repo: {repo-name}
+    type: knowledge
+    created: {ISO date}
+    updated: {ISO date}
+    tags:
+      - architecture
+      - {stack-related tags}
+    related:
+      - "[[knowledge/repos/{repo-name}/decisions]]"
+      - "[[knowledge/repos/{repo-name}/dependencies]]"
+      - "[[knowledge/teams/{team}/conventions]]"
+    ---
+
+    Note: decisions.md and dependencies.md do not exist yet — include the wikilinks anyway so the vault graph connects them when they are created later.
+
+    After the frontmatter, write the body organized under these headings:
+    # Architecture — {repo-name}
+    ## Stack
+    ## Modules
+    ## Entry Points
+    ## Key Patterns
+    ## Integration Boundaries
+
+    Keep it factual and concise. Under 400 lines.
+    """,
+    name: "xavier learn: architecture remora for {repo-name}",
+    subagent_type: "Explore"
+  },
+  {
+    task: """
+    You are a technical decisions analyst. Explore the codebase at {repo root} and produce a decisions knowledge note.
+
+    Investigate:
+    1. **Framework choices** — what frameworks are used and why they were likely chosen
+    2. **Build tool selection** — bundlers, compilers, task runners
+    3. **Testing strategy** — frameworks, patterns, coverage approach
+    4. **Auth approach** — authentication/authorization strategy (if applicable)
+    5. **Deployment patterns** — Dockerfiles, CI config, serverless config
+    6. **Data model decisions** — ORM, schema, migrations
+
+    Write the output as a single Markdown file with Zettelkasten frontmatter. Use this exact frontmatter schema:
+
+    ---
+    repo: {repo-name}
+    type: knowledge
+    created: {ISO date}
+    updated: {ISO date}
+    inferred: true
+    tags:
+      - decisions
+      - {relevant tags}
+    related:
+      - "[[knowledge/repos/{repo-name}/architecture]]"
+      - "[[knowledge/repos/{repo-name}/dependencies]]"
+      - "[[knowledge/teams/{team}/conventions]]"
+    ---
+
+    All decisions are inferred from the codebase, not confirmed by the team — the `inferred: true` field in the frontmatter marks this.
+
+    After the frontmatter, write the body organized as:
+
+    # Decisions — {repo-name}
+
+    ## {Decision Title}
+    **Choice**: what was chosen
+    **Alternatives considered**: likely alternatives (inferred)
+    **Evidence**: files/patterns that reveal this decision
+
+    ...repeat for each decision discovered...
+
+    Keep it factual and concise. Under 400 lines.
+    """,
+    name: "xavier learn: decisions remora for {repo-name}",
+    subagent_type: "Explore"
+  },
+  {
+    task: """
+    You are a dependency analyst. Read all `package.json` files (and any other dependency manifests) in the codebase at {repo root} and produce a comprehensive dependencies note. **In single-package mode**: read the root `package.json`. **In monorepo mode**: focus on root-level shared dependencies here; per-workspace dependencies will be handled separately in Step 7.
+
+    For every direct dependency:
+    - Name
+    - Version
+    - Inferred purpose
+    - Consuming modules (which parts of the codebase import/use it)
+
+    For every direct devDependency:
+    - Name
+    - Version
+    - Inferred purpose
+
+    Write the output as a single Markdown file with Zettelkasten frontmatter. Use this exact frontmatter schema:
+
+    ---
+    repo: {repo-name}
+    type: knowledge
+    created: {ISO date}
+    updated: {ISO date}
+    tags:
+      - dependencies
+      - {relevant tags}
+    related:
+      - "[[knowledge/repos/{repo-name}/architecture]]"
+      - "[[knowledge/repos/{repo-name}/decisions]]"
+      - "[[knowledge/teams/{team}/conventions]]"
+    ---
+
+    After the frontmatter, write the body organized as:
+
+    # Dependencies — {repo-name}
+
+    ## Production Dependencies
+    | Package | Version | Purpose | Consuming Modules |
+    |---------|---------|---------|-------------------|
+    | ...     | ...     | ...     | ...               |
+
+    ## Dev Dependencies
+    | Package | Version | Purpose |
+    |---------|---------|---------|
+    | ...     | ...     | ...     |
+
+    Keep it factual and concise. Under 400 lines.
+    """,
+    name: "xavier learn: dependencies remora for {repo-name}",
+    subagent_type: "Explore"
+  }
+])
+```
+
 ### Architecture Remora
 
-```
-Agent(
-  prompt: """
-  You are an architecture analyst. Explore the codebase at {repo root} and produce a comprehensive architecture note.
-
-  Investigate:
-  1. **Stack summary** — languages, frameworks, build tools, runtime
-  2. **Module map** — top-level directory structure and what each module/package does. **In monorepo mode**: use workspace packages (from the `workspaces` field in root `package.json`) as the primary modules instead of top-level src directories.
-  3. **Entry points** — main files, CLI entry points, server start files, handler roots
-  4. **Key patterns** — architectural patterns used (MVC, event-driven, plugin system, etc.), state management, error handling conventions
-  5. **Integration boundaries** — external services, APIs consumed/exposed, database connections, message queues
-
-  Write the output as a single Markdown file with Zettelkasten frontmatter. Use this exact frontmatter schema:
-
-  ---
-  repo: {repo-name}
-  type: knowledge
-  created: {ISO date}
-  updated: {ISO date}
-  tags:
-    - architecture
-    - {stack-related tags}
-  related:
-    - "[[knowledge/repos/{repo-name}/decisions]]"
-    - "[[knowledge/repos/{repo-name}/dependencies]]"
-    - "[[knowledge/teams/{team}/conventions]]"
-  ---
-
-  Note: decisions.md and dependencies.md do not exist yet — include the wikilinks anyway so the vault graph connects them when they are created later.
-
-  After the frontmatter, write the body organized under these headings:
-  # Architecture — {repo-name}
-  ## Stack
-  ## Modules
-  ## Entry Points
-  ## Key Patterns
-  ## Integration Boundaries
-
-  Keep it factual and concise. Under 400 lines.
-  """,
-  description: "xavier learn: architecture remora for {repo-name}",
-  run_in_background: true,
-  subagent_type: "Explore"
-)
-```
+The first entry in the `collect()` array above.
 
 ### Decisions Remora
 
-```
-Agent(
-  prompt: """
-  You are a technical decisions analyst. Explore the codebase at {repo root} and produce a decisions knowledge note.
-
-  Investigate:
-  1. **Framework choices** — what frameworks are used and why they were likely chosen
-  2. **Build tool selection** — bundlers, compilers, task runners
-  3. **Testing strategy** — frameworks, patterns, coverage approach
-  4. **Auth approach** — authentication/authorization strategy (if applicable)
-  5. **Deployment patterns** — Dockerfiles, CI config, serverless config
-  6. **Data model decisions** — ORM, schema, migrations
-
-  Write the output as a single Markdown file with Zettelkasten frontmatter. Use this exact frontmatter schema:
-
-  ---
-  repo: {repo-name}
-  type: knowledge
-  created: {ISO date}
-  updated: {ISO date}
-  inferred: true
-  tags:
-    - decisions
-    - {relevant tags}
-  related:
-    - "[[knowledge/repos/{repo-name}/architecture]]"
-    - "[[knowledge/repos/{repo-name}/dependencies]]"
-    - "[[knowledge/teams/{team}/conventions]]"
-  ---
-
-  All decisions are inferred from the codebase, not confirmed by the team — the `inferred: true` field in the frontmatter marks this.
-
-  After the frontmatter, write the body organized as:
-
-  # Decisions — {repo-name}
-
-  ## {Decision Title}
-  **Choice**: what was chosen
-  **Alternatives considered**: likely alternatives (inferred)
-  **Evidence**: files/patterns that reveal this decision
-
-  ...repeat for each decision discovered...
-
-  Keep it factual and concise. Under 400 lines.
-  """,
-  description: "xavier learn: decisions remora for {repo-name}",
-  run_in_background: true,
-  subagent_type: "Explore"
-)
-```
+The second entry in the `collect()` array above.
 
 ### Dependencies Remora
 
-```
-Agent(
-  prompt: """
-  You are a dependency analyst. Read all `package.json` files (and any other dependency manifests) in the codebase at {repo root} and produce a comprehensive dependencies note. **In single-package mode**: read the root `package.json`. **In monorepo mode**: focus on root-level shared dependencies here; per-workspace dependencies will be handled separately in Step 7.
-
-  For every direct dependency:
-  - Name
-  - Version
-  - Inferred purpose
-  - Consuming modules (which parts of the codebase import/use it)
-
-  For every direct devDependency:
-  - Name
-  - Version
-  - Inferred purpose
-
-  Write the output as a single Markdown file with Zettelkasten frontmatter. Use this exact frontmatter schema:
-
-  ---
-  repo: {repo-name}
-  type: knowledge
-  created: {ISO date}
-  updated: {ISO date}
-  tags:
-    - dependencies
-    - {relevant tags}
-  related:
-    - "[[knowledge/repos/{repo-name}/architecture]]"
-    - "[[knowledge/repos/{repo-name}/decisions]]"
-    - "[[knowledge/teams/{team}/conventions]]"
-  ---
-
-  After the frontmatter, write the body organized as:
-
-  # Dependencies — {repo-name}
-
-  ## Production Dependencies
-  | Package | Version | Purpose | Consuming Modules |
-  |---------|---------|---------|-------------------|
-  | ...     | ...     | ...     | ...               |
-
-  ## Dev Dependencies
-  | Package | Version | Purpose |
-  |---------|---------|---------|
-  | ...     | ...     | ...     |
-
-  Keep it factual and concise. Under 400 lines.
-  """,
-  description: "xavier learn: dependencies remora for {repo-name}",
-  run_in_background: true,
-  subagent_type: "Explore"
-)
-```
+The third entry in the `collect()` array above.
 
 ## Step 5: Pilot Fish (Progressive Note Writing)
 

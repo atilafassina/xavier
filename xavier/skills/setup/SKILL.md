@@ -146,12 +146,11 @@ Detect the active AI agent runtime and install the appropriate adapter:
 
 3. **Update config**: Set the `adapter` field in `~/.xavier/config.md` to the detected runtime name (e.g., `claude-code`)
 
-4. **Smoke test**: Spawn a trivial background agent through the adapter to verify it works:
+4. **Smoke test**: Spawn a trivial agent through the adapter to verify it works:
    ```
-   Agent(
-     prompt: "Reply with exactly: 'Xavier adapter smoke test passed'",
-     description: "xavier smoke test",
-     run_in_background: false
+   spawn(
+     task: "Reply with exactly: 'Xavier adapter smoke test passed'",
+     options: { name: "xavier smoke test", background: false }
    )
    ```
    If the agent returns the expected output, the adapter is working. Report success. If it fails, warn the user but don't block setup.

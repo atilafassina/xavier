@@ -18,7 +18,24 @@ if [ $ERRORS -eq 0 ]; then
   echo "PASS: No stale plans/ references found"
 fi
 
-# 2. Check frontmatter name matches directory name (xavier sub-skills)
+# 2. Check for raw Agent() calls in SKILL.md files (should use adapter spawn/collect)
+echo ""
+echo "=== Checking for raw Agent() calls ==="
+RAW_AGENT_FOUND=0
+while IFS= read -r skill_file; do
+  if grep -q 'Agent(' "$skill_file"; then
+    echo "FAIL: $skill_file contains raw Agent() call — use adapter spawn()/collect()"
+    RAW_AGENT_FOUND=$((RAW_AGENT_FOUND + 1))
+  fi
+done < <(find "$REPO_ROOT/xavier/skills" -name "SKILL.md" -not -path "*/node_modules/*")
+
+if [ $RAW_AGENT_FOUND -eq 0 ]; then
+  echo "PASS: No raw Agent() calls found in skills"
+else
+  ERRORS=$((ERRORS + RAW_AGENT_FOUND))
+fi
+
+# 3. Check frontmatter name matches directory name (xavier sub-skills)
 echo ""
 echo "=== Checking frontmatter name consistency ==="
 for skill_dir in "$REPO_ROOT"/xavier/skills/*/; do
@@ -38,7 +55,7 @@ for skill_dir in "$REPO_ROOT"/xavier/skills/*/; do
   fi
 done
 
-# 3. Validate xavier sub-skill frontmatter
+# 4. Validate xavier sub-skill frontmatter
 echo ""
 echo "=== Checking xavier sub-skill frontmatter ==="
 if [ -x "$REPO_ROOT/validate-xavier-frontmatter.sh" ]; then
