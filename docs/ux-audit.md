@@ -554,3 +554,207 @@ Phase 3 traces the four core-loop skills (`setup`, `review`, `learn`, `loop`) th
 **Phase 3 tag breakdown**: 5 user-facing, 16 executor-facing
 
 **Cumulative totals (Phase 1 + Phase 2 + Phase 3)**: 43 findings — 14 silent-failure, 13 confusion, 16 friction
+
+---
+
+## Phase 4 — Skills Tier 2 (Planning)
+
+Phase 4 traces the three planning skills (`prd`, `tasks`, `grill`) through happy paths and key failure paths, documenting UX papercuts found via simulated walkthrough.
+
+---
+
+### 4a — prd
+
+**Happy path**: User runs `/xavier prd`. Router resolves `requires: [config, prd-index]`. Step 1 lists vault contents from `~/.xavier/prd/`, `~/.xavier/knowledge/repos/`, and `~/.xavier/knowledge/teams/` for context selection (multiSelect). Step 2 runs the interview: problem statement, codebase exploration, relentless questioning informed by vault context, module design, user quiz. Step 3 writes the PRD to `~/.xavier/prd/<filename>.md` with Zettelkasten frontmatter. The skill reminds the user about `/xavier export`. This path is well-structured with good progressive disclosure.
+
+**Failure path -- no repo context**: Unlike `learn`, the prd skill never runs `git rev-parse` or assumes a git repo. The frontmatter includes `repo: {current repo name}` but the skill does not specify how to resolve the repo name. If run outside a git repo, the executor must improvise a value for the `repo` field.
+
+**Failure path -- user abandons interview mid-way**: The interview in Step 2 has 5 sub-steps with user interaction at each. If the user abandons mid-interview (closes session, stops responding), there is no checkpoint or draft mechanism. All interview context is lost. The user must restart from scratch.
+
+**Failure path -- vault path missing / no existing notes**: Step 1 point 4 says "If no notes exist in any of these directories, skip this step silently." This is correct and graceful. However, if `~/.xavier/prd/` does not exist as a directory (not just empty), the `prd-index` requires key will attempt to list files in a nonexistent directory. The router says to provide an empty result for unresolvable keys, so this should be handled, but it depends on executor interpretation.
+
+**Failure path -- export fails or export-vault-path not configured**: The prd skill tells the user to run `/xavier export prd/<filename>`. If the user does and `export-vault-path` is not configured, the export skill handles this gracefully (asks the user). No issue here -- the indirection works.
+
+### Finding P4-1: PRD skill does not specify how to resolve `repo` for frontmatter
+- **Severity**: `silent-failure`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/prd/SKILL.md`, Step 3 (frontmatter template)
+- **Description**: The frontmatter template includes `repo: {current repo name}` but the skill never specifies how to determine the current repo name. Other skills like `learn` explicitly run `basename $(git rev-parse --show-toplevel)`. The prd skill has no equivalent instruction. If run outside a git repo, the executor has no guidance. If run inside a git repo, the executor must guess to use `git rev-parse`. This is a small ambiguity, but given that `repo` is a required Zettelkasten field, it should have an explicit resolution mechanism.
+- **Suggested fix**: Add a Step 0 or early instruction: "Resolve the current repo name via `basename $(git rev-parse --show-toplevel)`. If not in a git repo, ask the user for a project name to use in frontmatter."
+
+### Finding P4-2: PRD interview has no checkpoint or draft mechanism -- abandoned sessions lose all progress
+- **Severity**: `friction`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/prd/SKILL.md`, Step 2 (Interview)
+- **Description**: The interview flow has 5 sub-steps, each requiring user interaction: problem statement, codebase exploration, relentless questioning, module design, and user quiz. This can be a lengthy process. If the user's session ends mid-interview (network drop, terminal close, context window exhaustion), all gathered information is lost. There is no intermediate draft written to the vault, no session checkpoint, and no resume mechanism. By contrast, the loop skill has explicit state persistence and resume capability (Step 2 point 4). The prd skill's interview is equally long-running but has no equivalent.
+- **Suggested fix**: After the problem statement and codebase exploration steps (Steps 2.1 and 2.2), write a draft to `~/.xavier/prd/_draft-<name>.md` with collected information so far. On re-invocation, check for existing drafts and offer to resume. Clean up drafts when the final PRD is written.
+
+### Finding P4-3: PRD references Zettelkasten format via prose path but does not declare it in `requires`
+- **Severity**: `confusion`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/prd/SKILL.md`, Step 3 and frontmatter `requires: [config, prd-index]`
+- **Description**: Step 3 says "The PRD uses Zettelkasten frontmatter (see `~/.xavier/references/formats/zettelkasten.md`)" -- referencing the file by absolute path in prose. But the `requires` list is `[config, prd-index]` with no Zettelkasten entry. This means the Zettelkasten schema is not loaded into the executor's context via the requires system; the executor must follow the prose path hint and read the file manually. This is the same pattern identified in P2-5 (learn) and P2-9 (review): skills reference the Zettelkasten schema without declaring it as a dependency. The prd skill adds a third instance of this drift-prone pattern.
+- **Suggested fix**: Add a `zettelkasten` key to the requires vocabulary (as recommended in P2-5) and add it to prd's `requires` list. Remove the hardcoded path reference from Step 3 prose.
+
+### Finding P4-4: PRD vault context selection reads from three directories but `requires` only resolves `prd-index`
+- **Severity**: `friction`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/prd/SKILL.md`, Step 1; frontmatter `requires: [config, prd-index]`
+- **Description**: Step 1 lists titles from `~/.xavier/prd/` (covered by `prd-index`), `~/.xavier/knowledge/repos/`, and `~/.xavier/knowledge/teams/`. The latter two directories are covered by `repo-conventions` and `team-conventions` in the requires vocabulary, but prd does not declare either in its `requires` list. This means the router does not pre-load knowledge/repos or knowledge/teams content. The skill must read these directories manually during execution, bypassing the requires resolution system. This is inconsistent with `learn` and `review` which declare these dependencies.
+- **Suggested fix**: Add `repo-conventions` and `team-conventions` to prd's `requires` list: `requires: [config, prd-index, repo-conventions, team-conventions]`. Use the resolved context in Step 1 instead of manual directory reads.
+
+### Finding P4-5: PRD `related` field populates wikilinks from Step 1 selection but does not include links discovered during codebase exploration
+- **Severity**: `friction`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/prd/SKILL.md`, Step 3 (frontmatter template, `related` field)
+- **Description**: The frontmatter template says `related: [{wikilinks to vault notes selected in Step 1}]`. This only captures notes the user explicitly selected before the interview began. During Step 2 (codebase exploration and questioning), the executor may discover connections to other vault notes -- for example, a dependency note in `knowledge/repos/` or a prior PRD that was not selected in Step 1. These discovered connections are not captured in the `related` field. The Zettelkasten reference says "The `related` field is the primary mechanism for linking notes -- prefer explicit links over implicit tag-based discovery." By limiting `related` to Step 1 selections, the PRD misses links that emerge during the interview.
+- **Suggested fix**: Instruct the executor to accumulate related links throughout the interview, not just from Step 1. Add to Step 3: "Include wikilinks from Step 1 selections AND any vault notes referenced or discovered during the interview."
+
+---
+
+### 4b — tasks
+
+**Happy path**: User runs `/xavier tasks`. Router resolves `requires: [config, tasks-index, prd-index]`. Step 1 lists PRDs from `~/.xavier/prd/` for selection. Step 2 reads the selected PRD and auto-loads related notes (with a guardrail for 8+ links). Step 3 explores the codebase and detects backpressure commands. Step 4 identifies architectural decisions. Step 5 drafts vertical slices. Step 6 quizzes the user on the breakdown. Step 7 writes the tasks file. Step 8 stops and offers next-step options. This is a well-structured pipeline with good guardrails.
+
+**Failure path -- no PRDs available**: Step 1 lists `.md` files in `~/.xavier/prd/`. If the directory is empty or does not exist, the `prd-index` requires key resolves to an empty list. The skill presents an empty numbered list -- there is nothing to select. The skill has no handling for this case.
+
+**Failure path -- malformed PRD**: Step 2 reads the PRD and checks its `related` field. If the PRD has no frontmatter (was hand-written or corrupted), the `related` field is missing and there are no links to auto-load. The skill should still proceed -- the auto-load is additive, not required. However, Step 2 does not specify what happens when frontmatter is missing.
+
+**Failure path -- quiz loop never converges**: Step 6 says "Iterate until the user approves." There is no maximum iteration count or escape hatch. If the user keeps requesting changes, the loop continues indefinitely. Unlike the loop skill (which has max iterations) and the grill skill (which has convergence detection), the tasks quiz has no bound.
+
+**Failure path -- task file conflicts**: Step 7 writes to `~/.xavier/tasks/<filename>.md`. If a task file with the same name already exists (e.g., from a previous decomposition of the same PRD), the skill has no overwrite guard. The existing file is silently replaced.
+
+### Finding P4-6: Tasks skill has no handling when no PRDs exist
+- **Severity**: `confusion`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/tasks/SKILL.md`, Step 1 (Select PRD)
+- **Description**: Step 1 says "List all `.md` files in `~/.xavier/prd/`... Present as a numbered list using AskUserQuestion." If the prd directory is empty or does not exist, the resolved `prd-index` context is empty. The skill would present an empty list to the user with no explanation. There is no guard saying "If no PRDs exist, inform the user: 'No PRDs found. Run /xavier prd to create one first.' Stop execution." The user sees an empty selection prompt and has no clear path forward.
+- **Suggested fix**: Add a guard at the start of Step 1: "If the resolved `prd-index` context contains no files, tell the user: 'No PRDs found in the vault. Create one first with `/xavier prd`.' Stop execution."
+
+### Finding P4-7: Tasks quiz loop has no iteration limit or escape hatch
+- **Severity**: `friction`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/tasks/SKILL.md`, Step 6 (Quiz the User)
+- **Description**: Step 6 says "Iterate until the user approves." There is no maximum number of iterations, no convergence detection, and no "accept as-is" shortcut. If the user and executor cannot agree on the decomposition (e.g., the user keeps requesting contradictory changes), the loop runs indefinitely, consuming context window tokens. The grill skill (Step 5) has explicit convergence detection ("3 consecutive questions where the user confirms or makes only minor clarifications"). The loop skill has a max-iterations default of 10. The tasks quiz has neither mechanism.
+- **Suggested fix**: Add a soft limit: "After 3 rounds of revision, present the current breakdown with a summary of changes made and ask: 'Shall we finalize this version, or continue refining?' This gives the user an explicit off-ramp without forcing premature acceptance."
+
+### Finding P4-8: Tasks file overwrites existing file with same name without warning
+- **Severity**: `silent-failure`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/tasks/SKILL.md`, Step 7 (Write Tasks File)
+- **Description**: Step 7 writes to `~/.xavier/tasks/<filename>.md` where the filename derives from the source PRD. If the user re-decomposes the same PRD (e.g., after updating it), the tasks file already exists. The skill does not check for an existing file and has no overwrite confirmation. The previous decomposition is silently replaced. By contrast, the export skill (Step 4 point 3) explicitly checks for existing files and asks the user to confirm overwrite. The vault's git history preserves the old version, but the user receives no warning that they are about to replace an existing task list.
+- **Suggested fix**: Before writing, check if the file exists. If so, ask: "A task file for this PRD already exists (created {date}). Overwrite with the new decomposition, or save as `<filename>-v2.md`?"
+
+### Finding P4-9: Tasks `source` wikilink uses PRD filename but filename confirmation happens in prd skill, not tasks
+- **Severity**: `friction`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/tasks/SKILL.md`, Step 7 (frontmatter template, `source` field)
+- **Description**: The tasks frontmatter includes `source: "[[prd/<filename>]]"` linking back to the originating PRD. The `<filename>` must match the actual PRD filename in the vault. But the tasks skill does not specify how to derive this -- it reads the PRD in Step 2 but the filename comes from the `prd-index` listing in Step 1. If the PRD was renamed after creation (manually by the user), or if the user selected a PRD by title rather than filename, the executor must track which file was selected. This is implicitly clear in the happy path but fragile: the wikilink becomes broken if the PRD file is ever moved or renamed.
+- **Suggested fix**: Derive the `source` wikilink from the actual file path read in Step 2 (not the display name from Step 1). Add a note: "The source wikilink uses the PRD's current filename. If the PRD is later renamed, this link will break -- update it manually or re-run `/xavier tasks`."
+
+### Finding P4-10: Tasks requires `tasks-index` but never uses it
+- **Severity**: `friction`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/tasks/SKILL.md`, frontmatter `requires: [config, tasks-index, prd-index]`
+- **Description**: The tasks skill declares `tasks-index` in its requires list. The `tasks-index` key resolves to "List all `.md` files in `<vault>/tasks/` with titles and frontmatter." However, nowhere in the skill's steps does it reference existing task files. Step 1 lists PRDs (using `prd-index`), not tasks. The only scenario where existing tasks would be relevant is the overwrite check (Finding P4-8), which the skill does not perform. The `tasks-index` context is loaded by the router, consuming context tokens, but never read by the skill.
+- **Suggested fix**: Either (a) remove `tasks-index` from the requires list since it is unused, or (b) use it in Step 1 to show which PRDs already have task decompositions (e.g., "PRDs with existing tasks: auth-middleware (created 2026-04-01)") so the user knows before selecting.
+
+### Finding P4-11: Tasks backpressure detection duplicates loop pre-flight logic with no shared reference
+- **Severity**: `confusion`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/tasks/SKILL.md`, Step 3 (backpressure detection table); `xavier/skills/loop/SKILL.md`, Step 2 point 1
+- **Description**: Step 3 contains a table mapping config files to backpressure commands (package.json -> npm test, Cargo.toml -> cargo test, etc.). The loop skill's Step 2 also detects and runs backpressure commands, but its detection logic is embedded in the Shark protocol reference. The tasks skill hardcodes the detection table inline. If a new language or build system is supported, both locations must be updated independently. There is no shared reference for "how to detect backpressure commands from a project." This is similar to the Zettelkasten schema drift problem (P2-5): duplicated knowledge across skills.
+- **Suggested fix**: Extract the backpressure detection table into a shared reference (e.g., `references/patterns/backpressure.md`) and have both tasks and loop reference it. Add a `backpressure` key to the requires vocabulary.
+
+### Finding P4-12: Tasks Step 8 stop guardrail is soft -- no mechanism prevents the executor from continuing
+- **Severity**: `friction`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/tasks/SKILL.md`, Step 8 (STOP guardrail)
+- **Description**: Step 8 includes a `<stop-guardrail>` tag with "You are DONE. Do not write any code." This is a prompt-level instruction with no enforcement. An eager LLM executor may interpret the user's next message (e.g., "looks good, let's go") as permission to start implementing, especially since Step 8 presents "Start immediately: run `/xavier loop`" as an option. The executor might start coding instead of properly handing off to a fresh `/xavier loop` invocation. The review skill has a similar stop boundary but it is at the natural end of the skill. Tasks explicitly offers "start implementing" as a next step, creating tension between the stop guardrail and the suggested action.
+- **Suggested fix**: Strengthen the guardrail: "After presenting options, STOP responding. The user must invoke `/xavier loop` in a new conversation. Do not run loop inline, do not write code, do not explore implementation details even if the user asks." Alternatively, remove the "Start immediately" option since it undermines the clean-context recommendation.
+
+---
+
+### 4c — grill
+
+**Happy path**: User runs `/xavier grill`. Router resolves `requires: [shark, adapter]`. Step 1 checks SHARK_TASK_HASH (unset -- proceed with full flow). Step 2 reads the adapter and asks the user to describe the plan. Step 3 spawns 3-5 research remoras in parallel, collects results, compiles a Research Brief, and presents it to the user. Step 4 runs the interview one question at a time, grounded in the research brief. Step 5 detects convergence (3 consecutive confirms/minor-clarifications) and writes a shared-understanding summary. This is a well-designed flow with good research-first-then-interview structure.
+
+**Failure path -- no topic provided**: Step 2 says "Ask the user to describe the plan or design they want grilled, or read it from a file/PR if they point to one." If the user provides nothing (empty response or vague input like "my project"), the executor must decide whether to proceed with vague research queries or ask again. No minimum-input validation is specified.
+
+**Failure path -- convergence never reached**: Step 5 defines convergence as "3 consecutive questions where the user confirms or makes only minor clarifications." If the user keeps raising new concerns or changing direction, convergence never triggers. Unlike the tasks quiz (which at least implicitly ends when the user says "approved"), the grill interview has no explicit "I'm done" escape besides the convergence heuristic. There is no maximum question count.
+
+**Failure path -- adapter mismatch**: Step 2 says "If no adapter is wired, warn and fall back to inline execution." This is a good degradation path -- the interview works without background agents, just slower. No issue here.
+
+**Failure path -- output location ambiguous**: The grill skill's convergence output (Step 5) says to write a shared-understanding summary, but does not specify where. It is not written to the vault. It exists only in the conversation context.
+
+### Finding P4-13: Grill has no minimum-input validation for the plan description
+- **Severity**: `friction`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/grill/SKILL.md`, Step 2 (Pre-flight, point 2)
+- **Description**: Step 2 says "Ask the user to describe the plan or design they want grilled." If the user provides a one-word answer ("authentication") or an empty response, the executor must generate research axes (Step 3) from insufficient context. The research remoras will produce broad, unfocused results, and the interview will start without a clear scope. There is no instruction to validate the input or ask for more detail before proceeding. By contrast, the prd skill explicitly asks for "a long, detailed description of the problem."
+- **Suggested fix**: Add input validation: "If the user's plan description is under 2 sentences, ask for more detail: 'Can you describe the plan in more detail? What problem does it solve, what approach are you considering, and what are you unsure about?' Do not proceed to research until you have sufficient context to generate focused research axes."
+
+### Finding P4-14: Grill convergence detection has no maximum question count or explicit exit
+- **Severity**: `friction`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/grill/SKILL.md`, Step 5 (implied convergence logic within Step 4)
+- **Description**: The grill skill's interview phase (Step 4) continues until convergence is detected in Step 5: "3 consecutive questions where the user confirms or makes only minor clarifications." There is no maximum question count and no explicit "I'm done" command the user can issue to end the interview early. If the plan is complex and the user keeps providing substantive answers, the interview could consume the entire context window before convergence triggers. The user's only escape is to stop responding or close the session, losing the accumulated shared understanding.
+- **Suggested fix**: Add a dual exit mechanism: (a) a maximum question count (e.g., 20 questions) with a warning at question 15, and (b) an explicit exit: "At any point, the user can say 'wrap up' to skip to the shared-understanding summary with what has been covered so far."
+
+### Finding P4-15: Grill shared-understanding output is not persisted to the vault
+- **Severity**: `silent-failure`
+- **Tag**: `user-facing`
+- **Location**: `xavier/skills/grill/SKILL.md`, Step 5 (convergence output, implied)
+- **Description**: When convergence is reached, the grill skill produces a shared-understanding summary. However, the skill does not specify where this summary is written. It is not saved to `~/.xavier/` or any vault location. The summary exists only in the conversation context and is lost when the session ends. For a planning skill whose purpose is to reach "shared understanding," losing the output when the session closes defeats the purpose. The prd skill writes to `~/.xavier/prd/`, the tasks skill writes to `~/.xavier/tasks/`, but the grill skill writes nowhere.
+- **Suggested fix**: Write the shared-understanding summary to the vault. Either (a) save to `~/.xavier/knowledge/grills/<topic>.md` with Zettelkasten frontmatter, or (b) offer the user a choice: "Save this summary to the vault as a knowledge note? (It can inform future PRDs and reviews via the `related` field.)" At minimum, present the summary in a copy-pasteable format.
+
+### Finding P4-16: Grill requires `[shark, adapter]` but does not require `config`
+- **Severity**: `silent-failure`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/grill/SKILL.md`, frontmatter `requires: [shark, adapter]`
+- **Description**: The grill skill requires `adapter`, and as identified in P1-5, the `adapter` requires key implicitly depends on `config` (it reads the adapter name from config.md). But grill does not declare `config` in its requires list. This means the router resolves `adapter` by implicitly reading config, but the executor has no explicit config context available for other purposes (e.g., reading team name or git-strategy). If the vault gate check (which fires when requires is non-empty) passes based on config.md existence, this works in practice. But the implicit dependency is undocumented and inconsistent with prd (`requires: [config, prd-index]`) and tasks (`requires: [config, tasks-index, prd-index]`) which both explicitly declare `config`.
+- **Suggested fix**: Add `config` to grill's requires list: `requires: [config, shark, adapter]`. This makes the dependency explicit and gives the executor access to config context for the vault commit step.
+
+### Finding P4-17: Grill detect-and-defer checks `SHARK_TASK_HASH` but inherits the unactivated-variable problem from P2-1
+- **Severity**: `silent-failure`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/grill/SKILL.md`, Step 1 (Detect-and-Defer)
+- **Description**: Step 1 runs `echo "$SHARK_TASK_HASH"` to check for nested execution. As identified in P2-1, `SHARK_TASK_HASH` is checked by all Shark-consuming skills but never set by any spawning mechanism. This means the detect-and-defer check in grill will always find the variable unset, and grill will always run the full flow -- even when spawned as a sub-agent by another skill. The inline "act as a simple interviewer" degradation path is dead code. Unlike learn (where detect-and-defer ordering was the problem -- P3-12), grill has the detect-and-defer correctly at Step 1 but the variable itself is never populated.
+- **Suggested fix**: Same as P2-1 -- define who sets `SHARK_TASK_HASH` and how. Until that is resolved, grill's detect-and-defer is non-functional.
+
+### Finding P4-18: Grill research remoras use `Agent()` directly, bypassing the adapter it declares in requires
+- **Severity**: `confusion`
+- **Tag**: `executor-facing`
+- **Location**: `xavier/skills/grill/SKILL.md`, Step 3 (research remora spawn example)
+- **Description**: Grill declares `adapter` in its requires list and Step 2 says "Read adapter: Use the resolved `adapter` context to know how to spawn agents." But Step 3's code example directly uses `Agent()` with Claude Code-specific parameters (`run_in_background: true`, `subagent_type: "Explore"`). The skill loads the adapter context but then ignores it, hardcoding the Claude Code Agent tool. This is the same pattern as P2-2 and P3-15. Grill is notable because it is the one skill that explicitly acknowledges the adapter in its pre-flight ("If no adapter is wired, warn and fall back to inline execution") yet still bypasses it in the actual spawning code.
+- **Suggested fix**: Either update the code example to reference `adapter.spawn()` vocabulary, or acknowledge the adapter is documentation-only and remove the pretense of adapter abstraction.
+
+---
+
+## Phase 4 Summary
+
+| ID | Title | Severity | Tag |
+|----|-------|----------|-----|
+| P4-1 | PRD does not specify how to resolve `repo` for frontmatter | `silent-failure` | `executor-facing` |
+| P4-2 | PRD interview has no checkpoint or draft mechanism | `friction` | `user-facing` |
+| P4-3 | PRD references Zettelkasten via prose path, not requires | `confusion` | `executor-facing` |
+| P4-4 | PRD reads 3 directories but only requires `prd-index` | `friction` | `executor-facing` |
+| P4-5 | PRD `related` field misses links discovered during interview | `friction` | `executor-facing` |
+| P4-6 | Tasks has no handling when no PRDs exist | `confusion` | `user-facing` |
+| P4-7 | Tasks quiz loop has no iteration limit or escape hatch | `friction` | `user-facing` |
+| P4-8 | Tasks file overwrites existing file without warning | `silent-failure` | `user-facing` |
+| P4-9 | Tasks `source` wikilink derivation is implicit and fragile | `friction` | `executor-facing` |
+| P4-10 | Tasks requires `tasks-index` but never uses it | `friction` | `executor-facing` |
+| P4-11 | Tasks backpressure detection duplicates loop logic with no shared reference | `confusion` | `executor-facing` |
+| P4-12 | Tasks stop guardrail is soft with no enforcement | `friction` | `executor-facing` |
+| P4-13 | Grill has no minimum-input validation for plan description | `friction` | `user-facing` |
+| P4-14 | Grill convergence has no max question count or explicit exit | `friction` | `user-facing` |
+| P4-15 | Grill shared-understanding output not persisted to vault | `silent-failure` | `user-facing` |
+| P4-16 | Grill requires `adapter` but not `config` (implicit dependency) | `silent-failure` | `executor-facing` |
+| P4-17 | Grill detect-and-defer inherits unactivated `SHARK_TASK_HASH` | `silent-failure` | `executor-facing` |
+| P4-18 | Grill spawns agents directly despite requiring adapter | `confusion` | `executor-facing` |
+
+**Phase 4 severity breakdown**: 5 silent-failure, 4 confusion, 9 friction
+**Phase 4 tag breakdown**: 6 user-facing, 12 executor-facing
+
+**Cumulative totals (Phase 1 + Phase 2 + Phase 3 + Phase 4)**: 61 findings — 19 silent-failure, 17 confusion, 25 friction
