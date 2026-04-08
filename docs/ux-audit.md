@@ -1006,3 +1006,193 @@ Phase 5 traces the five maintenance skills (babysit, add-dep, deps-update, self-
 **Phase 5 tag breakdown**: 16 user-facing, 8 executor-facing
 
 **Cumulative totals (Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5)**: 85 findings — 27 silent-failure, 22 confusion, 36 friction
+
+---
+
+# Phase 6 — Skills Tier 4 (Destructive)
+
+Phase 6 audits the two destructive skills (`remove-dep`, `uninstall`) with special focus on confirmation prompts, reversibility, partial-failure handling, and accidental data destruction.
+
+---
+
+## remove-dep
+
+### Happy path
+
+1. User runs `/xavier remove-dep express`.
+2. Router resolves `XAVIER_HOME`, loads `skills-index` (lists `~/.xavier/skills/`), loads `config`.
+3. Step 1 — Validate: `express` was provided, `~/.xavier/skills/express/` exists. Passes.
+4. Step 2 — Remove: Deletes `~/.xavier/skills/express/`. Tells the user it was removed.
+
+### Failure path: package not provided
+
+User runs `/xavier remove-dep` with no argument. Step 1 asks the user for the package name. Reasonable.
+
+### Failure path: skill doesn't exist
+
+User runs `/xavier remove-dep foo`. Step 1 checks `~/.xavier/skills/foo/`, finds it missing, lists available dependency-skills. Reasonable.
+
+### Failure path: user accidentally targets a command skill
+
+User runs `/xavier remove-dep review`. The `skills-index` context lists ALL directories in `~/.xavier/skills/`, which includes both dependency skills (e.g., `express`) and command-skill symlinks (e.g., `review`, `setup`, `grill`). The skill has no check for `type: dependency` in the target's frontmatter. Step 1 would confirm the directory exists. Step 2 would delete it — destroying the `review` symlink (or, worse, the actual directory if symlinks were not set up correctly).
+
+### Failure path: user cancels — no cancellation possible
+
+There is no confirmation prompt at any point. The skill goes straight from validation to deletion.
+
+### Failure path: partial deletion
+
+Step 2 is a single directory delete. No explicit error handling is defined for permission errors or partial removal.
+
+---
+
+### Finding P6-1: remove-dep has no confirmation prompt before deletion
+- **Severity**: `silent-failure`
+- **Tag**: `user-facing`
+- **Location**: `/Users/atila.fassina/Developer/xavier/xavier/skills/remove-dep/SKILL.md`, Step 2
+- **Description**: The skill validates the target exists and immediately deletes it. There is no confirmation prompt, no "are you sure?", and no preview of what will be deleted. For a destructive, irreversible action, this is a significant safeguard gap. A typo or tab-completion accident could silently destroy a dependency skill.
+- **Suggested fix**: Add an explicit confirmation step between validation and deletion: show the skill name, its `type`, `version`, and `created` date from frontmatter, then ask for yes/no confirmation via `AskUserQuestion`.
+
+### Finding P6-2: remove-dep does not distinguish dependency skills from command skills
+- **Severity**: `silent-failure`
+- **Tag**: `user-facing`
+- **Location**: `/Users/atila.fassina/Developer/xavier/xavier/skills/remove-dep/SKILL.md`, Step 1
+- **Description**: The `skills-index` context lists ALL directories in `~/.xavier/skills/`, which includes both dependency skills (`type: dependency` in frontmatter, e.g., `express`) and command-skill symlinks (e.g., `review`, `setup`, `grill`, `uninstall`). The remove-dep skill only checks whether the directory exists — it never reads the target's frontmatter to verify `type: dependency`. A user running `/xavier remove-dep review` would delete the `review` command skill, breaking Xavier's core functionality.
+- **Suggested fix**: In Step 1, after confirming the directory exists, read the target's `SKILL.md` frontmatter and verify `type: dependency`. If the type is not `dependency` (or has no type field), refuse the deletion with a clear message: "'{name}' is a command skill, not a dependency skill. Use `/xavier uninstall` to remove Xavier entirely."
+
+### Finding P6-3: remove-dep "list available dependency-skills" shows command skills too
+- **Severity**: `confusion`
+- **Tag**: `user-facing`
+- **Location**: `/Users/atila.fassina/Developer/xavier/xavier/skills/remove-dep/SKILL.md`, Step 1
+- **Description**: When the target skill doesn't exist, the instruction says "list available dependency-skills." However, the `skills-index` context is an unfiltered directory listing of `~/.xavier/skills/`, which includes command skills like `review`, `setup`, `grill`, etc. The user sees these alongside actual dependency skills and may be confused about what can be removed.
+- **Suggested fix**: Filter the list to only show entries whose `SKILL.md` contains `type: dependency` in frontmatter. Alternatively, label each entry with its type.
+
+### Finding P6-4: remove-dep deletion is irreversible with no backup mechanism
+- **Severity**: `silent-failure`
+- **Tag**: `user-facing`
+- **Location**: `/Users/atila.fassina/Developer/xavier/xavier/skills/remove-dep/SKILL.md`, Step 2
+- **Description**: The skill deletes the directory without any backup. Dependency skills are generated by an agent (via `add-dep`) that fetches documentation, runs web searches, and distills content — this process takes time and network calls. Once deleted, the only recovery is to re-run `/xavier add-dep` from scratch. There is no trash/archive mechanism.
+- **Suggested fix**: Either (a) move the directory to a `.xavier/trash/` folder instead of deleting it, with a note about when it can be permanently purged, or (b) since the vault is a git repo, commit before deletion so the user can recover via `git checkout`.
+
+### Finding P6-5: remove-dep has no error handling for deletion failure
+- **Severity**: `silent-failure`
+- **Tag**: `executor-facing`
+- **Location**: `/Users/atila.fassina/Developer/xavier/xavier/skills/remove-dep/SKILL.md`, Step 2
+- **Description**: Step 2 says "Delete the directory" with no guidance on what to do if the deletion fails (permissions, file locks, etc.). The executor is left to improvise. There is also no post-deletion verification that the directory is actually gone.
+- **Suggested fix**: Add explicit error handling: "If deletion fails, report the error to the user and do not claim the skill was removed. Suggest checking file permissions."
+
+---
+
+## uninstall
+
+### Happy path
+
+1. User runs `/xavier uninstall`.
+2. Step 1 — Vault Deletion: `~/.xavier/` exists. The skill warns the user about what will be lost (review history, dependency-skills, knowledge notes, personas, git history) and states deletion is permanent. Asks for explicit yes/no via `AskUserQuestion`.
+3. User confirms. `~/.xavier/` is deleted recursively.
+4. Step 2 — Remove Symlinks: Checks and removes `~/.agents/skills/xavier/` and `~/.claude/commands/xavier.md` independently.
+5. Step 3 — Summary: Prints what was removed and what was not found.
+
+This is the best-structured destructive skill in Xavier. It has a confirmation prompt, clear warnings, and a summary. However, several issues remain.
+
+### Failure path: vault doesn't exist
+
+Step 1 notes the vault was not found and continues to Step 2. Symlinks are still removed. Reasonable behavior.
+
+### Failure path: user declines
+
+Step 1 explicitly says "Abort the entire uninstall — do NOT proceed to symlink removal." This is correct and well-handled.
+
+### Failure path: symlink already removed
+
+Step 2 checks each symlink independently and notes if not found. Step 3 reports the status. Reasonable.
+
+### Failure path: partial cleanup — vault deleted but symlink removal fails
+
+Step 2 has no error handling for failed removal. If the vault is deleted but symlink removal fails (permissions, etc.), the user is left with dangling symlinks pointing to a deleted vault. The summary step would still report "removed" since the instructions don't distinguish between "attempted removal" and "successful removal."
+
+### Failure path: partial cleanup — one symlink removed, second fails
+
+Step 2 processes symlinks independently, which is good. But there is no error handling per-symlink, so a failure on the second symlink is not surfaced.
+
+---
+
+### Finding P6-6: uninstall has no backup/export prompt before vault deletion
+- **Severity**: `friction`
+- **Tag**: `user-facing`
+- **Location**: `/Users/atila.fassina/Developer/xavier/xavier/skills/uninstall/SKILL.md`, Step 1
+- **Description**: The skill warns that deletion is permanent but does not offer to back up or export the vault first. Xavier has an `/xavier export` skill that could be suggested before deletion. Users who have accumulated review history, dependency skills, and knowledge notes over time may not realize they could export first.
+- **Suggested fix**: Before the confirmation prompt, mention: "You can run `/xavier export` first to save your vault contents. Would you like to proceed with uninstall?"
+
+### Finding P6-7: uninstall has no error handling for partial failure
+- **Severity**: `silent-failure`
+- **Tag**: `executor-facing`
+- **Location**: `/Users/atila.fassina/Developer/xavier/xavier/skills/uninstall/SKILL.md`, Steps 1-2
+- **Description**: If `rm -rf ~/.xavier/` succeeds but symlink removal fails (permissions, non-standard filesystem, etc.), the user is left in a broken state with dangling symlinks. The summary step has no mechanism to distinguish "successfully removed" from "attempted but failed." Similarly, if vault deletion itself partially fails (some files locked), there is no guidance.
+- **Suggested fix**: Wrap each removal in explicit error checking. If any step fails, report the specific error in the summary. Consider reversing the order (remove symlinks first, vault last) so that a failure on the less-critical symlink step does not leave the vault already destroyed.
+
+### Finding P6-8: uninstall does not handle the case where symlinks are regular directories
+- **Severity**: `confusion`
+- **Tag**: `executor-facing`
+- **Location**: `/Users/atila.fassina/Developer/xavier/xavier/skills/uninstall/SKILL.md`, Step 2
+- **Description**: Step 2 says to remove each path "if it exists (file, symlink, or directory)." This is thorough in detection but does not differentiate between a symlink (safe to remove, points to Xavier) and a regular directory that happens to have the same name (may contain user data unrelated to Xavier). An `~/.agents/skills/xavier/` that is a real directory (not a symlink) could contain files the user placed there manually.
+- **Suggested fix**: Check if the path is a symlink first. If it is a symlink, remove it. If it is a regular directory, warn the user: "This path is a regular directory, not a symlink. It may contain files not managed by Xavier. Remove anyway?"
+
+### Finding P6-9: uninstall requires empty array but does not load config
+- **Severity**: `friction`
+- **Tag**: `executor-facing`
+- **Location**: `/Users/atila.fassina/Developer/xavier/xavier/skills/uninstall/SKILL.md`, frontmatter line 3
+- **Description**: The `requires` array is empty (`[]`), meaning the router does not resolve `config` or `skills-index` before running uninstall. This means `XAVIER_HOME` is not explicitly resolved via the standard config mechanism. The skill hardcodes `~/.xavier/` throughout. If a user has a non-default vault location (configured in `config`), uninstall would target the wrong directory — or miss it entirely.
+- **Suggested fix**: Add `config` to the `requires` array and use the resolved `XAVIER_HOME` path instead of hardcoding `~/.xavier/`.
+
+### Finding P6-10: uninstall removal order risks data loss on partial failure
+- **Severity**: `silent-failure`
+- **Tag**: `user-facing`
+- **Location**: `/Users/atila.fassina/Developer/xavier/xavier/skills/uninstall/SKILL.md`, Steps 1-2
+- **Description**: The skill deletes the vault (the largest, most valuable data) first, then removes symlinks. If the process is interrupted after vault deletion but before symlink removal, the user loses their data AND has broken symlinks. The safer order is to remove symlinks first (low-risk, easily re-created) and delete the vault last (high-risk, irreversible).
+- **Suggested fix**: Reorder: Step 1 = remove symlinks, Step 2 = delete vault (with confirmation). This way, if the process fails after symlink removal, the vault is still intact and the user can re-run setup to restore symlinks.
+
+### Finding P6-11: uninstall summary template does not account for errors
+- **Severity**: `confusion`
+- **Tag**: `user-facing`
+- **Location**: `/Users/atila.fassina/Developer/xavier/xavier/skills/uninstall/SKILL.md`, Step 3
+- **Description**: The summary template only has two states per item: "removed" or "not found." There is no state for "removal failed" or "partially removed." If an `rm` command fails due to permissions, the summary would either incorrectly report "removed" (misleading) or the executor would have to improvise a non-templated response.
+- **Suggested fix**: Add a third state to the template: "failed — {reason}". E.g., `~/.xavier/ — failed — permission denied`.
+
+---
+
+## Cross-Cutting Destructive-Action Safeguard Audit
+
+| Safeguard | remove-dep | uninstall |
+|---|---|---|
+| Confirmation prompt | **Missing** | Present (yes/no via AskUserQuestion) |
+| Warning about consequences | **Missing** | Present (lists what will be lost) |
+| Backup/export suggestion | **Missing** | **Missing** |
+| Reversibility mechanism | **None** (no trash, no git commit) | **None** (permanent deletion) |
+| Error handling on failure | **Missing** | **Missing** |
+| Partial-failure recovery | **Not addressed** | **Not addressed** |
+| Type-safety (dep vs command) | **Missing** (can delete command skills) | N/A (deletes everything) |
+| Non-default vault path support | Via config (in requires) | **Hardcoded** `~/.xavier/` |
+
+---
+
+## Phase 6 Summary Table
+
+| ID | Description | Severity | Tag |
+|---|---|---|---|
+| P6-1 | remove-dep has no confirmation prompt before deletion | `silent-failure` | `user-facing` |
+| P6-2 | remove-dep does not distinguish dependency skills from command skills | `silent-failure` | `user-facing` |
+| P6-3 | remove-dep "list available" shows command skills alongside dependency skills | `confusion` | `user-facing` |
+| P6-4 | remove-dep deletion is irreversible with no backup mechanism | `silent-failure` | `user-facing` |
+| P6-5 | remove-dep has no error handling for deletion failure | `silent-failure` | `executor-facing` |
+| P6-6 | uninstall has no backup/export prompt before vault deletion | `friction` | `user-facing` |
+| P6-7 | uninstall has no error handling for partial failure | `silent-failure` | `executor-facing` |
+| P6-8 | uninstall does not differentiate symlinks from regular directories | `confusion` | `executor-facing` |
+| P6-9 | uninstall does not load config, hardcodes vault path | `friction` | `executor-facing` |
+| P6-10 | uninstall removal order risks data loss on partial failure | `silent-failure` | `user-facing` |
+| P6-11 | uninstall summary template has no "failed" state | `confusion` | `user-facing` |
+
+**Phase 6 severity breakdown**: 6 silent-failure, 3 confusion, 2 friction
+**Phase 6 tag breakdown**: 7 user-facing, 4 executor-facing
+
+**Cumulative totals (Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5 + Phase 6)**: 96 findings — 33 silent-failure, 25 confusion, 38 friction
