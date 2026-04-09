@@ -92,8 +92,8 @@ requires: [config, personas:required, recurring-patterns:optional]
 ```
 
 - **Bare keys** (no annotation) default to `:required`.
-- `**:required`** — the router warns when this key resolves to empty context (e.g., directory has no files). The skill still executes, but the user sees a diagnostic.
-- `**:optional**` — the router silently provides an empty result when the key resolves to nothing. No warning.
+- **`:required`** — the router warns when this key resolves to empty context (e.g., directory has no files). The skill still executes, but the user sees a diagnostic.
+- **`:optional`** — the router silently provides an empty result when the key resolves to nothing. No warning.
 
 ### Rule: declare all vault-path reads
 
@@ -107,8 +107,8 @@ If a `requires` key cannot be resolved (e.g., directory is empty or doesn't exis
 
 Shared references used across multiple skills live in `<vault>/references/`:
 
-- `**<vault>/references/patterns/shark.md**` — Shark orchestration protocol (delegates, never implements; backpressure is truth; remora spawning rules)
-- `**<vault>/references/formats/zettelkasten.md**` — Base Zettelkasten frontmatter schema for vault notes
-- `**<vault>/references/personas/**` — Default reviewer personas (correctness, security, performance)
-- `**<vault>/references/adapters/**` — Runtime adapter contracts and implementations
+- **`<vault>/references/patterns/shark.md`** — Shark orchestration protocol (delegates, never implements; backpressure is truth; remora spawning rules)
+- **`<vault>/references/formats/zettelkasten.md`** — Base Zettelkasten frontmatter schema for vault notes
+- **`<vault>/references/personas/`** — Default reviewer personas (correctness, security, performance)
+- **`<vault>/references/adapters/`** — Runtime adapter contracts and implementations
 
