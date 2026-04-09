@@ -21,12 +21,12 @@ Run `git rev-parse --is-inside-work-tree` to verify the current directory is ins
 basename $(git rev-parse --show-toplevel)
 ```
 
-2. Detect monorepo status using the detection table in `references/patterns/monorepo-detection.md`. If a monorepo marker is found, set a `monorepo: true` flag that affects Steps 4 and 7. If no marker matches, set `monorepo: false`.
-3. Check if `<vault>/knowledge/repos/<repo-name>/` already contains notes (look for any `.md` files in the directory).
-4. **If notes exist**: Warn the user that knowledge notes already exist for this repo. Use `AskUserQuestion` to confirm whether to overwrite or abort.
-   - If the user chooses to abort, stop execution and inform them that no changes were made.
-   - If the user chooses to overwrite, proceed to Step 2.
-5. **If no notes exist**: Proceed to Step 2.
+1. Detect monorepo status using the detection table in `references/patterns/monorepo-detection.md`. If a monorepo marker is found, set a `monorepo: true` flag that affects Steps 4 and 7. If no marker matches, set `monorepo: false`.
+2. Check if `<vault>/knowledge/repos/<repo-name>/` already contains notes (look for any `.md` files in the directory).
+3. **If notes exist**: Warn the user that knowledge notes already exist for this repo. Use `AskUserQuestion` to confirm whether to overwrite or abort.
+  - If the user chooses to abort, stop execution and inform them that no changes were made.
+  - If the user chooses to overwrite, proceed to Step 2.
+4. **If no notes exist**: Proceed to Step 2.
 
 ## Step 2: Team Resolution
 
@@ -34,8 +34,8 @@ basename $(git rev-parse --show-toplevel)
 2. Present the list of known teams to the user. Use `AskUserQuestion` to ask which team owns this repository. The user may pick an existing team or type a new team name.
 3. **If the user picks an existing team**: Record the team name for use in later steps.
 4. **If the user types a new team name**:
-   - Append the new team to the `teams` list in config.
-   - Create `<vault>/knowledge/teams/<team>/conventions.md` with this stub content:
+  - Append the new team to the `teams` list in config.
+  - Create `<vault>/knowledge/teams/<team>/conventions.md` with this stub content:
 
 ```markdown
 ---
@@ -256,25 +256,8 @@ After all 3 research remoras from Step 4 have completed and all notes are writte
 1. Read the root `package.json` and extract the `workspaces` field (array of glob patterns).
 2. Resolve workspace patterns to actual package directories (e.g., `packages/*` → `packages/foo`, `packages/bar`).
 3. For each workspace package that has its own `package.json`:
-   - Spawn a background agent to read the package's `package.json` and produce a per-workspace dependencies note. Use `run_in_background: true` and spawn all workspace agents concurrently in a **single message** with parallel tool calls.
-   - Write the note to `<vault>/knowledge/repos/<repo-name>/<package-name>/dependencies.md`
-   - Use the same Zettelkasten frontmatter schema as the repo-level dependencies note, but with the `module` field set to the package name:
-
-   ```yaml
-   ---
-   repo: {repo-name}
-   module: {package-name}
-   type: knowledge
-   created: {ISO date}
-   updated: {ISO date}
-   tags:
-     - dependencies
-     - workspace
-     - {package-name}
-   related:
-     - "[[knowledge/repos/{repo-name}/dependencies]]"
-     - "[[knowledge/repos/{repo-name}/architecture]]"
-   ---
-   ```
-
+  - Spawn a background agent to read the package's `package.json` and produce a per-workspace dependencies note. Use `run_in_background: true` and spawn all workspace agents concurrently in a **single message** with parallel tool calls.
+  - Write the note to `<vault>/knowledge/repos/<repo-name>/<package-name>/dependencies.md`
+  - Use the same Zettelkasten frontmatter schema as the repo-level dependencies note, but with the `module` field set to the package name:
 4. After all workspace dependency notes are written, update the repo-level `dependencies.md` to add wikilinks to each workspace dependencies note in its `related` frontmatter (e.g., `"[[knowledge/repos/{repo-name}/{package-name}/dependencies]]"` for each workspace package).
+

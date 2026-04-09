@@ -25,9 +25,9 @@ The adapter's `spawn()` and `collect()` functions automatically set `SHARK_TASK_
 **Flow:**
 1. The shark spawns a remora via the adapter (`spawn()` or `collect()`)
 2. The adapter injects `SHARK_TASK_HASH` into the remora's prompt preamble
-3. The spawned agent checks the variable before doing anything:
+3. The spawned agent checks the variable before doing anything, using the adapter's `run-command` tool:
 
-```bash
+```
 echo "$SHARK_TASK_HASH"
 ```
 
@@ -38,10 +38,12 @@ This prevents nested shark orchestration: a remora cannot accidentally become a 
 
 ## Evaluation Loop
 
-After each remora completes:
+After spawning a remora, use the adapter's `poll(handle)` to wait for completion. The adapter determines the polling strategy — some runtimes auto-notify, others require explicit polling with backoff.
+
+Once a remora completes:
 
 1. Read remora output
-2. Run all backpressure commands
+2. Run all backpressure commands (via the adapter's `run-command`)
 3. If pass → mark task done, advance to next
 4. If fail → capture error output, spawn new remora with error context and learnings
 5. If 2 consecutive failures with no progress → stop and escalate to user

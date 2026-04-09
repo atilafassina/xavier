@@ -51,11 +51,64 @@ echo ""
 # 1. Remove ~/.agents/skills/xavier symlink
 remove_link "$HOME/.agents/skills/xavier"
 
-# 2. Remove ~/.claude/commands/xavier.md symlink and /x alias
+# 2. Remove ~/.claude/commands/xavier.md symlink and /x alias (Claude Code)
 remove_link "$HOME/.claude/commands/xavier.md"
 remove_link "$HOME/.claude/commands/x.md"
 
-# 3. Remove per-skill symlinks in $XAVIER_HOME/skills/
+# 3. Remove ~/.cursor/skills/xavier/SKILL.md (Cursor)
+remove_link "$HOME/.cursor/skills/xavier/SKILL.md"
+if [ -d "$HOME/.cursor/skills/xavier" ] && [ -z "$(ls -A "$HOME/.cursor/skills/xavier" 2>/dev/null)" ]; then
+  rmdir "$HOME/.cursor/skills/xavier"
+  info "Removed empty directory: $HOME/.cursor/skills/xavier"
+  track_removed "$HOME/.cursor/skills/xavier/ (empty directory)"
+fi
+
+# 4. Remove per-command alias files (Claude Code and Cursor)
+# Read alias prefix from config to find the right files
+ALIAS_PREFIX="xavier"
+if [ -f "$XAVIER_HOME/config.md" ]; then
+  prefix_val="$(grep -o '\*\*alias-prefix\*\*: *[^ ]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
+  if [ -n "$prefix_val" ]; then
+    if printf '%s' "$prefix_val" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+      ALIAS_PREFIX="$prefix_val"
+    else
+      warn "Invalid alias-prefix '$prefix_val' in config — falling back to 'xavier'"
+    fi
+  fi
+fi
+
+for alias_file in "$HOME/.claude/commands"/${ALIAS_PREFIX}-*.md; do
+  [ -e "$alias_file" ] || continue
+  rm "$alias_file"
+  info "Removed alias: $alias_file"
+  track_removed "$alias_file"
+done
+
+for alias_dir in "$HOME/.cursor/skills"/${ALIAS_PREFIX}-*/; do
+  [ -d "$alias_dir" ] || continue
+  rm -rf "$alias_dir"
+  info "Removed alias directory: $alias_dir"
+  track_removed "$alias_dir"
+done
+
+# Clean up aliases from other known prefixes (previous installs)
+for old_prefix in xavier x; do
+  [ "$old_prefix" = "$ALIAS_PREFIX" ] && continue
+  for alias_file in "$HOME/.claude/commands"/${old_prefix}-*.md; do
+    [ -e "$alias_file" ] || continue
+    rm "$alias_file"
+    info "Removed legacy alias: $alias_file"
+    track_removed "$alias_file"
+  done
+  for alias_dir in "$HOME/.cursor/skills"/${old_prefix}-*/; do
+    [ -d "$alias_dir" ] || continue
+    rm -rf "$alias_dir"
+    info "Removed legacy alias directory: $alias_dir"
+    track_removed "$alias_dir"
+  done
+done
+
+# 5. Remove per-skill symlinks in $XAVIER_HOME/skills/
 if [ -d "$XAVIER_HOME/skills" ]; then
   for link in "$XAVIER_HOME/skills/"*; do
     # Guard against empty glob
@@ -70,10 +123,10 @@ else
   track_skipped "$XAVIER_HOME/skills/ (directory not found)"
 fi
 
-# 4. Remove references symlink in $XAVIER_HOME/references
+# 6. Remove references symlink in $XAVIER_HOME/references
 remove_link "$XAVIER_HOME/references"
 
-# 5. Prompt before deleting the vault directory
+# 7. Prompt before deleting the vault directory
 echo ""
 if [ -d "$XAVIER_HOME" ]; then
   warn "The Xavier vault directory still exists at: $XAVIER_HOME"

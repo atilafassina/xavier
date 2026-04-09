@@ -18,6 +18,7 @@ If no subcommand is provided, list available commands by scanning `<XAVIER_HOME>
 Follow these steps exactly for every `/xavier <command>` invocation:
 
 **0. Resolve XAVIER_HOME**: before doing anything else, determine the vault location:
+
 - Run `echo "$XAVIER_HOME"` via Bash.
 - If the variable is set and non-empty, use that value as the vault root.
 - If unset or empty, default to `~/.xavier/`.
@@ -28,11 +29,13 @@ Follow these steps exactly for every `/xavier <command>` invocation:
 **2. Resolve skill file**: look for `<XAVIER_HOME>/skills/<command>/SKILL.md`.
 
 **3. Unknown command gate**: if the skill file does not exist, show an error:
+
 > Skill not found. Run `/xavier setup` to install skills.
 
 **4. Read frontmatter**: parse the skill file's YAML frontmatter to get the `requires` list.
 
 **5. Vault gate**: if `requires` is non-empty (not `[]`), check that `<XAVIER_HOME>/config.md` exists. If it does not exist, tell the user:
+
 > Xavier vault not found. Run `/xavier setup` first.
 
 Then stop — do not execute the skill.
@@ -48,6 +51,7 @@ Then stop — do not execute the skill.
 **7. Execute inline**: read the skill body (everything after the frontmatter) and follow its instructions directly in the current conversation, with all resolved context available.
 
 **8. Vault commit**: after the skill completes successfully, dispatch a vault commit if the vault exists. Read the git strategy from `<XAVIER_HOME>/config.md`:
+
 - **auto-commit** or **batch-commit**: `cd <XAVIER_HOME> && git add -A && git commit -m "<command>: <short context>"`
 - **batch-commit + auto-push**: same as above, then `git push`
 - **user-driven**: skip — the user commits manually
@@ -62,20 +66,22 @@ Skills never mention or execute vault commits — the router owns this exclusive
 
 The following 13 keys are the only valid values in a skill's `requires` list:
 
-| Key | What to load |
-|-----|-------------|
-| `config` | Read `<vault>/config.md` — **auto-loaded** for any skill with non-empty requires |
-| `personas` | Read all `.md` files in `<vault>/references/personas/` (or repo overrides from `.xavier/personas/` if present) |
-| `shark` | Read `<vault>/references/patterns/shark.md` |
-| `adapter` | Read the adapter from `<vault>/references/adapters/` matching the `adapter` field in config — resolved as a sub-step of config |
-| `recurring-patterns` | Extract recurring patterns from the 10 most recent review notes in `<vault>/knowledge/reviews/` for the current repo |
-| `team-conventions` | Read files in `<vault>/knowledge/teams/` matching the current repo or team |
-| `repo-conventions` | Read files in `<vault>/knowledge/repos/` matching the current repo |
-| `prd-index` | List all `.md` files in `<vault>/prd/` with titles and frontmatter |
-| `tasks-index` | List all `.md` files in `<vault>/tasks/` with titles and frontmatter |
-| `skills-index` | List all directories in `<vault>/skills/` |
-| `deps-index` | List all directories in `<vault>/deps/` |
-| `vault-memory` | Read `<vault>/MEMORY.md` |
+
+| Key                  | What to load                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `config`             | Read `<vault>/config.md` — **auto-loaded** for any skill with non-empty requires                                               |
+| `personas`           | Read all `.md` files in `<vault>/references/personas/` (or repo overrides from `.xavier/personas/` if present)                 |
+| `shark`              | Read `<vault>/references/patterns/shark.md`                                                                                    |
+| `adapter`            | Read the adapter from `<vault>/references/adapters/` matching the `adapter` field in config — resolved as a sub-step of config |
+| `recurring-patterns` | Extract recurring patterns from the 10 most recent review notes in `<vault>/knowledge/reviews/` for the current repo           |
+| `team-conventions`   | Read files in `<vault>/knowledge/teams/` matching the current repo or team                                                     |
+| `repo-conventions`   | Read files in `<vault>/knowledge/repos/` matching the current repo                                                             |
+| `prd-index`          | List all `.md` files in `<vault>/prd/` with titles and frontmatter                                                             |
+| `tasks-index`        | List all `.md` files in `<vault>/tasks/` with titles and frontmatter                                                           |
+| `skills-index`       | List all directories in `<vault>/skills/`                                                                                      |
+| `deps-index`         | List all directories in `<vault>/deps/`                                                                                        |
+| `vault-memory`       | Read `<vault>/MEMORY.md`                                                                                                       |
+
 
 ### Annotations: required vs optional
 
@@ -86,8 +92,8 @@ requires: [config, personas:required, recurring-patterns:optional]
 ```
 
 - **Bare keys** (no annotation) default to `:required`.
-- **`:required`** — the router warns when this key resolves to empty context (e.g., directory has no files). The skill still executes, but the user sees a diagnostic.
-- **`:optional`** — the router silently provides an empty result when the key resolves to nothing. No warning.
+- `**:required`** — the router warns when this key resolves to empty context (e.g., directory has no files). The skill still executes, but the user sees a diagnostic.
+- `**:optional**` — the router silently provides an empty result when the key resolves to nothing. No warning.
 
 ### Rule: declare all vault-path reads
 
@@ -101,7 +107,8 @@ If a `requires` key cannot be resolved (e.g., directory is empty or doesn't exis
 
 Shared references used across multiple skills live in `<vault>/references/`:
 
-- **`<vault>/references/patterns/shark.md`** — Shark orchestration protocol (delegates, never implements; backpressure is truth; remora spawning rules)
-- **`<vault>/references/formats/zettelkasten.md`** — Base Zettelkasten frontmatter schema for vault notes
-- **`<vault>/references/personas/`** — Default reviewer personas (correctness, security, performance)
-- **`<vault>/references/adapters/`** — Runtime adapter contracts and implementations
+- `**<vault>/references/patterns/shark.md**` — Shark orchestration protocol (delegates, never implements; backpressure is truth; remora spawning rules)
+- `**<vault>/references/formats/zettelkasten.md**` — Base Zettelkasten frontmatter schema for vault notes
+- `**<vault>/references/personas/**` — Default reviewer personas (correctness, security, performance)
+- `**<vault>/references/adapters/**` — Runtime adapter contracts and implementations
+
