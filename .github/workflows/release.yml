@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Validate version matches tag
         run: |
@@ -29,18 +31,69 @@ jobs:
         run: tar czf xavier.tar.gz xavier/
 
       - name: Extract changelog section for this release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+
+          # Extract raw section from CHANGELOG.md
           awk -v ver="$VERSION" '
             $0 ~ "^## \\[" ver "\\]" { capture=1; next }
             capture && /^## \[/      { exit }
             capture && /^\[.*\]:/    { exit }
             capture                  { print }
-          ' CHANGELOG.md > RELEASE_NOTES.md
-          if [ ! -s RELEASE_NOTES.md ]; then
+          ' CHANGELOG.md > raw_notes.md
+
+          if [ ! -s raw_notes.md ]; then
             echo "::error::No changelog section found for version $VERSION in CHANGELOG.md"
             exit 1
           fi
+
+          # Strip empty sections (### heading followed by blank lines and another ### or EOF)
+          awk '
+            /^### / {
+              heading = $0
+              body = ""
+              next
+            }
+            {
+              if (heading != "") {
+                if (/^[[:space:]]*$/) { next }
+                print heading
+                print ""
+                heading = ""
+              }
+              print
+            }
+          ' raw_notes.md > RELEASE_NOTES.md
+
+          # Append contributor thank-you
+          PREV_TAG="$(git tag --sort=-v:refname | grep -E "^v[0-9]" | sed -n '2p' || true)"
+          REPO_OWNER="$(echo "$GITHUB_REPOSITORY" | cut -d/ -f1)"
+
+          if [ -n "$PREV_TAG" ]; then
+            CONTRIBUTORS="$(gh api "/repos/${GITHUB_REPOSITORY}/compare/${PREV_TAG}...${GITHUB_REF_NAME}" \
+              --jq '[.commits[].author.login // empty] | unique | .[]' 2>/dev/null || true)"
+          else
+            CONTRIBUTORS="$(gh api "/repos/${GITHUB_REPOSITORY}/commits?sha=${GITHUB_REF_NAME}&per_page=100" \
+              --jq '[.[].author.login // empty] | unique | .[]' 2>/dev/null || true)"
+          fi
+
+          # Filter out the repo owner
+          CONTRIBUTORS="$(echo "$CONTRIBUTORS" | grep -v "^${REPO_OWNER}$" || true)"
+
+          if [ -n "$CONTRIBUTORS" ]; then
+            {
+              echo ""
+              echo "---"
+              echo ""
+              echo "Thank you to our contributor(s) for this release:"
+              echo "$CONTRIBUTORS" | while read -r user; do
+                echo "- @${user}"
+              done
+            } >> RELEASE_NOTES.md
+          fi
+
           echo "--- release notes ---"
           cat RELEASE_NOTES.md
 
