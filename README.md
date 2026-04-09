@@ -43,11 +43,13 @@ When installed from source, skills and references are symlinked back to the repo
 
 The installer auto-detects all available runtimes and wires adapters for each. If multiple runtimes are found, the first detected is set as the primary adapter in `config.md` — you can switch by editing the `adapter` field.
 
-| Runtime | Status | Detection | Adapter |
-|---------|--------|-----------|---------|
+
+| Runtime                                                           | Status       | Detection        | Adapter                |
+| ----------------------------------------------------------------- | ------------ | ---------------- | ---------------------- |
 | **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** | Full support | `claude` on PATH | `Agent` + `Bash` tools |
-| **[Cursor](https://www.cursor.com/)** | Full support | `cursor` on PATH | `Task` + `Shell` tools |
-| **Codex** | Stub | `codex` on PATH | Not yet available |
+| **[Cursor](https://www.cursor.com/)**                             | Full support | `cursor` on PATH | `Task` + `Shell` tools |
+| **Codex**                                                         | Stub         | `codex` on PATH  | Not yet available      |
+
 
 Both Claude Code and Cursor can be installed simultaneously — Xavier registers skills in the appropriate paths for each runtime (`~/.claude/commands/` for Claude Code, `~/.cursor/skills/` for Cursor).
 

@@ -41,7 +41,11 @@ Run this interview whether this is a fresh setup or a preference update. Use Ask
    - `batch-commit` (Recommended) — commit at the end of each command
    - `user-driven` — never auto-commit, user commits manually
    - `batch-commit + auto-push` — batch-commit and push to remote
-6. **Export vault path** — "Where is your personal Obsidian vault? (optional — used by /xavier export to sync notes)" This question is **skippable** — if the user skips or leaves it blank, no `## Export` section is written and `/xavier export` will ask for the path later. If provided, store as `export-vault-path` under a `## Export` section in `config.md` (see Step 3a).
+6. **Command aliases** — "Install per-command aliases? This creates individual entries in your agent's command picker for easy discovery. You can always run /xavier <command> without them." Options:
+   - `yes` (Recommended) — install aliases for all 14 commands
+   - `no` — skip aliases, use `/xavier <command>` only
+   If `yes`, ask a follow-up: **Alias prefix** — "What prefix should aliases use? (e.g. 'xavier' for xavier-review, 'x' for x-review, or any short name you prefer. Default: xavier)". Store as `alias-prefix` in config. If skipped or blank, default to `xavier`.
+7. **Export vault path** — "Where is your personal Obsidian vault? (optional — used by /xavier export to sync notes)" This question is **skippable** — if the user skips or leaves it blank, no `## Export` section is written and `/xavier export` will ask for the path later. If provided, store as `export-vault-path` under a `## Export` section in `config.md` (see Step 3a).
 
 ## Step 2c: Detect Existing Global Skills
 
@@ -100,6 +104,8 @@ version: 1
 ## Runtime
 
 - **adapter**: {detected adapter name, e.g. "claude-code" — see Step 3e}
+- **command-aliases**: {yes or no — from interview question 6}
+- **alias-prefix**: {prefix string — from follow-up to question 6, e.g. "xavier", "x", or custom. Omit if command-aliases is no}
 
 ## Export
 

@@ -19,15 +19,11 @@ Check if the user passed a version argument (e.g., `/xavier self-update v0.3.0`)
 
 - **If a version argument was provided**: use that as the target. Strip the `v` prefix if present for comparison purposes.
 - **If no version argument was provided**: fetch the latest release tag from GitHub.
-
   Try `gh` first, fall back to `curl`:
-
   ```bash
   gh api repos/atilafassina/xavier/releases/latest --jq '.tag_name' 2>/dev/null | sed 's/^v//'
   ```
-
   If `gh` fails or is not available:
-
   ```bash
   curl -fsSL https://api.github.com/repos/atilafassina/xavier/releases/latest | grep '"tag_name"' | sed 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/'
   ```

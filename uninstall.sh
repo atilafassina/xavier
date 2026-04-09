@@ -64,18 +64,48 @@ if [ -d "$HOME/.cursor/skills/xavier" ] && [ -z "$(ls -A "$HOME/.cursor/skills/x
 fi
 
 # 4. Remove per-command alias files (Claude Code and Cursor)
-for alias_file in "$HOME/.claude/commands"/xavier-*.md; do
+# Read alias prefix from config to find the right files
+ALIAS_PREFIX="xavier"
+if [ -f "$XAVIER_HOME/config.md" ]; then
+  prefix_val="$(grep -o '\*\*alias-prefix\*\*: *[^ ]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
+  if [ -n "$prefix_val" ]; then
+    if printf '%s' "$prefix_val" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+      ALIAS_PREFIX="$prefix_val"
+    else
+      warn "Invalid alias-prefix '$prefix_val' in config — falling back to 'xavier'"
+    fi
+  fi
+fi
+
+for alias_file in "$HOME/.claude/commands"/${ALIAS_PREFIX}-*.md; do
   [ -e "$alias_file" ] || continue
   rm "$alias_file"
   info "Removed alias: $alias_file"
   track_removed "$alias_file"
 done
 
-for alias_dir in "$HOME/.cursor/skills"/xavier-*/; do
+for alias_dir in "$HOME/.cursor/skills"/${ALIAS_PREFIX}-*/; do
   [ -d "$alias_dir" ] || continue
   rm -rf "$alias_dir"
   info "Removed alias directory: $alias_dir"
   track_removed "$alias_dir"
+done
+
+# Clean up aliases from other known prefixes (previous installs)
+for old_prefix in xavier x; do
+  [ "$old_prefix" = "$ALIAS_PREFIX" ] && continue
+  for alias_file in "$HOME/.claude/commands"/${old_prefix}-*.md; do
+    [ -e "$alias_file" ] || continue
+    rm "$alias_file"
+    info "Removed legacy alias: $alias_file"
+    track_removed "$alias_file"
+  done
+  for alias_dir in "$HOME/.cursor/skills"/${old_prefix}-*/; do
+    [ -d "$alias_dir" ] || continue
+    rm -rf "$alias_dir"
+    info "Removed legacy alias directory: $alias_dir"
+    track_removed "$alias_dir"
+  done
 done
 
 # 5. Remove per-skill symlinks in $XAVIER_HOME/skills/

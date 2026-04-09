@@ -109,6 +109,8 @@ version: 1
 ## Runtime
 
 - **adapter**: (not yet detected)
+- **command-aliases**: yes
+- **alias-prefix**: xavier
 CONFIGEOF
   fi
 
@@ -322,7 +324,35 @@ install_command_aliases() {
     return 0
   fi
 
-  info "Generating per-command aliases..."
+  # Check config for command-aliases preference (default: yes)
+  ALIASES_ENABLED="yes"
+  if [ -f "$XAVIER_HOME/config.md" ]; then
+    config_val="$(grep -o '\*\*command-aliases\*\*: *[a-zA-Z]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
+    config_val="$(echo "$config_val" | tr '[:upper:]' '[:lower:]')"
+    if [ "$config_val" = "no" ] || [ "$config_val" = "false" ]; then
+      ALIASES_ENABLED="no"
+    fi
+  fi
+
+  if [ "$ALIASES_ENABLED" = "no" ]; then
+    info "Command aliases disabled in config — skipping."
+    return 0
+  fi
+
+  # Read alias prefix from config (default: xavier)
+  ALIAS_PREFIX="xavier"
+  if [ -f "$XAVIER_HOME/config.md" ]; then
+    prefix_val="$(grep -o '\*\*alias-prefix\*\*: *[^ ]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
+    if [ -n "$prefix_val" ]; then
+      if printf '%s' "$prefix_val" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+        ALIAS_PREFIX="$prefix_val"
+      else
+        warn "Invalid alias-prefix '$prefix_val' — must be alphanumeric, hyphens, or underscores. Falling back to 'xavier'."
+      fi
+    fi
+  fi
+
+  info "Generating per-command aliases (prefix: $ALIAS_PREFIX)..."
 
   # Command descriptions for alias files
   # Format: command|description
@@ -346,13 +376,13 @@ uninstall|Remove the Xavier vault and all symlinks
   echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
     [ -z "$cmd" ] && continue
 
-    # Claude Code: ~/.claude/commands/xavier-<cmd>.md
-    claude_alias="$HOME/.claude/commands/xavier-${cmd}.md"
+    # Claude Code: ~/.claude/commands/<prefix>-<cmd>.md
+    claude_alias="$HOME/.claude/commands/${ALIAS_PREFIX}-${cmd}.md"
     if [ ! -e "$claude_alias" ]; then
       mkdir -p "$HOME/.claude/commands"
       cat > "$claude_alias" << ALIASEOF
 ---
-name: xavier-${cmd}
+name: ${ALIAS_PREFIX}-${cmd}
 description: ${desc}
 ---
 
@@ -360,13 +390,13 @@ Run /xavier ${cmd} — load and follow the xavier skill router.
 ALIASEOF
     fi
 
-    # Cursor: ~/.cursor/skills/xavier-<cmd>/SKILL.md
-    cursor_alias="$HOME/.cursor/skills/xavier-${cmd}/SKILL.md"
+    # Cursor: ~/.cursor/skills/<prefix>-<cmd>/SKILL.md
+    cursor_alias="$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md"
     if [ ! -e "$cursor_alias" ]; then
-      mkdir -p "$HOME/.cursor/skills/xavier-${cmd}"
+      mkdir -p "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}"
       cat > "$cursor_alias" << ALIASEOF
 ---
-name: xavier-${cmd}
+name: ${ALIAS_PREFIX}-${cmd}
 description: "${desc}. Use when user says /xavier ${cmd}."
 ---
 
