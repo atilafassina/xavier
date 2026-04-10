@@ -1,7 +1,7 @@
 ---
 name: bug
 description: File a bug report as a GitHub issue in the Xavier upstream repository.
-requires: [config, adapter]
+requires: [config]
 ---
 
 # Bug
@@ -26,7 +26,7 @@ If the command fails, stop and tell the user:
 
 Collect the following automatically before prompting the user:
 
-**Xavier version** — read from the resolved `config.md`, find the line matching `**version**:` and extract the value.
+**Xavier version** — read from the resolved `config.md`, find the line matching `**version**:` and extract the value. If the line is missing, use `unknown` as the fallback.
 
 **OS info** — run:
 
@@ -71,10 +71,10 @@ Format the issue body as follows:
 ## Step 5: Create the Issue
 
 ```bash
-gh issue create \
+printf '%s' "<body>" | gh issue create \
   --repo atilafassina/xavier \
   --title "<title>" \
-  --body "<body>" \
+  --body-file - \
   --label bug
 ```
 
