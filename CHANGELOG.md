@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `/xavier feedback` skill to open a GitHub Discussion in the upstream repo, with category selection via GraphQL
+- `/xavier bug` skill to file a GitHub Issue with structured prompts (skill, expected, actual) and auto-appended Xavier version and OS info
+
 ### Changed
 
 ### Deprecated
