@@ -1,7 +1,7 @@
 ---
 name: feedback
 description: Open a discussion in the Xavier upstream repository to share feedback or ideas.
-requires: [config, adapter]
+requires: [config]
 ---
 
 # Feedback
@@ -54,22 +54,27 @@ Ask these as a single prompt — wait for the user's response before proceeding.
 
 ## Step 4: Create the Discussion
 
-Using the selected category's `id`, create the discussion via GraphQL:
+Using the selected category's `id`, create the discussion via GraphQL. Pass dynamic values as GraphQL variables so user-provided text is escaped safely:
 
 ```bash
-gh api graphql -f query='
-mutation {
+gh api graphql \
+  -f query='
+mutation($repositoryId: ID!, $categoryId: ID!, $title: String!, $body: String!) {
   createDiscussion(input: {
-    repositoryId: "<REPO_ID>",
-    categoryId: "<CATEGORY_ID>",
-    title: "<TITLE>",
-    body: "<BODY>"
+    repositoryId: $repositoryId,
+    categoryId: $categoryId,
+    title: $title,
+    body: $body
   }) {
     discussion {
       url
     }
   }
-}'
+}' \
+  -f repositoryId="<REPO_ID>" \
+  -f categoryId="<CATEGORY_ID>" \
+  -f title="<TITLE>" \
+  -f body="<BODY>"
 ```
 
 To get the repository ID (needed for the mutation), run:
