@@ -55,7 +55,7 @@ Or via `curl` if `gh` is unavailable.
 
 Ask the user to confirm before proceeding. Use AskUserQuestion:
 
-> Update Xavier from v{current} to v{target}? This will replace skills/ and references/ in your vault. Your knowledge, config, memory, PRDs, and tasks are preserved. (yes/no)
+> Update Xavier from v{current} to v{target}? This will replace skills/, references/, and distributed deps/ in your vault. Your knowledge, config, memory, PRDs, tasks, and user-created deps are preserved. (yes/no)
 
 If the user declines, abort and report "Update cancelled."
 
@@ -78,7 +78,7 @@ Extract the tarball in the temp directory:
 tar -xzf "$TMPDIR/xavier.tar.gz" -C "$TMPDIR"
 ```
 
-Verify that `$TMPDIR/xavier/skills/` and `$TMPDIR/xavier/references/` exist after extraction. If not, report an error, clean up, and stop.
+Verify that `$TMPDIR/xavier/skills/` and `$TMPDIR/xavier/references/` exist after extraction. If not, report an error, clean up, and stop. The `$TMPDIR/xavier/deps/` directory is optional — if absent, skip dep updates in Step 8.
 
 ## Step 8: Replace Distributable Files
 
@@ -91,6 +91,16 @@ Overwrite distributable files in the vault (`$XAVIER_HOME`). Only replace the fo
 cp -R "$XAVIER_HOME/skills/" "$TMPDIR/skills-backup/"
 cp -R "$XAVIER_HOME/references/" "$TMPDIR/references-backup/"
 [ -f "$XAVIER_HOME/SKILL.md" ] && cp "$XAVIER_HOME/SKILL.md" "$TMPDIR/SKILL-backup.md"
+
+# Back up only the distributed deps that will be replaced (not user-created ones)
+if [ -d "$TMPDIR/xavier/deps" ]; then
+  mkdir -p "$TMPDIR/deps-backup"
+  for dep_dir in "$TMPDIR/xavier/deps/"*/; do
+    [ -d "$dep_dir" ] || continue
+    dep_name="$(basename "$dep_dir")"
+    [ -d "$XAVIER_HOME/deps/$dep_name" ] && cp -R "$XAVIER_HOME/deps/$dep_name" "$TMPDIR/deps-backup/$dep_name"
+  done
+fi
 ```
 
 ```bash
@@ -101,6 +111,17 @@ rm -rf "$XAVIER_HOME/references/"
 # Copy new distributable directories from tarball
 cp -R "$TMPDIR/xavier/skills/" "$XAVIER_HOME/skills/"
 cp -R "$TMPDIR/xavier/references/" "$XAVIER_HOME/references/"
+
+# Merge distributed deps (replace only deps present in tarball, preserve user-created ones)
+if [ -d "$TMPDIR/xavier/deps" ]; then
+  mkdir -p "$XAVIER_HOME/deps"
+  for dep_dir in "$TMPDIR/xavier/deps/"*/; do
+    [ -d "$dep_dir" ] || continue
+    dep_name="$(basename "$dep_dir")"
+    rm -rf "$XAVIER_HOME/deps/$dep_name"
+    cp -R "$dep_dir" "$XAVIER_HOME/deps/$dep_name"
+  done
+fi
 ```
 
 If the tarball contains `xavier/SKILL.md` (the router), copy it to the appropriate location:
@@ -117,6 +138,16 @@ rm -rf "$XAVIER_HOME/skills/" "$XAVIER_HOME/references/"
 cp -R "$TMPDIR/skills-backup/" "$XAVIER_HOME/skills/"
 cp -R "$TMPDIR/references-backup/" "$XAVIER_HOME/references/"
 [ -f "$TMPDIR/SKILL-backup.md" ] && cp "$TMPDIR/SKILL-backup.md" "$XAVIER_HOME/SKILL.md"
+
+# Rollback distributed deps
+if [ -d "$TMPDIR/deps-backup" ]; then
+  for dep_dir in "$TMPDIR/deps-backup/"*/; do
+    [ -d "$dep_dir" ] || continue
+    dep_name="$(basename "$dep_dir")"
+    rm -rf "$XAVIER_HOME/deps/$dep_name"
+    cp -R "$dep_dir" "$XAVIER_HOME/deps/$dep_name"
+  done
+fi
 ```
 
 Report the failure to the user, clean up `$TMPDIR`, and **stop** — do not proceed to version update.
@@ -130,9 +161,10 @@ Report the failure to the user, clean up `$TMPDIR`, and **stop** — do not proc
 - `tasks/`
 - `loop-state/`
 - `shark-state/`
-- `deps/`
 - `babysit-pr/`
 - `.obsidian/`
+
+**Note on `deps/`**: Distributed deps (those present in the release tarball) are replaced during update. User-created deps (added via `/xavier add-dep`) are preserved — only dep directories that exist in the tarball are overwritten.
 
 ## Step 9: Update Version in Config
 
