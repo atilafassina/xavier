@@ -166,6 +166,97 @@ Report the failure to the user, clean up `$TMPDIR`, and **stop** — do not proc
 
 **Note on `deps/`**: Distributed deps (those present in the release tarball) are replaced during update. User-created deps (added via `/xavier add-dep`) are preserved — only dep directories that exist in the tarball are overwritten.
 
+## Step 8a: Regenerate Command Aliases
+
+After replacing distributable files, regenerate the Claude Code command alias files so they stay in sync with the updated skill set. These alias files live at `~/.claude/commands/<prefix>-<cmd>.md` and allow users to invoke Xavier subcommands directly (e.g., `/xavier-review`).
+
+First, read the alias prefix and check whether aliases are enabled:
+
+```bash
+# Read alias prefix from config (default: xavier)
+ALIAS_PREFIX="xavier"
+if [ -f "$XAVIER_HOME/config.md" ]; then
+  prefix_val="$(grep -o '\*\*alias-prefix\*\*: *[^ ]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
+  if [ -n "$prefix_val" ]; then
+    ALIAS_PREFIX="$prefix_val"
+  fi
+fi
+
+# Check if command aliases are disabled
+ALIASES_ENABLED="yes"
+if [ -f "$XAVIER_HOME/config.md" ]; then
+  config_val="$(grep -o '\*\*command-aliases\*\*: *[a-zA-Z]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
+  config_val="$(echo "$config_val" | tr '[:upper:]' '[:lower:]')"
+  if [ "$config_val" = "no" ] || [ "$config_val" = "false" ]; then
+    ALIASES_ENABLED="no"
+  fi
+fi
+```
+
+If `ALIASES_ENABLED` is `"no"`, skip the rest of this step and proceed to Step 9.
+
+Otherwise, write an alias file for each of the following 14 commands:
+
+| Command | Description |
+|---|---|
+| setup | Create and configure the Xavier vault |
+| review | Run Shark-pattern code review with concurrent reviewer personas |
+| babysit | Monitor a PR — poll CI status, auto-fix lint failures, surface review comments |
+| grill | Interview about a plan or design until reaching shared understanding |
+| prd | Create a PRD through user interview, codebase exploration, and module design |
+| tasks | Decompose a PRD into phased implementation tasks |
+| learn | Explore a codebase and produce knowledge notes in the vault |
+| loop | Execute a task file as an autonomous loop using the Shark pattern |
+| add-dep | Create a dependency-skill for a package with best practices and API patterns |
+| remove-dep | Delete a dependency-skill |
+| deps-update | Scan lockfile and regenerate stale dependency-skills |
+| export | Export a vault note to your personal Obsidian vault |
+| self-update | Update Xavier skills and references to the latest release |
+| uninstall | Remove the Xavier vault and all symlinks |
+
+For each command, write the alias file at `~/.claude/commands/${ALIAS_PREFIX}-${cmd}.md` with the following content:
+
+```bash
+COMMANDS="
+setup|Create and configure the Xavier vault
+review|Run Shark-pattern code review with concurrent reviewer personas
+babysit|Monitor a PR — poll CI status, auto-fix lint failures, surface review comments
+grill|Interview about a plan or design until reaching shared understanding
+prd|Create a PRD through user interview, codebase exploration, and module design
+tasks|Decompose a PRD into phased implementation tasks
+learn|Explore a codebase and produce knowledge notes in the vault
+loop|Execute a task file as an autonomous loop using the Shark pattern
+add-dep|Create a dependency-skill for a package with best practices and API patterns
+remove-dep|Delete a dependency-skill
+deps-update|Scan lockfile and regenerate stale dependency-skills
+export|Export a vault note to your personal Obsidian vault
+self-update|Update Xavier skills and references to the latest release
+uninstall|Remove the Xavier vault and all symlinks
+"
+
+mkdir -p "$HOME/.claude/commands"
+
+echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
+  [ -z "$cmd" ] && continue
+  cat > "$HOME/.claude/commands/${ALIAS_PREFIX}-${cmd}.md" << ALIASEOF
+---
+name: ${ALIAS_PREFIX}-${cmd}
+description: ${desc}
+---
+
+This is an alias for \`/xavier ${cmd}\`.
+
+Use the Skill tool to invoke:
+- skill: "xavier"
+- args: "${cmd}" followed by any arguments provided by the user
+
+Do NOT execute this skill directly. Do NOT read vault files. Delegate to the xavier router.
+ALIASEOF
+done
+```
+
+Once all 14 alias files have been written, proceed to Step 9.
+
 ## Step 9: Update Version in Config
 
 Find the line containing `**version**:` in `$XAVIER_HOME/config.md` and update the value to the new version.
