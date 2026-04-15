@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.3.0] - 2026-04-15
+
+### Added
+
 - `/xavier research <topic>` skill — topic-first "teach me" command that spawns parallel remoras across web, internal docs, and codebase to produce a structured digest
 - `research-index` as 14th vocabulary key in the requires system, following the `*-index` pattern
 - `type: research` in the Zettelkasten schema with `topic` and `sources` as type-specific fields
@@ -71,5 +85,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/atilafassina/xavier/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/atilafassina/xavier/releases/tag/v0.2.0
