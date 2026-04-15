@@ -6,7 +6,9 @@
 #
 # Usage:
 #     bash parse.sh extract <file>           # Print final assistant text
-#     bash parse.sh merge <file_a> <file_b>  # Merge findings into debate format
+#     bash parse.sh merge <file_a> <file_b> [label_a] [label_b]
+#                                            # Merge findings into debate format
+#                                            # Optional labels identify models (default: Model A / Model B)
 #
 # Trade-off: merge uses exact file:line matching instead of fuzzy description
 # similarity. Same location = Consensus, unmatched = Blindspot. This is simpler
@@ -120,8 +122,10 @@ parse_findings() {
 merge_and_format() {
     local fa="$1"
     local fb="$2"
+    local label_a="${3:-Model A}"
+    local label_b="${4:-Model B}"
 
-    awk -F'\t' -v file_a="$fa" '
+    awk -F'\t' -v file_a="$fa" -v label_a="$label_a" -v label_b="$label_b" '
     FILENAME == file_a {
         a_n++
         a_sev[a_n]  = $1; a_ref[a_n]  = $2
@@ -158,8 +162,8 @@ merge_and_format() {
             if (a_sev[i] != b_sev[j]) sev = a_sev[i] " / " b_sev[j]
             printf "### [%s] %s\n", sev, a_desc[i]
             printf "**File**: %s\n", a_ref[i]
-            if (a_sug[i] != "") printf "**Suggestion (model A)**: %s\n", a_sug[i]
-            if (b_sug[j] != "") printf "**Suggestion (model B)**: %s\n", b_sug[j]
+            if (a_sug[i] != "") printf "**Suggestion (%s)**: %s\n", label_a, a_sug[i]
+            if (b_sug[j] != "") printf "**Suggestion (%s)**: %s\n", label_b, b_sug[j]
             printf "\n"
         }
         if (!found) print "No consensus findings -- the models did not flag the same locations.\n"
@@ -181,7 +185,7 @@ merge_and_format() {
             found = 1
             printf "### [%s] %s\n", a_sev[i], a_desc[i]
             if (a_ref[i] != "") printf "**File**: %s\n", a_ref[i]
-            printf "**Source**: Model A only\n"
+            printf "**Source**: %s only\n", label_a
             if (a_sug[i] != "") printf "**Suggestion**: %s\n", a_sug[i]
             printf "\n"
         }
@@ -190,7 +194,7 @@ merge_and_format() {
             found = 1
             printf "### [%s] %s\n", b_sev[j], b_desc[j]
             if (b_ref[j] != "") printf "**File**: %s\n", b_ref[j]
-            printf "**Source**: Model B only\n"
+            printf "**Source**: %s only\n", label_b
             if (b_sug[j] != "") printf "**Suggestion**: %s\n", b_sug[j]
             printf "\n"
         }
@@ -210,8 +214,11 @@ case "${1:-}" in
         ;;
     merge)
         [[ -n "${2:-}" ]] && [[ -n "${3:-}" ]] || {
-            echo "Usage: parse.sh merge <file_a> <file_b>" >&2; exit 1
+            echo "Usage: parse.sh merge <file_a> <file_b> [label_a] [label_b]" >&2; exit 1
         }
+
+        LABEL_A="${4:-Model A}"
+        LABEL_B="${5:-Model B}"
 
         tmp_dir=$(mktemp -d)
         trap 'rm -f "$tmp_dir"/* 2>/dev/null; rmdir "$tmp_dir" 2>/dev/null || true' EXIT
@@ -231,14 +238,16 @@ case "${1:-}" in
         [[ -s "$text_a" ]] && parse_findings "$text_a" "$findings_a" || touch "$findings_a"
         [[ -s "$text_b" ]] && parse_findings "$text_b" "$findings_b" || touch "$findings_b"
 
-        merge_and_format "$findings_a" "$findings_b"
+        merge_and_format "$findings_a" "$findings_b" "$LABEL_A" "$LABEL_B"
         ;;
     *)
         echo "Usage: parse.sh {extract|merge} <args...>" >&2
         echo "" >&2
         echo "Commands:" >&2
         echo "  extract <file>           Print final assistant text from stream-json" >&2
-        echo "  merge <file_a> <file_b>  Merge findings into debate format" >&2
+        echo "  merge <file_a> <file_b> [label_a] [label_b]" >&2
+        echo "                           Merge findings into debate format" >&2
+        echo "                           Labels identify models (default: Model A / Model B)" >&2
         exit 1
         ;;
 esac

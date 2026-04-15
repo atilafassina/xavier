@@ -13,6 +13,16 @@ USER_PROMPT="${5:?Missing user prompt}"
 
 TIMEOUT="${XAVIER_TIMEOUT:-1800}"
 
+# Resolve timeout binary (GNU coreutils on macOS installs as gtimeout)
+if command -v timeout &>/dev/null; then
+    TIMEOUT_CMD="timeout"
+elif command -v gtimeout &>/dev/null; then
+    TIMEOUT_CMD="gtimeout"
+else
+    echo "WARNING: neither timeout nor gtimeout found — running without timeout" >&2
+    TIMEOUT_CMD=""
+fi
+
 # Resolve the agent binary
 if [[ -n "${XAVIER_AGENT:-}" ]]; then
     if [[ ! -x "$XAVIER_AGENT" ]]; then
@@ -52,12 +62,21 @@ fi
 # so this flag is required, but it means prompt injection in the diff could
 # trigger tool calls. Callers should scope inputs to trusted repos.
 set +e
-timeout "$TIMEOUT" "$AGENT" -p \
-    --model "$MODEL" \
-    --yolo \
-    --workspace "$WORKSPACE" \
-    --output-format stream-json \
-    "$PROMPT" 2>&1 | tee "$OUTPUT_FILE"
+if [[ -n "$TIMEOUT_CMD" ]]; then
+    "$TIMEOUT_CMD" "$TIMEOUT" "$AGENT" -p \
+        --model "$MODEL" \
+        --yolo \
+        --workspace "$WORKSPACE" \
+        --output-format stream-json \
+        "$PROMPT" 2>&1 | tee "$OUTPUT_FILE"
+else
+    "$AGENT" -p \
+        --model "$MODEL" \
+        --yolo \
+        --workspace "$WORKSPACE" \
+        --output-format stream-json \
+        "$PROMPT" 2>&1 | tee "$OUTPUT_FILE"
+fi
 
 EXIT_CODE=${PIPESTATUS[0]}
 set -e

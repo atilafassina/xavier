@@ -33,9 +33,16 @@ Findings that only one model flagged and the other missed entirely. These are no
 Every finding across all three sections must include:
 
 - **Severity**: `critical`, `high`, `medium`, or `low`
+- **Issue summary**: carried in the `### [severity] ...` heading
 - **File reference**: `file:line` pointing to the relevant code location
-- **Description**: What the issue is and why it matters
 - **Suggestion**: A concrete recommendation for how to address it
+
+Optional fields (may be included when the model provides them, but not required for v1):
+
+- **Description**: Additional detail about what the issue is and why it matters
+- **Scenario**: A concrete failure mode, exploit path, or example impact
+
+The current synthesis/merge pipeline guarantees the heading plus `**File**` and `**Suggestion**`. If a model includes `**Description**` or `**Scenario**`, the synthesis layer preserves them when present, but they are not required for v1 compliance.
 
 Example:
 
@@ -43,7 +50,6 @@ Example:
 ### [high] Unbounded query in pagination handler
 
 **File**: `src/api/users.ts:47`
-**Description**: The offset-based query has no upper bound on page size, allowing a caller to request all rows in a single request.
 **Suggestion**: Add a `MAX_PAGE_SIZE` constant and clamp the requested size before passing it to the query builder.
 ```
 
@@ -70,7 +76,7 @@ The pilot fish never creates new findings. It only reclassifies existing ones ba
 
 When the `agent` CLI is not found in `PATH`, the debate protocol is skipped entirely and Xavier falls back to the existing Claude-only three-persona review flow.
 
-**Detection**: Run `which agent` during review pre-flight. If it exits non-zero, fall back.
+**Detection**: Run `command -v agent >/dev/null 2>&1` during review pre-flight. If it exits non-zero, fall back.
 
 **Requirements for fallback**:
 

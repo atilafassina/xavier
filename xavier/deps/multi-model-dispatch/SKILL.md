@@ -58,12 +58,12 @@ Extracts and merges structured findings from raw stream-json output. Pure Bash â
 bash parse.sh extract <file>
 
 # Merge findings from two models into debate format
-bash parse.sh merge <file_a> <file_b>
+bash parse.sh merge <file_a> <file_b> [label_a] [label_b]
 ```
 
 **`extract`** reads a stream-json file and prints the final assistant text block.
 
-**`merge`** runs the full pipeline: extract text from both files, parse findings from each, then classify findings into consensus and blindspots using exact `file:line` matching. Output is Markdown following the debate protocol.
+**`merge`** runs the full pipeline: extract text from both files, parse findings from each, then classify findings into consensus and blindspots using exact `file:line` matching. Output is Markdown following the debate protocol. Optional `label_a` and `label_b` identify the models in output (e.g., `GPT`, `Gemini`). Defaults to `Model A` / `Model B` if omitted.
 
 ## Typical Usage
 
@@ -75,8 +75,8 @@ TMPDIR=$(mktemp -d)
 ./dispatch.sh gemini-3.1-pro "$WORKSPACE" "$TMPDIR/gemini.json" "$SYSTEM_PROMPT" "$DIFF" &
 wait
 
-# 2. Merge findings
-bash parse.sh merge "$TMPDIR/gpt.json" "$TMPDIR/gemini.json"
+# 2. Merge findings (labels identify models in output)
+bash parse.sh merge "$TMPDIR/gpt.json" "$TMPDIR/gemini.json" GPT Gemini
 ```
 
 ## Limitations

@@ -26,7 +26,7 @@ echo "$SHARK_TASK_HASH"
 
 1. **Read adapter**: Use the resolved `adapter` context to know how to spawn agents. If no adapter is wired, warn and fall back to inline execution (no background agents).
 2. **Detect the diff**: Run `git diff` (unstaged) and `git diff --staged` (staged). Combine them. If both are empty, tell the user there are no changes to review and stop.
-3. **Check debate availability**: Run `which agent`. If it exits 0, set `debate_available = true`. If it exits non-zero, set `debate_available = false`. No error or warning is shown — this is a normal configuration state.
+3. **Check debate availability**: Run `command -v agent >/dev/null 2>&1`. If it exits 0, set `debate_available = true`. If it exits non-zero, set `debate_available = false`. No error or warning is shown — this is a normal configuration state.
 
 ## Step 3: Load Vault Context
 
@@ -107,7 +107,7 @@ collect([
     bash $DISPATCH gemini-3.1-pro $WORKSPACE $TMPDIR/gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
 
     # 2. Merge into debate format
-    bash $PARSE merge $TMPDIR/gpt.json $TMPDIR/gemini.json
+    bash $PARSE merge $TMPDIR/gpt.json $TMPDIR/gemini.json GPT Gemini
 
     Return the merged Consensus/Disputes/Blindspots output.",
     name: "xavier correctness debate"
@@ -128,7 +128,7 @@ collect([
     bash $DISPATCH gemini-3.1-pro $WORKSPACE $TMPDIR/gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
 
     # 2. Merge into debate format
-    bash $PARSE merge $TMPDIR/gpt.json $TMPDIR/gemini.json
+    bash $PARSE merge $TMPDIR/gpt.json $TMPDIR/gemini.json GPT Gemini
 
     Return the merged Consensus/Disputes/Blindspots output.",
     name: "xavier security debate"
@@ -149,7 +149,7 @@ collect([
     bash $DISPATCH gemini-3.1-pro $WORKSPACE $TMPDIR/gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
 
     # 2. Merge into debate format
-    bash $PARSE merge $TMPDIR/gpt.json $TMPDIR/gemini.json
+    bash $PARSE merge $TMPDIR/gpt.json $TMPDIR/gemini.json GPT Gemini
 
     Return the merged Consensus/Disputes/Blindspots output.",
     name: "xavier performance debate"
@@ -278,11 +278,20 @@ here instead (without the [confirmed] tag).
 ## Disputes Requiring Your Call
 
 Items where models disagreed, or where vault evidence contradicted a
-consensus finding. For each:
+consensus finding. Use the matching format:
+
+When GPT and Gemini disagreed:
 - **[severity]** **[category]** **[disputed]** Brief description
   - GPT argued: {one-sentence summary of GPT's position}
   - Gemini argued: {one-sentence summary of Gemini's position}
   - Vault context: {what recurring patterns or team conventions say, or "no prior context" if none}
+  - Pilot fish recommendation: {the pilot fish's suggested resolution based on evidence weight}
+
+When vault evidence contradicted a consensus finding:
+- **[severity]** **[category]** **[disputed]** Brief description
+  - Models agreed: {one-sentence summary of the shared GPT/Gemini position}
+  - Vault argued: {one-sentence summary of the vault's dissenting evidence or convention}
+  - Vault context: {what recurring patterns or team conventions say}
   - Pilot fish recommendation: {the pilot fish's suggested resolution based on evidence weight}
 
 ## Blindspots
