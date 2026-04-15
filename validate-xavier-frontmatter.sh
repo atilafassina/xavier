@@ -12,7 +12,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="$REPO_ROOT/xavier/skills"
 
 # The 13-key vocabulary
-VALID_REQUIRES="config personas shark adapter recurring-patterns team-conventions repo-conventions prd-index tasks-index skills-index deps-index vault-memory"
+VALID_REQUIRES="config personas shark adapter recurring-patterns team-conventions repo-conventions prd-index tasks-index skills-index deps-index vault-memory research-index"
 
 if [ ! -d "$SKILLS_DIR" ]; then
   echo "FAIL: $SKILLS_DIR does not exist"
@@ -82,7 +82,7 @@ done
 # Check that note-writing skills include all 6 base Zettelkasten fields in their templates
 echo ""
 echo "=== Checking base Zettelkasten fields in note-writing skill templates ==="
-NOTE_WRITING_SKILLS="learn review prd tasks"
+NOTE_WRITING_SKILLS="learn review prd tasks research"
 BASE_FIELDS="repo type created updated tags related"
 
 for skill_name in $NOTE_WRITING_SKILLS; do

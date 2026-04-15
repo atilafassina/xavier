@@ -83,6 +83,7 @@ scaffold_vault() {
   mkdir -p "$XAVIER_HOME/knowledge/reviews"
   mkdir -p "$XAVIER_HOME/prd"
   mkdir -p "$XAVIER_HOME/tasks"
+  mkdir -p "$XAVIER_HOME/research"
   mkdir -p "$XAVIER_HOME/loop-state"
   mkdir -p "$XAVIER_HOME/shark-state"
 
@@ -367,6 +368,7 @@ learn|Explore a codebase and produce knowledge notes in the vault
 loop|Execute a task file as an autonomous loop using the Shark pattern
 add-dep|Create a dependency-skill for a package with best practices and API patterns
 remove-dep|Delete a dependency-skill
+research|Research a topic across web, internal docs, and codebase
 deps-update|Scan lockfile and regenerate stale dependency-skills
 export|Export a vault note to your personal Obsidian vault
 self-update|Update Xavier skills and references to the latest release
