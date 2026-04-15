@@ -457,7 +457,14 @@ link_xavier_skills_and_refs() {
       for dep_dir in "$SCRIPT_DIR/deps/"*/; do
         [ -d "$dep_dir" ] || continue
         dep_name="$(basename "$dep_dir")"
-        ln -sfn "$dep_dir" "$XAVIER_HOME/deps/$dep_name"
+        dep_target="$XAVIER_HOME/deps/$dep_name"
+        # If target is a real directory (not a symlink), move it aside
+        # so ln -sfn doesn't create the link inside it
+        if [ -d "$dep_target" ] && [ ! -L "$dep_target" ]; then
+          mv "$dep_target" "${dep_target}.prev"
+          warn "Moved existing dep directory to ${dep_name}.prev — remove with: rm -r \"${dep_target}.prev\""
+        fi
+        ln -sfn "$dep_dir" "$dep_target"
         info "  dep: $dep_name -> $dep_dir"
       done
     fi

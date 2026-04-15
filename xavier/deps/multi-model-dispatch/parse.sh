@@ -162,8 +162,8 @@ merge_and_format() {
             if (a_sev[i] != b_sev[j]) sev = a_sev[i] " / " b_sev[j]
             printf "### [%s] %s\n", sev, a_desc[i]
             printf "**File**: %s\n", a_ref[i]
-            if (a_sug[i] != "") printf "**Suggestion (%s)**: %s\n", label_a, a_sug[i]
-            if (b_sug[j] != "") printf "**Suggestion (%s)**: %s\n", label_b, b_sug[j]
+            if (a_sug[i] != "") printf "**Suggestion**: %s: %s\n", label_a, a_sug[i]
+            if (b_sug[j] != "") printf "**Suggestion**: %s: %s\n", label_b, b_sug[j]
             printf "\n"
         }
         if (!found) print "No consensus findings -- the models did not flag the same locations.\n"
