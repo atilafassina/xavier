@@ -1,6 +1,6 @@
 ---
 name: self-update
-requires: [config]
+requires: [config, deps-index:optional]
 ---
 
 # Self-Update
@@ -195,7 +195,7 @@ fi
 
 If `ALIASES_ENABLED` is `"no"`, skip the rest of this step and proceed to Step 9.
 
-Otherwise, write an alias file for each of the following 14 commands:
+Otherwise, write an alias file for each of the following 15 commands:
 
 | Command | Description |
 |---|---|
@@ -209,6 +209,7 @@ Otherwise, write an alias file for each of the following 14 commands:
 | loop | Execute a task file as an autonomous loop using the Shark pattern |
 | add-dep | Create a dependency-skill for a package with best practices and API patterns |
 | remove-dep | Delete a dependency-skill |
+| research | Research a topic across web, internal docs, and codebase |
 | deps-update | Scan lockfile and regenerate stale dependency-skills |
 | export | Export a vault note to your personal Obsidian vault |
 | self-update | Update Xavier skills and references to the latest release |
@@ -228,6 +229,7 @@ learn|Explore a codebase and produce knowledge notes in the vault
 loop|Execute a task file as an autonomous loop using the Shark pattern
 add-dep|Create a dependency-skill for a package with best practices and API patterns
 remove-dep|Delete a dependency-skill
+research|Research a topic across web, internal docs, and codebase
 deps-update|Scan lockfile and regenerate stale dependency-skills
 export|Export a vault note to your personal Obsidian vault
 self-update|Update Xavier skills and references to the latest release
@@ -255,7 +257,7 @@ ALIASEOF
 done
 ```
 
-Once all 14 alias files have been written, proceed to Step 9.
+Once all 15 alias files have been written, proceed to Step 9.
 
 ## Step 9: Update Version in Config
 
@@ -279,6 +281,7 @@ mkdir -p "$XAVIER_HOME/tasks"
 mkdir -p "$XAVIER_HOME/loop-state"
 mkdir -p "$XAVIER_HOME/shark-state"
 mkdir -p "$XAVIER_HOME/deps"
+mkdir -p "$XAVIER_HOME/research"
 mkdir -p "$XAVIER_HOME/babysit-pr"
 ```
 

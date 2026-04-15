@@ -149,6 +149,14 @@ check_vault_path() {
       VAULT_PATH_ERRORS=$((VAULT_PATH_ERRORS + 1))
     fi
   fi
+
+  # Check research/ reads -> needs research-index
+  if echo "$body" | grep -qiE '(list|read|select|browse|from|in|show|present|scan|check|load|glob).*[~/.<].*research/' 2>/dev/null; then
+    if ! echo "$requires_clean" | grep -qw "research-index" 2>/dev/null; then
+      echo "FAIL: $skill_name reads from research/ but does not declare 'research-index' in requires"
+      VAULT_PATH_ERRORS=$((VAULT_PATH_ERRORS + 1))
+    fi
+  fi
 }
 
 for skill_dir in "$REPO_ROOT"/xavier/skills/*/; do

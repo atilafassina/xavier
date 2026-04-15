@@ -7,7 +7,7 @@ Base frontmatter schema for all knowledge notes in the Xavier vault. Every note 
 ```yaml
 ---
 repo: {repository name where the note originated}
-type: {note type — one of: review, prd, tasks, knowledge, dependency}
+type: {note type — one of: review, prd, tasks, knowledge, dependency, research}
 created: {ISO date, e.g. 2026-04-05}
 updated: {ISO date, e.g. 2026-04-05}
 tags:
@@ -22,10 +22,10 @@ related:
 
 | Field     | Type   | Description                                                              |
 | --------- | ------ | ------------------------------------------------------------------------ |
-| `repo`    | string | Name of the git repository this note relates to                          |
+| `repo`    | string | Name of the git repository this note relates to (optional for `type: research`) |
 | `team`    | string | Team name (from config) — optional, include when the note is team-scoped |
 | `module`  | string | Most-changed directory or module — optional, include for reviews         |
-| `type`    | string | Note type: `review`, `prd`, `tasks`, `knowledge`, `dependency`           |
+| `type`    | string | Note type: `review`, `prd`, `tasks`, `knowledge`, `dependency`, `research`           |
 | `created` | date   | ISO date when the note was first created                                 |
 | `updated` | date   | ISO date when the note was last modified                                 |
 | `tags`    | list   | Freeform tags for categorization and search                              |
@@ -52,6 +52,11 @@ related:
 
 - `version`: package version
 - `source`: documentation URL
+
+### Research
+
+- `topic`: the research topic string — primary identifier (research notes are topic-first, not repo-first; `repo` is optional)
+- `sources`: list of URLs and file paths consulted by research remoras
 
 ## Wikilink Conventions
 

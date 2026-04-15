@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `/xavier research <topic>` skill — topic-first "teach me" command that spawns parallel remoras across web, internal docs, and codebase to produce a structured digest
+- `research-index` as 14th vocabulary key in the requires system, following the `*-index` pattern
+- `type: research` in the Zettelkasten schema with `topic` and `sources` as type-specific fields
+- `research/` vault directory scaffolded by installer for persisting research digests
+- `--plan` flag for `/xavier research` to preview and edit decomposed questions before spawning remoras
+- Prior research check-and-augment: re-running research on an existing topic offers to update rather than start fresh
 - `/xavier feedback` skill to open a GitHub Discussion in the upstream repo, with category selection via GraphQL
 - `/xavier bug` skill to file a GitHub Issue with structured prompts (skill, expected, actual) and auto-appended Xavier version and OS info
 
@@ -19,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 ### Fixed
+
+- `self-update` skill now declares `deps-index:optional` in requires (was reading from `deps/` without declaring it)
 
 ### Security
 
