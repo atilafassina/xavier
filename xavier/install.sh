@@ -451,6 +451,16 @@ link_xavier_skills_and_refs() {
     ln -sfn "$SCRIPT_DIR/references" "$XAVIER_HOME/references"
     info "  references -> $SCRIPT_DIR/references"
 
+    # --- Clean up broken symlinks in ~/.xavier/deps ---
+    if [ -d "$XAVIER_HOME/deps" ]; then
+      for link in "$XAVIER_HOME/deps/"*; do
+        if [ -L "$link" ] && [ ! -e "$link" ]; then
+          warn "Removing broken symlink: $link"
+          rm "$link"
+        fi
+      done
+    fi
+
     # --- Symlink each dep directory (distributed deps only) ---
     if [ -d "$SCRIPT_DIR/deps" ]; then
       mkdir -p "$XAVIER_HOME/deps"
@@ -461,6 +471,10 @@ link_xavier_skills_and_refs() {
         # If target is a real directory (not a symlink), move it aside
         # so ln -sfn doesn't create the link inside it
         if [ -d "$dep_target" ] && [ ! -L "$dep_target" ]; then
+          if [ -e "${dep_target}.prev" ]; then
+            error "Cannot back up dep: ${dep_name}.prev already exists. Remove it and rerun: rm -r \"${dep_target}.prev\""
+            exit 1
+          fi
           mv "$dep_target" "${dep_target}.prev"
           warn "Moved existing dep directory to ${dep_name}.prev — remove with: rm -r \"${dep_target}.prev\""
         fi
