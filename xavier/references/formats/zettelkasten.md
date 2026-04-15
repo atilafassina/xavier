@@ -22,7 +22,7 @@ related:
 
 | Field     | Type   | Description                                                              |
 | --------- | ------ | ------------------------------------------------------------------------ |
-| `repo`    | string | Name of the git repository this note relates to                          |
+| `repo`    | string | Name of the git repository this note relates to (optional for `type: research`) |
 | `team`    | string | Team name (from config) — optional, include when the note is team-scoped |
 | `module`  | string | Most-changed directory or module — optional, include for reviews         |
 | `type`    | string | Note type: `review`, `prd`, `tasks`, `knowledge`, `dependency`, `research`           |
