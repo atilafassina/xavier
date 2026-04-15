@@ -15,6 +15,10 @@ TIMEOUT="${XAVIER_TIMEOUT:-1800}"
 
 # Resolve the agent binary
 if [[ -n "${XAVIER_AGENT:-}" ]]; then
+    if [[ ! -x "$XAVIER_AGENT" ]]; then
+        echo "ERROR: XAVIER_AGENT is set but not executable: $XAVIER_AGENT" >&2
+        exit 1
+    fi
     AGENT="$XAVIER_AGENT"
 elif [[ -x "$HOME/.local/bin/agent" ]]; then
     AGENT="$HOME/.local/bin/agent"
@@ -37,7 +41,16 @@ PROMPT="${SYSTEM_PROMPT}
 
 ${USER_PROMPT}"
 
+# Refuse to write to a symlink (prevents TOCTOU symlink attacks in /tmp)
+if [[ -L "$OUTPUT_FILE" ]]; then
+    echo "ERROR: output file is a symlink, refusing to write: $OUTPUT_FILE" >&2
+    exit 1
+fi
+
 # Run the agent CLI with timeout, capturing output to both the file and stdout.
+# NOTE: --yolo auto-approves all tool calls. The agent runs non-interactively
+# so this flag is required, but it means prompt injection in the diff could
+# trigger tool calls. Callers should scope inputs to trusted repos.
 set +e
 timeout "$TIMEOUT" "$AGENT" -p \
     --model "$MODEL" \

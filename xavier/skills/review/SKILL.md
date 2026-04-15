@@ -89,24 +89,25 @@ Spawn **3 paired debate calls concurrently** via `collect()`. Each debate call i
 
 ```
 // All 3 debate pairs spawned concurrently via adapter collect()
-// Each remora internally runs dispatch.sh twice + parse.py --merge
+// Each remora internally runs dispatch.sh twice + parse.sh merge
 collect([
   {
     task: "Run a paired debate for the correctness persona.
 
     WORKSPACE=$(git rev-parse --show-toplevel)
     DISPATCH=~/.xavier/deps/multi-model-dispatch/dispatch.sh
-    PARSE=~/.xavier/deps/multi-model-dispatch/parse.py
+    PARSE=~/.xavier/deps/multi-model-dispatch/parse.sh
+    TMPDIR=$(mktemp -d)
 
     SYSTEM_PROMPT={correctness.md + correctness_conventions + correctness_patterns, or omit patterns section}
     DIFF={diff}
 
-    # 1. Dispatch to both models
-    bash $DISPATCH gpt-5.4-xhigh $WORKSPACE /tmp/xavier-correctness-gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
-    bash $DISPATCH gemini-3.1-pro $WORKSPACE /tmp/xavier-correctness-gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+    # 1. Dispatch to both models (mktemp paths prevent symlink attacks)
+    bash $DISPATCH gpt-5.4-xhigh $WORKSPACE $TMPDIR/gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+    bash $DISPATCH gemini-3.1-pro $WORKSPACE $TMPDIR/gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
 
     # 2. Merge into debate format
-    python3 $PARSE --merge /tmp/xavier-correctness-gpt.json /tmp/xavier-correctness-gemini.json
+    bash $PARSE merge $TMPDIR/gpt.json $TMPDIR/gemini.json
 
     Return the merged Consensus/Disputes/Blindspots output.",
     name: "xavier correctness debate"
@@ -116,17 +117,18 @@ collect([
 
     WORKSPACE=$(git rev-parse --show-toplevel)
     DISPATCH=~/.xavier/deps/multi-model-dispatch/dispatch.sh
-    PARSE=~/.xavier/deps/multi-model-dispatch/parse.py
+    PARSE=~/.xavier/deps/multi-model-dispatch/parse.sh
+    TMPDIR=$(mktemp -d)
 
     SYSTEM_PROMPT={security.md + security_conventions + security_patterns, or omit patterns section}
     DIFF={diff}
 
-    # 1. Dispatch to both models
-    bash $DISPATCH gpt-5.4-xhigh $WORKSPACE /tmp/xavier-security-gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
-    bash $DISPATCH gemini-3.1-pro $WORKSPACE /tmp/xavier-security-gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+    # 1. Dispatch to both models (mktemp paths prevent symlink attacks)
+    bash $DISPATCH gpt-5.4-xhigh $WORKSPACE $TMPDIR/gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+    bash $DISPATCH gemini-3.1-pro $WORKSPACE $TMPDIR/gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
 
     # 2. Merge into debate format
-    python3 $PARSE --merge /tmp/xavier-security-gpt.json /tmp/xavier-security-gemini.json
+    bash $PARSE merge $TMPDIR/gpt.json $TMPDIR/gemini.json
 
     Return the merged Consensus/Disputes/Blindspots output.",
     name: "xavier security debate"
@@ -136,17 +138,18 @@ collect([
 
     WORKSPACE=$(git rev-parse --show-toplevel)
     DISPATCH=~/.xavier/deps/multi-model-dispatch/dispatch.sh
-    PARSE=~/.xavier/deps/multi-model-dispatch/parse.py
+    PARSE=~/.xavier/deps/multi-model-dispatch/parse.sh
+    TMPDIR=$(mktemp -d)
 
     SYSTEM_PROMPT={performance.md + performance_conventions + performance_patterns, or omit patterns section}
     DIFF={diff}
 
-    # 1. Dispatch to both models
-    bash $DISPATCH gpt-5.4-xhigh $WORKSPACE /tmp/xavier-performance-gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
-    bash $DISPATCH gemini-3.1-pro $WORKSPACE /tmp/xavier-performance-gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+    # 1. Dispatch to both models (mktemp paths prevent symlink attacks)
+    bash $DISPATCH gpt-5.4-xhigh $WORKSPACE $TMPDIR/gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+    bash $DISPATCH gemini-3.1-pro $WORKSPACE $TMPDIR/gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
 
     # 2. Merge into debate format
-    python3 $PARSE --merge /tmp/xavier-performance-gpt.json /tmp/xavier-performance-gemini.json
+    bash $PARSE merge $TMPDIR/gpt.json $TMPDIR/gemini.json
 
     Return the merged Consensus/Disputes/Blindspots output.",
     name: "xavier performance debate"
@@ -154,7 +157,7 @@ collect([
 ])
 ```
 
-Each remora runs `dispatch.sh` twice (once per model) sequentially within itself, then merges the two outputs with `parse.py --merge`. The three remoras run concurrently with each other. The output of each remora is structured Markdown with `## Consensus`, `## Disputes`, and `## Blindspots` sections.
+Each remora runs `dispatch.sh` twice (once per model) sequentially within itself, then merges the two outputs with `parse.sh merge`. The three remoras run concurrently with each other. The output of each remora is structured Markdown with `## Consensus`, `## Disputes`, and `## Blindspots` sections.
 
 ### Path B: Claude-Only Fallback (`debate_available = false`)
 
