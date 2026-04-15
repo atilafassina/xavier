@@ -36,7 +36,33 @@ Gather context that reviewers need from the resolved `requires`:
    - If fewer than 2 reviews exist for this repo, the recurring patterns context will be empty — omit it from reviewer prompts.
 3. **Repo-level persona overrides**: Check if `.xavier/personas/` exists in the current repo. If so, those personas override the global ones from the resolved `personas` context.
 
-Compile team conventions into a **context block** (max 500 words) that will be prepended to the reviewer prompt. The recurring patterns are injected separately in Step 4.
+Compile team conventions into a raw **context block** (max 500 words total across all personas). The recurring patterns are filtered and injected separately in Step 4.
+
+4. **Filter context per persona**: Before passing context to reviewers, split the loaded team conventions and recurring patterns into per-persona buckets. This filtering applies to **both** the debate (multi-model) path and the Claude-only fallback path — it runs once during context loading, before any agents are spawned.
+
+   **Recurring patterns** are filtered by their `category` field (each pattern already carries one of: correctness, security, performance):
+   - **correctness** persona receives only patterns with `category: correctness`
+   - **security** persona receives only patterns with `category: security`
+   - **performance** persona receives only patterns with `category: performance`
+
+   **Team conventions** are filtered by keyword matching against the convention text. Use these explicit keyword lists:
+
+   | Domain | Keywords |
+   |--------|----------|
+   | **security** | `auth`, `authentication`, `authorization`, `injection`, `secrets`, `token`, `csrf`, `xss`, `cors`, `encryption`, `tls`, `ssl`, `certificate`, `vulnerability`, `sanitize`, `escape`, `permission`, `rbac`, `acl`, `oauth` |
+   | **performance** | `performance`, `caching`, `cache`, `latency`, `throughput`, `memory`, `cpu`, `optimization`, `batch`, `lazy`, `eager`, `pagination`, `index`, `query plan`, `n+1`, `connection pool`, `rate limit`, `debounce`, `throttle` |
+   | **correctness** | `testing`, `test`, `error handling`, `error-handling`, `types`, `typing`, `validation`, `assertion`, `null`, `undefined`, `exception`, `boundary`, `edge case`, `invariant`, `contract`, `lint`, `format`, `schema`, `migration` |
+
+   **Matching rules**:
+   - Matching is **case-insensitive**
+   - A convention matches a domain if **any** keyword from that domain's list appears in the convention text
+   - A convention that matches **no** domain keyword list is included in **all** personas (shared convention)
+   - A convention that matches **multiple** domain keyword lists is included in **each** matching persona
+
+   After filtering, you have three sets:
+   - `correctness_conventions`, `correctness_patterns`
+   - `security_conventions`, `security_patterns`
+   - `performance_conventions`, `performance_patterns`
 
 ## Step 4: Spawn Reviewer Remoras (Panel)
 
@@ -48,27 +74,28 @@ Load all three personas from the resolved `personas` context (or repo overrides 
 
 Spawn **3 reviewer agents concurrently** via the runtime adapter. All three must be spawned in a **single message** with parallel tool calls using `run_in_background: true`.
 
-The reviewer prompt includes a `## Recurring Patterns` section between the context block and the diff. This section is **only included if patterns were extracted** (i.e., 2+ reviews existed and patterns were found):
+Each reviewer receives the **filtered** context for its domain — not the full unfiltered set. The reviewer prompt includes a `## Recurring Patterns` section between the context block and the diff. This section is **only included if filtered patterns exist** for that persona (i.e., 2+ reviews existed and patterns matching that domain were found):
 
 ```
 // All 3 spawned concurrently via adapter collect()
+// Each receives ONLY the conventions and patterns for its domain
 collect([
   {
-    task: "You are a code reviewer...\n## Persona\n{persona.md}\n## Context\n{context block}\n## Recurring Patterns\n{patterns, or omit this section entirely}\n## Diff\n{diff}",
+    task: "You are a code reviewer...\n## Persona\n{correctness.md}\n## Context\n{correctness_conventions}\n## Recurring Patterns\n{correctness_patterns, or omit section}\n## Diff\n{diff}",
     name: "xavier correctness"
   },
   {
-    task: "You are a code reviewer...\n## Persona\n{persona.md}\n## Context\n{context block}\n## Recurring Patterns\n{patterns, or omit this section entirely}\n## Diff\n{diff}",
+    task: "You are a code reviewer...\n## Persona\n{security.md}\n## Context\n{security_conventions}\n## Recurring Patterns\n{security_patterns, or omit section}\n## Diff\n{diff}",
     name: "xavier security"
   },
   {
-    task: "You are a code reviewer...\n## Persona\n{persona.md}\n## Context\n{context block}\n## Recurring Patterns\n{patterns, or omit this section entirely}\n## Diff\n{diff}",
+    task: "You are a code reviewer...\n## Persona\n{performance.md}\n## Context\n{performance_conventions}\n## Recurring Patterns\n{performance_patterns, or omit section}\n## Diff\n{diff}",
     name: "xavier performance"
   }
 ])
 ```
 
-Each reviewer receives the same diff, context block, and recurring patterns, but reviews through the lens of their persona only. Reviewers should pay extra attention to recurring patterns — these represent issues that keep coming back.
+Each reviewer receives the same diff but **domain-filtered** conventions and patterns, and reviews through the lens of their persona only. Reviewers should pay extra attention to recurring patterns — these represent issues that keep coming back.
 
 ## Step 5: Pilot Fish (Incremental Aggregation)
 
