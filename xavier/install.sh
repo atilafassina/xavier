@@ -378,17 +378,21 @@ uninstall|Remove the Xavier vault and all symlinks
 
     # Claude Code: ~/.claude/commands/<prefix>-<cmd>.md
     claude_alias="$HOME/.claude/commands/${ALIAS_PREFIX}-${cmd}.md"
-    if [ ! -e "$claude_alias" ]; then
-      mkdir -p "$HOME/.claude/commands"
-      cat > "$claude_alias" << ALIASEOF
+    mkdir -p "$HOME/.claude/commands"
+    cat > "$claude_alias" << ALIASEOF
 ---
 name: ${ALIAS_PREFIX}-${cmd}
 description: ${desc}
 ---
 
-Run /xavier ${cmd} — load and follow the xavier skill router.
+This is an alias for \`/xavier ${cmd}\`.
+
+Use the Skill tool to invoke:
+- skill: "xavier"
+- args: "${cmd}" followed by any arguments provided by the user
+
+Do NOT execute this skill directly. Do NOT read vault files. Delegate to the xavier router.
 ALIASEOF
-    fi
 
     # Cursor: ~/.cursor/skills/<prefix>-<cmd>/SKILL.md
     cursor_alias="$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md"
