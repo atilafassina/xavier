@@ -326,6 +326,12 @@ Write a review note to `~/.xavier/knowledge/reviews/` with the following format:
 
 **Filename**: `{repo-name}_{YYYY-MM-DD}_{content-hash}.md` where `content-hash` is the first 7 chars of `echo "{diff}" | shasum | cut -c1-7` (a hash of the diff content). This prevents filename collisions when running multiple reviews on the same commit.
 
+Branch on `debate_available` to determine the review note format.
+
+### Path A: Debate Review Note (`debate_available = true`)
+
+When the debate path was taken, write the review note with extended frontmatter and a Decisions section. Parse the user's response to the decision gate (from Step 6) to populate the Decisions table.
+
 ```markdown
 ---
 repo: {current repo name}
@@ -334,6 +340,77 @@ type: review
 verdict: {approve | request-changes | rethink}
 finding-categories: [{list of categories found, e.g. correctness, security, performance}]
 recurring: [{findings that appeared in past reviews of this repo}]
+models: [gpt-5.4-xhigh, gemini-3.1-pro]
+debate-mode: true
+decisions-recorded: true
+tags: [{inferred from findings}]
+related: []
+created: {ISO date}
+updated: {ISO date}
+---
+
+# Review: {repo-name} ({short date})
+
+## Verdict: {final verdict}
+
+| Reviewer | Verdict | Findings |
+|----------|---------|----------|
+| correctness | {verdict} | {count} |
+| security | {verdict} | {count} |
+| performance | {verdict} | {count} |
+
+## Findings
+
+{synthesized, deduplicated findings grouped by severity — each tagged with [correctness], [security], or [performance]}
+
+## Cross-Reviewer Findings
+
+{findings flagged by multiple reviewers — higher confidence}
+
+## Decisions
+
+| Finding | Source | User Decision | Rationale |
+|---------|--------|---------------|-----------|
+| {short finding description} | {source — see format rules below} | {Accepted / Rejected / Deferred / Acknowledged} | {user's rationale, or "—" if none given} |
+
+## Context
+
+- **Diff scope**: {number of files changed, insertions, deletions}
+- **Reviewers**: correctness, security, performance
+- **Models**: gpt-5.4-xhigh, gemini-3.1-pro
+```
+
+**Rules for populating the Decisions table:**
+
+- Every finding from the structured brief gets a row
+- High-confidence/confirmed findings: default to "Acknowledged" unless the user explicitly disagrees
+- Disputed findings: record which side the user chose (or "Deferred" if they did not decide)
+- Blindspot findings: "Acknowledged" by default, "Rejected" if user dismisses
+- If the user does not address a specific finding, use "Acknowledged" for consensus/confirmed, "Deferred" for disputes
+
+**Decision log parseability constraints** (required for Step 8 recurring-pattern extraction):
+
+- The **Source** column must use one of these exact formats:
+  - `Consensus` — both models agreed
+  - `Consensus (confirmed)` — both models agreed and vault patterns corroborated
+  - `Dispute (GPT: {position}, Gemini: {position})` — models disagreed, with each model's position summarized in a few words
+  - `Blindspot ({model})` — only one model caught the finding, naming which model
+- The **User Decision** column must use exactly one of: `Accepted`, `Rejected`, `Deferred`, `Acknowledged`
+- These constraints enable automated parsing in Step 8
+
+### Path B: Fallback Review Note (`debate_available = false`)
+
+When the fallback path was taken, write the review note with standard frontmatter. No Decisions section is added.
+
+```markdown
+---
+repo: {current repo name}
+module: {most-changed directory in the diff}
+type: review
+verdict: {approve | request-changes | rethink}
+finding-categories: [{list of categories found, e.g. correctness, security, performance}]
+recurring: [{findings that appeared in past reviews of this repo}]
+debate-mode: false
 tags: [{inferred from findings}]
 related: []
 created: {ISO date}
@@ -363,3 +440,34 @@ updated: {ISO date}
 - **Diff scope**: {number of files changed, insertions, deletions}
 - **Reviewers**: correctness, security, performance
 ```
+
+## Step 8: Recurring Pattern Feedback
+
+This step only runs when `debate_available` was true. For fallback-path reviews, skip this step entirely.
+
+After writing the review note in Step 7, run the recurring-pattern feedback loop. This surfaces cases where the user has historically overridden a model's findings, so the pilot fish can account for those preferences in future reviews.
+
+### Detection Logic
+
+1. Scan `~/.xavier/knowledge/reviews/` for all review notes matching the current repo (where frontmatter `repo` matches and `debate-mode: true`).
+2. Parse the `## Decisions` table from each past review note. For each row, extract: **Finding** (description), **Source** (which model or consensus), **User Decision** (Accepted/Rejected/Deferred/Acknowledged), and the finding's category (inferred from the finding's tag in the `## Findings` section).
+3. Group overrides by: `(category, source model, finding description similarity)`. An override is any row where User Decision is `Rejected` or `Deferred`.
+4. If the same type of finding (same category + similar description) from the same model has been overridden in **3 or more** past reviews, flag it as a recurring override pattern.
+
+### Surfacing Patterns
+
+When a recurring override pattern is detected:
+
+1. Record it in the current review note's frontmatter `recurring` list (it already appears there if the recurring-patterns context flagged it in Step 3).
+2. For **future reviews** of the same repo, the recurring-patterns context (loaded in Step 3) will include this pattern. The pilot fish should present it in the structured brief as:
+
+   > "You historically disagree with {model} on {category} findings like this — consider this when weighing their argument."
+
+3. This annotation appears in the `## Disputes Requiring Your Call` section of the structured brief, alongside the pilot fish recommendation, when a finding matches a known override pattern.
+
+### Heuristics and Limitations
+
+- **Similarity matching is soft**: The pilot fish uses judgment to determine whether two finding descriptions refer to the same type of issue. Exact string matching is not required — semantic similarity (same category, same code pattern, same kind of concern) is sufficient.
+- **Only debate-path reviews contribute**: Fallback-path reviews do not have a `## Decisions` table and are excluded from override counting.
+- **The threshold is 3**: Fewer than 3 overrides on the same pattern do not trigger the feedback annotation. This prevents noise from one-off disagreements.
+- **The feedback is advisory, not prescriptive**: The pilot fish presents the pattern as context, not as a directive to ignore the model's finding. The user still makes the final call.
