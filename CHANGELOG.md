@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Review skill leaked "Dispatch scripts for multi-model debate are not installed" message when `agent` CLI was absent — silenced the check and removed "fallback" language that primed the model to narrate the branch
+- Review pre-flight now verifies both `agent` CLI and `dispatch.sh`/`parse.sh` exist before enabling the debate path, preventing mid-execution failures when deps are missing
+- Self-update could skip distributed deps installation because the replacement was split across three code blocks — merged into a single atomic Bash command
+
 ### Security
 
 ## [0.3.0] - 2026-04-15

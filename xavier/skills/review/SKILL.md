@@ -26,7 +26,11 @@ echo "$SHARK_TASK_HASH"
 
 1. **Read adapter**: Use the resolved `adapter` context to know how to spawn agents. If no adapter is wired, warn and fall back to inline execution (no background agents).
 2. **Detect the diff**: Run `git diff` (unstaged) and `git diff --staged` (staged). Combine them. If both are empty, tell the user there are no changes to review and stop.
-3. **Check debate availability**: Run `command -v agent >/dev/null 2>&1`. If it exits 0, set `debate_available = true`. If it exits non-zero, set `debate_available = false`. No error or warning is shown — this is a normal configuration state.
+3. **Check debate availability**: Run both checks — the `agent` CLI and the dispatch scripts must both exist:
+   ```bash
+   command -v agent >/dev/null 2>&1 && test -x "${XAVIER_HOME:-$HOME/.xavier}/deps/multi-model-dispatch/dispatch.sh" && test -x "${XAVIER_HOME:-$HOME/.xavier}/deps/multi-model-dispatch/parse.sh"
+   ```
+   If the combined check exits 0, set `debate_available = true`. Otherwise set `debate_available = false`. **SILENT CHECK — NEVER print, emit, or mention the result of this check to the user. Do not say "falling back", "dispatch not installed", "debate not available", or anything about multi-model support. The user must not know this check happened.**
 
 ## Step 3: Load Vault Context
 
@@ -159,9 +163,9 @@ collect([
 
 Each remora runs `dispatch.sh` twice (once per model) sequentially within itself, then merges the two outputs with `parse.sh merge`. The three remoras run concurrently with each other. The output of each remora is structured Markdown with `## Consensus`, `## Disputes`, and `## Blindspots` sections.
 
-### Path B: Claude-Only Fallback (`debate_available = false`)
+### Path B: Standard Three-Persona Flow (`debate_available = false`)
 
-When the `agent` CLI is not available, fall back to the standard three-persona flow. No error, no warning, no mention of debate.
+When `debate_available` is false, run the standard three-persona review. **Do not mention debate, multi-model, fallback, dispatch, or the `agent` CLI to the user — proceed as if this is the only review mode.**
 
 Spawn **3 reviewer agents concurrently** via the runtime adapter. All three must be spawned in a **single message** with parallel tool calls using `run_in_background: true`.
 
@@ -320,9 +324,9 @@ If no recurring patterns matched, show: "No recurring patterns matched this diff
 
 Do NOT proceed to Step 7 until the user acknowledges. No auto-fix, no auto-push — the user decides what to do with the findings. Wait for any response from the user before continuing.
 
-### Path B: Standard Verdict (fallback path)
+### Path B: Standard Verdict (`debate_available = false`)
 
-When `debate_available` was false (fallback path was taken in Step 4), present the synthesized review in the standard format:
+When `debate_available` was false, present the synthesized review in the standard format:
 
 1. Show the final verdict: **approve**, **request changes**, or **rethink**
 2. Show per-reviewer verdicts: `correctness: approve | security: request changes | performance: approve`
@@ -330,7 +334,7 @@ When `debate_available` was false (fallback path was taken in Step 4), present t
 4. Show the total finding count and breakdown by category
 5. Highlight any findings flagged by multiple reviewers (high confidence)
 
-For the fallback path, there is no decision gate — proceed directly to Step 7.
+There is no decision gate — proceed directly to Step 7.
 
 ## Step 7: Write Review Note
 
@@ -410,9 +414,9 @@ updated: {ISO date}
 - The **User Decision** column must use exactly one of: `Accepted`, `Rejected`, `Deferred`, `Acknowledged`
 - These constraints enable automated parsing in Step 8
 
-### Path B: Fallback Review Note (`debate_available = false`)
+### Path B: Standard Review Note (`debate_available = false`)
 
-When the fallback path was taken, write the review note with standard frontmatter. No Decisions section is added.
+When `debate_available` was false, write the review note with standard frontmatter. No Decisions section is added.
 
 ```markdown
 ---

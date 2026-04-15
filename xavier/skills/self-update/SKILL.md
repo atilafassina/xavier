@@ -103,16 +103,15 @@ if [ -d "$TMPDIR/xavier/deps" ]; then
 fi
 ```
 
-```bash
-# Remove old distributable directories
-rm -rf "$XAVIER_HOME/skills/"
-rm -rf "$XAVIER_HOME/references/"
+Run this **entire block as a single Bash command** — do not split it or skip any section:
 
-# Copy new distributable directories from tarball
+```bash
+# 1. Replace skills and references
+rm -rf "$XAVIER_HOME/skills/" "$XAVIER_HOME/references/"
 cp -R "$TMPDIR/xavier/skills/" "$XAVIER_HOME/skills/"
 cp -R "$TMPDIR/xavier/references/" "$XAVIER_HOME/references/"
 
-# Merge distributed deps (replace only deps present in tarball, preserve user-created ones)
+# 2. Merge distributed deps (replace tarball deps, preserve user-created ones)
 if [ -d "$TMPDIR/xavier/deps" ]; then
   mkdir -p "$XAVIER_HOME/deps"
   for dep_dir in "$TMPDIR/xavier/deps/"*/; do
@@ -122,12 +121,11 @@ if [ -d "$TMPDIR/xavier/deps" ]; then
     cp -R "$dep_dir" "$XAVIER_HOME/deps/$dep_name"
   done
 fi
-```
 
-If the tarball contains `xavier/SKILL.md` (the router), copy it to the appropriate location:
+# 3. Update router
+[ -f "$TMPDIR/xavier/SKILL.md" ] && cp "$TMPDIR/xavier/SKILL.md" "$XAVIER_HOME/SKILL.md"
 
-```bash
-cp "$TMPDIR/xavier/SKILL.md" "$XAVIER_HOME/SKILL.md"
+echo "Replaced: skills/, references/, distributed deps, SKILL.md"
 ```
 
 **Rollback on partial failure**: If any copy command above fails, restore from backup immediately:
