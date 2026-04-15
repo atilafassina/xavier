@@ -206,11 +206,27 @@ Each persona's debate output contains three sections. The pilot fish processes t
 - **Dispute findings**: These require human judgment. Include them with a `[disputed]` marker alongside the category tag. Present both sides concisely.
 - **Blindspot findings**: These are coverage gaps found by only one model. Include them with a `[blindspot]` marker. They are still valid findings but carry lower confidence than consensus.
 
-When applying vault interaction rules (from the debate protocol): if recurring patterns from the vault corroborate a Consensus finding, mark it as "confirmed." If recurring patterns contradict a Consensus finding, reclassify it as a Dispute. The pilot fish never creates new findings — it only reclassifies based on vault evidence.
+### Vault Overlay (Debate Path Only)
+
+After classifying all findings from the debate output, overlay vault knowledge by matching each consensus finding against the recurring patterns loaded in Step 3. The pilot fish never creates new findings — it only reclassifies based on vault evidence.
+
+**Corroboration rule** — a vault recurring pattern **corroborates** a consensus finding when BOTH conditions are met:
+1. The pattern's `category` field matches the finding's persona category (e.g., both are `correctness`)
+2. The pattern's one-line description refers to the same issue type or code area as the finding (e.g., the pattern says "missing null check in API handlers" and the finding flags a missing null check in an API handler)
+
+When corroborated: upgrade the consensus finding to **confirmed**. Tag it `[confirmed]` in addition to its category tag. Confirmed findings appear in the "High-Confidence Findings" section of the structured brief.
+
+**Contradiction rule** — a vault recurring pattern **contradicts** a consensus finding when EITHER condition is met:
+1. The pattern explicitly documents that the flagged code is **intentional** (e.g., "intentional any-type usage in serialization layer")
+2. The pattern records that the same finding was **previously accepted** by the team in a past review (e.g., "accepted: raw SQL in migration scripts per team convention")
+
+When contradicted: reclassify the consensus finding as a **dispute**. Move it from Consensus to Disputes, and note the vault evidence as the dissenting position. The pilot fish adds the vault context as a third perspective alongside the two model opinions.
+
+**No match**: if no recurring pattern matches the finding's category and issue type, the finding keeps its original classification unchanged.
 
 ### Processing Raw Findings Format (Path B output)
 
-Each persona returns raw findings directly. Process them as in the standard flow — no consensus/dispute/blindspot classification applies.
+Each persona returns raw findings directly. Process them as in the standard flow — no consensus/dispute/blindspot classification applies. No vault overlay is performed on raw findings.
 
 ### Synthesis (both paths)
 
@@ -218,22 +234,91 @@ Each persona returns raw findings directly. Process them as in the standard flow
 
 1. **Categorize** all findings by type: correctness, security, performance
 2. **Deduplicate**: if two reviewers flag the same line/issue, merge into a single finding and note which reviewers flagged it
-3. **Rank by severity**: critical > high > medium > low. For debate-path output, rank within tiers: consensus findings above blindspot findings at the same severity level, disputed findings shown separately
+3. **Rank by severity**: critical > high > medium > low. For debate-path output, rank within tiers: confirmed findings above consensus findings above blindspot findings at the same severity level, disputed findings shown separately
 4. **Determine final verdict**: the most severe individual verdict wins
    - If ANY reviewer says **rethink** -> final verdict is **rethink**
    - If ANY reviewer says **request changes** (and none say rethink) -> **request changes**
    - If ALL reviewers say **approve** -> **approve**
-   - For debate-path output: a persona's verdict is derived from its most severe consensus finding. Disputes and blindspots alone do not escalate the verdict above **request changes**
+   - For debate-path output: a persona's verdict is derived from its most severe consensus or confirmed finding. Disputes and blindspots alone do not escalate the verdict above **request changes**
 
 ## Step 6: Deliver Verdict
 
-Present the synthesized review to the user:
+Branch on `debate_available` to determine the output format.
+
+### Path A: Structured Brief (debate path)
+
+When `debate_available` was true (debate path was taken in Step 4), present the synthesized review as a **structured brief**:
+
+```
+## Verdict: [approve | request changes | rethink]
+
+correctness: {verdict} | security: {verdict} | performance: {verdict}
+
+## TL;DR
+
+2-3 sentences summarizing the state of this diff. What is the overall
+quality? What is the single most important thing the author should know?
+
+## High-Confidence Findings
+
+Items where both models agreed (consensus) AND vault patterns confirm.
+These are near-certain issues. Minimal explanation needed.
+
+For each finding:
+- **[severity]** **[category]** **[confirmed]** Brief description
+  - File: `path/to/file.ext`, line {N}
+  - Why: one-sentence explanation
+
+If no findings were confirmed by vault patterns, show consensus findings
+here instead (without the [confirmed] tag).
+
+## Disputes Requiring Your Call
+
+Items where models disagreed, or where vault evidence contradicted a
+consensus finding. For each:
+- **[severity]** **[category]** **[disputed]** Brief description
+  - GPT argued: {one-sentence summary of GPT's position}
+  - Gemini argued: {one-sentence summary of Gemini's position}
+  - Vault context: {what recurring patterns or team conventions say, or "no prior context" if none}
+  - Pilot fish recommendation: {the pilot fish's suggested resolution based on evidence weight}
+
+## Blindspots
+
+Items only one model caught. Flagged for awareness, not necessarily
+actionable. For each:
+- **[severity]** **[category]** **[blindspot]** Brief description
+  - Caught by: {GPT | Gemini}
+  - File: `path/to/file.ext`, line {N}
+
+## Recurring Pattern Matches
+
+Known issues from past reviews that showed up again in this diff.
+For each matched pattern:
+- Pattern: "{one-line description from vault}"
+  - Recurrence count: {N} times across past reviews
+  - Matched finding(s): {which finding(s) this pattern corroborated or contradicted}
+  - Status: {confirmed consensus | reclassified as dispute | informational}
+
+If no recurring patterns matched, show: "No recurring patterns matched this diff."
+```
+
+**Decision gate**: After presenting the structured brief, pause and prompt the user:
+
+> Review the brief above. The review note will be written after you respond.
+
+Do NOT proceed to Step 7 until the user acknowledges. No auto-fix, no auto-push — the user decides what to do with the findings. Wait for any response from the user before continuing.
+
+### Path B: Standard Verdict (fallback path)
+
+When `debate_available` was false (fallback path was taken in Step 4), present the synthesized review in the standard format:
 
 1. Show the final verdict: **approve**, **request changes**, or **rethink**
 2. Show per-reviewer verdicts: `correctness: approve | security: request changes | performance: approve`
 3. List findings grouped by severity (critical > high > medium > low), with category tags
 4. Show the total finding count and breakdown by category
 5. Highlight any findings flagged by multiple reviewers (high confidence)
+
+For the fallback path, there is no decision gate — proceed directly to Step 7.
 
 ## Step 7: Write Review Note
 
