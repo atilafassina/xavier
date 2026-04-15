@@ -1,6 +1,6 @@
 ---
 name: self-update
-requires: [config]
+requires: [config, deps-index:optional]
 ---
 
 # Self-Update
