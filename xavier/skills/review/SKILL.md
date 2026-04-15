@@ -26,6 +26,7 @@ echo "$SHARK_TASK_HASH"
 
 1. **Read adapter**: Use the resolved `adapter` context to know how to spawn agents. If no adapter is wired, warn and fall back to inline execution (no background agents).
 2. **Detect the diff**: Run `git diff` (unstaged) and `git diff --staged` (staged). Combine them. If both are empty, tell the user there are no changes to review and stop.
+3. **Check debate availability**: Run `which agent`. If it exits 0, set `debate_available = true`. If it exits non-zero, set `debate_available = false`. No error or warning is shown — this is a normal configuration state.
 
 ## Step 3: Load Vault Context
 
@@ -72,9 +73,94 @@ Load all three personas from the resolved `personas` context (or repo overrides 
 2. `security.md`
 3. `performance.md`
 
-Spawn **3 reviewer agents concurrently** via the runtime adapter. All three must be spawned in a **single message** with parallel tool calls using `run_in_background: true`.
+Each reviewer receives the **filtered** context for its domain — not the full unfiltered set. The reviewer prompt includes a `## Recurring Patterns` section between the context block and the diff. This section is **only included if filtered patterns exist** for that persona (i.e., 2+ reviews existed and patterns matching that domain were found).
 
-Each reviewer receives the **filtered** context for its domain — not the full unfiltered set. The reviewer prompt includes a `## Recurring Patterns` section between the context block and the diff. This section is **only included if filtered patterns exist** for that persona (i.e., 2+ reviews existed and patterns matching that domain were found):
+Branch on `debate_available` (set in Step 2):
+
+### Path A: Multi-Model Debate (`debate_available = true`)
+
+When the `agent` CLI is available, each persona runs a **paired debate** — two models review the same diff through the same persona, and their findings are merged into Consensus/Disputes/Blindspots.
+
+For each persona, construct:
+- **system_prompt**: persona definition + filtered conventions + filtered recurring patterns (if any)
+- **user_prompt**: the diff
+
+Spawn **3 paired debate calls concurrently** via `collect()`. Each debate call is a single remora that internally dispatches both models and merges their output:
+
+```
+// All 3 debate pairs spawned concurrently via adapter collect()
+// Each remora internally runs dispatch.sh twice + parse.py --merge
+collect([
+  {
+    task: "Run a paired debate for the correctness persona.
+
+    WORKSPACE=$(git rev-parse --show-toplevel)
+    DISPATCH=~/.xavier/deps/multi-model-dispatch/dispatch.sh
+    PARSE=~/.xavier/deps/multi-model-dispatch/parse.py
+
+    SYSTEM_PROMPT={correctness.md + correctness_conventions + correctness_patterns, or omit patterns section}
+    DIFF={diff}
+
+    # 1. Dispatch to both models
+    bash $DISPATCH gpt-5.4-xhigh $WORKSPACE /tmp/xavier-correctness-gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+    bash $DISPATCH gemini-3.1-pro $WORKSPACE /tmp/xavier-correctness-gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+
+    # 2. Merge into debate format
+    python3 $PARSE --merge /tmp/xavier-correctness-gpt.json /tmp/xavier-correctness-gemini.json
+
+    Return the merged Consensus/Disputes/Blindspots output.",
+    name: "xavier correctness debate"
+  },
+  {
+    task: "Run a paired debate for the security persona.
+
+    WORKSPACE=$(git rev-parse --show-toplevel)
+    DISPATCH=~/.xavier/deps/multi-model-dispatch/dispatch.sh
+    PARSE=~/.xavier/deps/multi-model-dispatch/parse.py
+
+    SYSTEM_PROMPT={security.md + security_conventions + security_patterns, or omit patterns section}
+    DIFF={diff}
+
+    # 1. Dispatch to both models
+    bash $DISPATCH gpt-5.4-xhigh $WORKSPACE /tmp/xavier-security-gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+    bash $DISPATCH gemini-3.1-pro $WORKSPACE /tmp/xavier-security-gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+
+    # 2. Merge into debate format
+    python3 $PARSE --merge /tmp/xavier-security-gpt.json /tmp/xavier-security-gemini.json
+
+    Return the merged Consensus/Disputes/Blindspots output.",
+    name: "xavier security debate"
+  },
+  {
+    task: "Run a paired debate for the performance persona.
+
+    WORKSPACE=$(git rev-parse --show-toplevel)
+    DISPATCH=~/.xavier/deps/multi-model-dispatch/dispatch.sh
+    PARSE=~/.xavier/deps/multi-model-dispatch/parse.py
+
+    SYSTEM_PROMPT={performance.md + performance_conventions + performance_patterns, or omit patterns section}
+    DIFF={diff}
+
+    # 1. Dispatch to both models
+    bash $DISPATCH gpt-5.4-xhigh $WORKSPACE /tmp/xavier-performance-gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+    bash $DISPATCH gemini-3.1-pro $WORKSPACE /tmp/xavier-performance-gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+
+    # 2. Merge into debate format
+    python3 $PARSE --merge /tmp/xavier-performance-gpt.json /tmp/xavier-performance-gemini.json
+
+    Return the merged Consensus/Disputes/Blindspots output.",
+    name: "xavier performance debate"
+  }
+])
+```
+
+Each remora runs `dispatch.sh` twice (once per model) sequentially within itself, then merges the two outputs with `parse.py --merge`. The three remoras run concurrently with each other. The output of each remora is structured Markdown with `## Consensus`, `## Disputes`, and `## Blindspots` sections.
+
+### Path B: Claude-Only Fallback (`debate_available = false`)
+
+When the `agent` CLI is not available, fall back to the standard three-persona flow. No error, no warning, no mention of debate.
+
+Spawn **3 reviewer agents concurrently** via the runtime adapter. All three must be spawned in a **single message** with parallel tool calls using `run_in_background: true`.
 
 ```
 // All 3 spawned concurrently via adapter collect()
@@ -106,15 +192,38 @@ The pilot fish aggregates findings as each reviewer completes. It does NOT wait 
 - "Reviewer 2/3 complete (security)..."
 - "Reviewer 3/3 complete (performance)..."
 
+The pilot fish handles two different input formats depending on which path was taken in Step 4:
+
+### Format Detection
+
+When a reviewer result arrives, check whether the output contains `## Consensus`, `## Disputes`, and `## Blindspots` headings. If all three are present, this is **debate format** (Path A). Otherwise, it is **raw findings format** (Path B fallback).
+
+### Processing Debate Format (Path A output)
+
+Each persona's debate output contains three sections. The pilot fish processes them as follows:
+
+- **Consensus findings**: These carry high confidence (two models agree). Include them directly, tagged with the persona's category (e.g., `[correctness]`). Use the higher of the two severity levels if they differ.
+- **Dispute findings**: These require human judgment. Include them with a `[disputed]` marker alongside the category tag. Present both sides concisely.
+- **Blindspot findings**: These are coverage gaps found by only one model. Include them with a `[blindspot]` marker. They are still valid findings but carry lower confidence than consensus.
+
+When applying vault interaction rules (from the debate protocol): if recurring patterns from the vault corroborate a Consensus finding, mark it as "confirmed." If recurring patterns contradict a Consensus finding, reclassify it as a Dispute. The pilot fish never creates new findings — it only reclassifies based on vault evidence.
+
+### Processing Raw Findings Format (Path B output)
+
+Each persona returns raw findings directly. Process them as in the standard flow — no consensus/dispute/blindspot classification applies.
+
+### Synthesis (both paths)
+
 **After all reviewers have reported**, synthesize:
 
 1. **Categorize** all findings by type: correctness, security, performance
 2. **Deduplicate**: if two reviewers flag the same line/issue, merge into a single finding and note which reviewers flagged it
-3. **Rank by severity**: critical > high > medium > low
+3. **Rank by severity**: critical > high > medium > low. For debate-path output, rank within tiers: consensus findings above blindspot findings at the same severity level, disputed findings shown separately
 4. **Determine final verdict**: the most severe individual verdict wins
    - If ANY reviewer says **rethink** -> final verdict is **rethink**
    - If ANY reviewer says **request changes** (and none say rethink) -> **request changes**
    - If ALL reviewers say **approve** -> **approve**
+   - For debate-path output: a persona's verdict is derived from its most severe consensus finding. Disputes and blindspots alone do not escalate the verdict above **request changes**
 
 ## Step 6: Deliver Verdict
 
