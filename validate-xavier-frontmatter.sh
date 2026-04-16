@@ -82,7 +82,7 @@ done
 # Check that note-writing skills include all 6 base Zettelkasten fields in their templates
 echo ""
 echo "=== Checking base Zettelkasten fields in note-writing skill templates ==="
-NOTE_WRITING_SKILLS="learn review prd tasks research"
+NOTE_WRITING_SKILLS="learn review prd tasks research investigate"
 BASE_FIELDS="repo type created updated tags related"
 
 for skill_name in $NOTE_WRITING_SKILLS; do
