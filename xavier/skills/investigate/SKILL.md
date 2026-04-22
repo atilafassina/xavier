@@ -42,21 +42,24 @@ Check for existing investigation notes that may relate to this symptom using the
 
 1. Filter the index to entries where `repo == {REPO_NAME}`.
 2. If the filtered list has more than 10 entries, keep only the 10 most recent by `created` date (O(10) cap, matches the `recurring-patterns` bound).
-3. If at least one entry remains, present a short list (date + symptom from frontmatter) and ask via `AskUserQuestion`: "Related to any of these, or new investigation?"
+3. If at least one entry remains, present a short list (date + each entry's exact `symptom` value from frontmatter) and ask via `AskUserQuestion`: "Related to any of these, or new investigation?"
    - **Related**: read the full prior note. Its content becomes additional context in Step 6, wrapped in `<prior-investigation>` XML tags as reference data.
    - **New**: proceed without prior context.
 4. If the filtered list is empty, proceed normally.
 
 ## Step 4: Normalize Symptom
 
-Structure the free-text symptom into four sections:
+Structure the free-text symptom into a canonical one-liner plus four detail sections:
 
+- **symptom_summary**: a single-line canonical summary of the issue, suitable for note frontmatter, the Step 3 picker display, and any downstream matching
 - **What's broken**: the observable behavior or error
 - **Where it manifests**: file, module, endpoint, or UI component
 - **When it started**: if known (otherwise "unknown")
 - **Entry point**: from `--file` or `--test` flag if provided (otherwise "none specified")
 
-Present the normalized symptom and confirm with the user via `AskUserQuestion` before proceeding: "Does this capture the issue correctly? Edit or confirm."
+Present both the `symptom_summary` and the four detail sections, then confirm with the user via `AskUserQuestion`: "Does this capture the issue correctly? Edit or confirm."
+
+After confirmation, treat the confirmed `symptom_summary` as the single source of truth. Reuse that exact value wherever the flow later needs a one-line symptom — the note frontmatter `symptom` field (Step 9) and any related-investigation matching or display (Step 3).
 
 ## Step 5: Generate Investigation Axes
 
@@ -132,7 +135,7 @@ One of: **strong** (direct evidence linking symptom to cause), **moderate** (cir
 
 **Subagent type:**
 
-All remoras use `subagent_type: "general-purpose"`. This matches the `research` skill / adapter default and keeps this skill portable across runtime adapters. Some other Xavier skills may intentionally use runtime-specific agent types (for example, Claude Code's `Explore`), but this skill does not — the adapter chooses the appropriate underlying agent here.
+Do not set `subagent_type` explicitly for remoras in this skill. Omit it and let the active adapter/runtime apply its own default agent type. This keeps the skill portable across runtime adapters while still allowing adapter-specific defaults (for example, runtimes that use different identifiers for their general-purpose agent). Some other Xavier skills may intentionally use runtime-specific agent types, but this skill does not.
 
 ## Step 7: Collect and Synthesize
 
@@ -173,7 +176,7 @@ tags:
   - {symptom-derived tags}
 related:
   - "[[investigations/prior-note-if-building-on]]"
-symptom: "{normalized one-line symptom summary}"
+symptom: "{confirmed symptom_summary from Step 4}"
 verdict: "{top hypothesis one-liner}"
 ---
 ```
