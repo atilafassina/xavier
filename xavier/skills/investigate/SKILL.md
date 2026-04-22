@@ -93,8 +93,6 @@ Spawn one remora per investigation axis via adapter `collect()` — all in a **s
 **Remora prompt template** (adapt per axis):
 
 ```
-Export SHARK_TASK_HASH={hash} before starting work.
-
 Investigate the following axis for a bug in repo "{repo}" (root: {cwd}):
 
 **Axis**: {axis name}
