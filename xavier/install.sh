@@ -84,6 +84,7 @@ scaffold_vault() {
   mkdir -p "$XAVIER_HOME/prd"
   mkdir -p "$XAVIER_HOME/tasks"
   mkdir -p "$XAVIER_HOME/research"
+  mkdir -p "$XAVIER_HOME/investigations"
   mkdir -p "$XAVIER_HOME/loop-state"
   mkdir -p "$XAVIER_HOME/shark-state"
 
