@@ -58,7 +58,7 @@ Both Claude Code and Cursor can be installed simultaneously — Xavier registers
  Xavier follows the **Shark pattern**: a central orchestrator that delegates work to concurrent background agents (remoras), never implementing
  anything itself. Results are verified through backpressure — only test, lint, and typecheck output counts as truth.
 
- A runtime **adapter** layer abstracts the differences between AI agent runtimes. Skills use generic operations (`spawn`, `collect`, `poll`) that the adapter maps to the correct tool for the active runtime — `Agent` for Claude Code, `Task` for Cursor. This means all 14 skills work identically regardless of which runtime you use.
+ A runtime **adapter** layer abstracts the differences between AI agent runtimes. Skills use generic operations (`spawn`, `collect`, `poll`) that the adapter maps to the correct tool for the active runtime — `Agent` for Claude Code, `Task` for Cursor. This means all 18 skills work identically regardless of which runtime you use.
 
  Three pillars drive every Xavier workflow:
 
@@ -81,8 +81,7 @@ Both Claude Code and Cursor can be installed simultaneously — Xavier registers
 - **Decisions** — framework choices, testing strategy, auth, deployment patterns
 - **Dependencies** — all direct/dev packages with consuming modules
 
- Notes are written progressively as each remora completes (pilot fish pattern). Monorepos are detected automatically, with per-workspace
- analysis. After learning, Xavier suggests key packages for dedicated dependency-skills (`/xavier add-dep`).
+ Notes are written progressively as each remora completes (pilot fish pattern). Monorepos are detected automatically, with per-workspace analysis, and `/xavier learn <path>` can scope exploration to a specific subdirectory or package when you want to focus on one area. After learning, Xavier suggests key packages for dedicated dependency-skills (`/xavier add-dep`).
 
 ### Knowledge Base
 
@@ -116,9 +115,11 @@ Both Claude Code and Cursor can be installed simultaneously — Xavier registers
 ### Knowledge
 
 
-| Command         | Description                                                        |
-| --------------- | ------------------------------------------------------------------ |
-| `/xavier learn` | Explore a codebase and produce knowledge notes in the Xavier vault |
+| Command                         | Description                                                                                     |
+| ------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `/xavier learn [path]`          | Explore a codebase (or scope to a specific monorepo package) and produce knowledge notes        |
+| `/xavier research <topic>`      | Research a topic across web, internal docs, and codebase; produce a structured digest           |
+| `/xavier investigate <symptom>` | Hypothesis-driven bug investigation across multiple axes; produce a ranked diagnosis            |
 
 
 ### Dependency Management
@@ -142,12 +143,14 @@ Both Claude Code and Cursor can be installed simultaneously — Xavier registers
 ### Vault & Setup
 
 
-| Command               | Description                                               |
-| --------------------- | --------------------------------------------------------- |
-| `/xavier setup`       | Create and configure the Xavier vault                     |
-| `/xavier self-update` | Update Xavier skills and references to the latest release |
-| `/xavier export`      | Export a vault note to your personal Obsidian vault       |
-| `/xavier uninstall`   | Remove the Xavier vault and all symlinks                  |
+| Command               | Description                                                         |
+| --------------------- | ------------------------------------------------------------------- |
+| `/xavier setup`       | Create and configure the Xavier vault                               |
+| `/xavier self-update` | Update Xavier skills and references to the latest release           |
+| `/xavier export`      | Export a vault note to your personal Obsidian vault                 |
+| `/xavier feedback`    | Open a GitHub Discussion in the Xavier upstream repository          |
+| `/xavier bug`         | File a bug report as a GitHub Issue in the Xavier upstream repo     |
+| `/xavier uninstall`   | Remove the Xavier vault and all symlinks                            |
 
 
 ## Usage
@@ -192,6 +195,9 @@ The vault maintains your configuration, knowledge, and state:
 ├── knowledge/             # Reviews, repo conventions, team patterns
 ├── prd/                   # Product requirement documents
 ├── tasks/                 # Implementation task files
+├── research/              # Topic research digests
+├── investigations/        # Bug and system-behavior diagnoses
+├── deps/                  # Per-package dependency-skills
 ├── references/            # Shared patterns, personas, adapters
 ├── skills/                # Symlinks to skill definitions
 └── *-state/               # Runtime state (loop, review, shark)
