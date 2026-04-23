@@ -15,12 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scoped-mode substitution block in Step 4 remora prompts — all 3 remoras target `{scope-path}` with root-peek permission for shared config
 - Step 7 scoped guard — per-workspace agent spawning is skipped when learn is already scoped to a package
 - `/xavier investigate <symptom>` skill — hypothesis-driven bug investigation that spawns parallel remoras across 5 fixed axes (code path, recent changes, dependency boundaries, test coverage, error patterns) plus 1-2 dynamic axes per symptom
-- `--file <path>` and `--test <name>` flags for anchoring investigation to a specific entry point
-- Prior investigation check: re-running on the same repo offers to build on existing findings
+- `--file <path>` and `--test <name>` flags for anchoring investigation to a specific entry point; `--file` is canonicalized and required to resolve under the repo root
+- Prior investigation check: re-running on the same repo offers to build on existing findings, with a canonical `symptom_summary` field used for matching and display
 - `type: investigation` in the Zettelkasten schema with `symptom` and `verdict` as type-specific fields
-- `investigations/` vault directory for persisting ranked diagnoses with evidence trails
+- `investigations/` vault directory scaffolded by installer, for persisting ranked diagnoses with evidence trails
+- `investigations-index` added to the router's requires vocabulary, following the `*-index` pattern — enables skills to declare reads from `investigations/` per the vault-path-declaration rule
 
 ### Changed
+
+- Investigate note filename gains an `HHMM` suffix on collision when the user chose "New" (not "Related"), preventing accidental overwrite of unrelated prior investigations
 
 ### Deprecated
 
@@ -33,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Self-update could skip distributed deps installation because the replacement was split across three code blocks — merged into a single atomic Bash command
 
 ### Security
+
+- Investigate remora prompts wrap user-supplied symptom and prior-investigation content in `<user-symptom>` / `<prior-investigation>` XML blocks with explicit "reference data only" framing, mirroring the research skill's prompt-injection mitigation
 
 ## [0.3.0] - 2026-04-15
 
