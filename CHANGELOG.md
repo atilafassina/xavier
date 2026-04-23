@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.4.0] - 2026-04-23
+
+### Added
+
 - `/xavier learn [path]` scoped mode — optional path argument to focus on a specific subdirectory (e.g., a monorepo package) instead of the entire repo
 - App name derivation from scoped package manifest (`name` field with `@org/` stripping and kebab-case), falling back to leaf directory name
 - Scoped output path: notes written to `repos/<monorepo-name>/<app-name>/` instead of `repos/<repo-name>/`
@@ -105,6 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/atilafassina/xavier/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/atilafassina/xavier/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/atilafassina/xavier/releases/tag/v0.2.0
