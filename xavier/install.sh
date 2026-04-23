@@ -84,6 +84,7 @@ scaffold_vault() {
   mkdir -p "$XAVIER_HOME/prd"
   mkdir -p "$XAVIER_HOME/tasks"
   mkdir -p "$XAVIER_HOME/research"
+  mkdir -p "$XAVIER_HOME/investigations"
   mkdir -p "$XAVIER_HOME/loop-state"
   mkdir -p "$XAVIER_HOME/shark-state"
 
@@ -362,6 +363,7 @@ setup|Create and configure the Xavier vault
 review|Run Shark-pattern code review with concurrent reviewer personas
 babysit|Monitor a PR — poll CI status, auto-fix lint failures, surface review comments
 grill|Interview about a plan or design until reaching shared understanding
+investigate|Investigate a bug or system behavior with structured diagnosis
 prd|Create a PRD through user interview, codebase exploration, and module design
 tasks|Decompose a PRD into phased implementation tasks
 learn|Explore a codebase and produce knowledge notes in the vault

@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scoped output path: notes written to `repos/<monorepo-name>/<app-name>/` instead of `repos/<repo-name>/`
 - Scoped-mode substitution block in Step 4 remora prompts — all 3 remoras target `{scope-path}` with root-peek permission for shared config
 - Step 7 scoped guard — per-workspace agent spawning is skipped when learn is already scoped to a package
+- `/xavier investigate <symptom>` skill — hypothesis-driven bug investigation that spawns parallel remoras across 5 fixed axes (code path, recent changes, dependency boundaries, test coverage, error patterns) plus 1-2 dynamic axes per symptom
+- `--file <path>` and `--test <name>` flags for anchoring investigation to a specific entry point
+- Prior investigation check: re-running on the same repo offers to build on existing findings
+- `type: investigation` in the Zettelkasten schema with `symptom` and `verdict` as type-specific fields
+- `investigations/` vault directory for persisting ranked diagnoses with evidence trails
 
 ### Changed
 

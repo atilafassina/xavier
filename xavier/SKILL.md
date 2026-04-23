@@ -82,6 +82,7 @@ The following 14 keys are the only valid values in a skill's `requires` list:
 | `deps-index`         | List all directories in `<vault>/deps/`                                                                                        |
 | `vault-memory`       | Read `<vault>/MEMORY.md`                                                                                                       |
 | `research-index`     | List all `.md` files in `<vault>/research/` with titles and frontmatter                                                        |
+| `investigations-index` | List all `.md` files in `<vault>/investigations/` with titles and frontmatter                                                |
 
 
 ### Annotations: required vs optional
