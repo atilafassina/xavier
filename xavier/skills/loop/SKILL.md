@@ -82,9 +82,32 @@ Update `~/.xavier/loop-state/<task-name>.md`: increment iteration, log progress,
 
 - **Backpressure passed**: mark phase complete, advance to next phase
 - **Backpressure failed**: re-spawn the remora with error context from the failure. Include the exact error output in the prompt so the remora can fix it
-- **All phases complete**: announce success, clean up state
-- **Max iterations reached**: announce limit, summarize remaining work
-- **No progress for 2 consecutive iterations**: announce stall, ask user for guidance
+- **All phases complete**: run Step 5 (auto-mark task as done), then announce success and clean up state
+- **Max iterations reached**: announce limit, summarize remaining work. Do **not** auto-mark — the task is incomplete
+- **No progress for 2 consecutive iterations**: announce stall, ask user for guidance. Do **not** auto-mark — the task is incomplete
+
+## Step 5: Auto-Mark Source Task as Done (success path only)
+
+When — and only when — the loop reaches the **All phases complete** branch of Step 4h, transition the source task file to `done` automatically. Do this silently — no user prompt.
+
+**Skip this step entirely if any of the following hold:**
+
+- **Freeform mode**: there is no source file to mark. Stop.
+- **Max iterations reached**: not a success. Skip.
+- **User stop / stall**: not a success. Skip.
+- **Partial progress only**: not a success. Skip.
+
+**Otherwise, apply the `→ done` transition documented in `xavier/skills/mark/SKILL.md`** to the source task file (the `~/.xavier/tasks/<name>.md` originally selected in Step 1). Do not duplicate the transition logic here — the canonical operation lives in the `mark` skill.
+
+The transition imposes a strict ordering and rollback contract that this step inherits:
+
+1. **Frontmatter write first, then move.** Set `status: done` (and bump `updated:`) in the source file at its current path *before* running `mv`. This is the order specified by the `→ done` transition.
+2. **Rollback on move failure.** If the `mv` to `<vault>/tasks/done/<name>.md` fails after the frontmatter write succeeds, revert the frontmatter write (remove the `status: done` field and restore the prior `updated:` value) so the on-disk state remains consistent — the task stays at top-level with no status, exactly as it was before the auto-mark attempt.
+3. **Idempotent.** If the source file is already at `<vault>/tasks/done/<name>.md` and already has `status: done`, the `→ done` transition is a no-op (per the mark skill). Do not re-write frontmatter, do not re-run `mv`.
+
+**Loop-state file is unaffected.** The state file at `~/.xavier/loop-state/<name>.md` is keyed by **basename only** — the same `<name>` as the source task file. Moving the source from `<vault>/tasks/<name>.md` to `<vault>/tasks/done/<name>.md` does not touch `~/.xavier/loop-state/<name>.md`. The cleanup of loop-state is a separate action handled by the success branch of Step 4h after this step returns.
+
+**Do not commit here.** The auto-mark frontmatter edit and `mv` are filesystem operations only; the router commits vault changes after the skill completes (mirroring the policy in `mark/SKILL.md`).
 
 ## Rules
 
@@ -96,3 +119,4 @@ Non-negotiable during a xavier loop:
 4. **Always commit working progress** — don't accumulate uncommitted changes
 5. **Shark never implements** — all work is delegated to remoras
 6. **Ask the user when stuck** — 2 iterations with no progress triggers a stop
+7. **Auto-mark only on success** — Step 5 runs only when every phase passed. Max-iterations, user-stop, stall, partial-progress, and freeform mode all skip auto-mark
