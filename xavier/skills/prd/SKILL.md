@@ -13,7 +13,7 @@ Create a vault-aware PRD through user interview, codebase exploration, and modul
 
 Before the interview begins, present vault contents for the user to browse and select relevant context:
 
-1. **PRD reference resolution (soft-resolve fallback)** — If the user invoked the skill with an explicit PRD name argument (e.g., `/xavier prd <name>`), resolve `<name>` against the four lifecycle cases before proceeding:
+1. **PRD reference resolution (soft-resolve fallback)** — If the user invoked the skill with an explicit PRD name argument (e.g., `/xavier prd <name>`), first **validate `<name>` as a basename** per the Name Validation rules in `xavier/skills/mark/SKILL.md` (must match `^[a-z0-9][a-z0-9-]{0,63}$`). If validation fails, abort before any filesystem check — never let an unvalidated argument reach a path. Then resolve `<name>` against the four lifecycle cases:
    - **Active-only** (file exists at `<vault>/prd/<name>.md`, NOT at `<vault>/prd/done/<name>.md`) → proceed normally with the active PRD as context.
    - **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → output the revival message and exit cleanly: `PRD <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` Do NOT continue with vault context selection or the interview.
    - **Ambiguous** (file exists at BOTH `<vault>/prd/<name>.md` and `<vault>/prd/done/<name>.md`) → silently prefer the active top-level PRD. Do not emit a revival prompt.

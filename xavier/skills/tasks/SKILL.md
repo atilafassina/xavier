@@ -17,14 +17,14 @@ Check that the PRD list from the resolved `prd-index` context is non-empty (i.e.
 
 List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context) showing filename, title, date, and tags from frontmatter. Present as a numbered list using AskUserQuestion. If the user already specified a PRD by name, skip the listing and read it directly.
 
-**Soft-resolve fallback for explicit PRD name argument** — When the user invokes the skill with an explicit PRD name (skipping the picker), resolve `<name>` against the four lifecycle cases before reading:
+**Soft-resolve fallback for explicit PRD name argument** — When the user invokes the skill with an explicit PRD name (skipping the picker), first **validate `<name>` as a basename** per the Name Validation rules in `xavier/skills/mark/SKILL.md` (must match `^[a-z0-9][a-z0-9-]{0,63}$`). If validation fails, abort with the same error message before any filesystem check — never let an unvalidated argument reach a path. Then resolve `<name>` against the four lifecycle cases:
 
 - **Active-only** (file exists at `<vault>/prd/<name>.md`, NOT at `<vault>/prd/done/<name>.md`) → read it directly and proceed.
 - **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → output the revival message and exit cleanly: `PRD <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` Do NOT continue with task generation.
 - **Ambiguous** (file exists at BOTH `<vault>/prd/<name>.md` and `<vault>/prd/done/<name>.md`) → silently prefer the active top-level PRD. Do not emit a revival prompt.
 - **Missing** (file exists at NEITHER path) → fall through to the existing "not found" behavior (no revival prompt, no soft-resolve). No behavior change here.
 
-**Soft-resolve fallback for explicit task name argument** — In the rare case that a task name argument is supplied (e.g., when the skill is invoked to operate on or regenerate an existing task file), apply the same four-case resolution against `<vault>/tasks/<name>.md` vs `<vault>/tasks/done/<name>.md`:
+**Soft-resolve fallback for explicit task name argument** — In the rare case that a task name argument is supplied (e.g., when the skill is invoked to operate on or regenerate an existing task file), **validate `<name>` as a basename first** (same rule and error path as above). Then apply the same four-case resolution against `<vault>/tasks/<name>.md` vs `<vault>/tasks/done/<name>.md`:
 
 - **Active-only** (file exists at `<vault>/tasks/<name>.md`, NOT at `<vault>/tasks/done/<name>.md`) → proceed normally with the active task file.
 - **Done-only** (file exists ONLY at `<vault>/tasks/done/<name>.md`, no top-level counterpart) → output the revival message and exit cleanly: `task <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` Do NOT continue.
@@ -74,22 +74,26 @@ Iterate until the user approves.
 
 If the user declines, ask for an alternative filename or abort.
 
-Write to `~/.xavier/tasks/<filename>.md` with Zettelkasten frontmatter (see `~/.xavier/references/formats/zettelkasten.md`):
+Write to `~/.xavier/tasks/<task-filename>.md` with Zettelkasten frontmatter (see `~/.xavier/references/formats/zettelkasten.md`).
+
+The `source` and `related` wikilinks must point to the **source PRD's basename** (chosen in Step 1), not the task file's own filename. These can differ — task filenames may add a feature qualifier (`prd-foo` → `prd-foo-tasks`) or the user may pick a different filename in this step. Treat `<prd-basename>` and `<task-filename>` as independent variables; downstream sibling-scan logic in `xavier/skills/loop/SKILL.md` Step 6 and `xavier/skills/mark/SKILL.md` sub-phase 5b parses `<prd-basename>` out of the `source` wikilink to find the PRD.
 
 ```yaml
 ---
 repo: {current repo name}
 type: tasks
-source: "[[prd/<filename>]]"
+source: "[[prd/<prd-basename>]]"
 created: {ISO date}
 updated: {ISO date}
 tags:
   - tasks
   - {feature-related tags}
 related:
-  - "[[prd/<filename>]]"
+  - "[[prd/<prd-basename>]]"
 ---
 ```
+
+Both `<prd-basename>` and `<task-filename>` must satisfy the basename allowlist (`^[a-z0-9][a-z0-9-]{0,63}$`) — validate before writing the file. If the user-suggested filename does not match, ask them to provide one that does.
 
 Then write the task body: architectural decisions, backpressure commands, completion criteria, and phases with acceptance criteria.
 

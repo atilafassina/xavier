@@ -12,12 +12,13 @@ Execute a task file (or freeform task) as an autonomous loop using the Shark pat
 ## Step 1: Gather Loop Configuration
 
 1. **Task source**: Accept either:
-   - A task file from `~/.xavier/tasks/` — list available files and let the user pick, or accept a path argument
+   - A task file from `~/.xavier/tasks/` — list available files and let the user pick, or accept a **basename** argument (no path-style input).
    - A freeform task description (at least 2 sentences)
-2. **If task file**: extract phases, completion criteria, and backpressure commands from the file (same extraction as ralph-loop)
-3. **If freeform**: ask the user for completion criteria, backpressure commands, and max iterations. If the user does not specify backpressure commands, auto-detect them using `references/patterns/backpressure-detection.md`.
-4. **Max iterations**: default 10. Warn at >25 about cost implications
-5. **Pause before phase**: optional phase number to pause at (default: No)
+2. **Basename validation for task-file argument.** When the user supplies a task name (any mode other than picker or freeform), the argument MUST be a basename matching `^[a-z0-9][a-z0-9-]{0,63}$` (per the Name Validation rules in `xavier/skills/mark/SKILL.md`). Reject `/`, `\`, `..`, leading `.`, whitespace, absolute paths, and anything outside `[a-z0-9-]`. After validation, resolve **only** to `~/.xavier/tasks/<name>.md` (active) or apply the soft-resolve fallback against `~/.xavier/tasks/done/<name>.md`. Never accept arbitrary filesystem paths — the loop reads and executes shell commands from the resolved task file's "Backpressure Commands" section, so an unvalidated path would let any reachable file drive command execution.
+3. **If task file**: extract phases, completion criteria, and backpressure commands from the file (same extraction as ralph-loop)
+4. **If freeform**: ask the user for completion criteria, backpressure commands, and max iterations. If the user does not specify backpressure commands, auto-detect them using `references/patterns/backpressure-detection.md`.
+5. **Max iterations**: default 10. Warn at >25 about cost implications
+6. **Pause before phase**: optional phase number to pause at (default: No)
 
 Present extracted/provided values to the user for confirmation before proceeding.
 
@@ -126,17 +127,18 @@ After Step 5 has marked the task as `done`, check whether the source PRD is now 
 2. Verify the PRD's current location:
    - If `<vault>/prd/done/<name>.md` exists → PRD is already done. **Skip the prompt.** Stop.
    - Otherwise the PRD lives at `<vault>/prd/<name>.md` (active). Continue.
-3. Find sibling tasks in a **single pass** instead of reading every task file. Use `grep -l` (or equivalent) to short-circuit on the source pattern:
+3. Find sibling tasks in a **single pass** instead of reading every task file. Use `find -exec grep -l` to handle large vaults safely (avoids ARG_MAX) and to short-circuit on the wikilink itself rather than a strict quoting pattern:
 
    ```
-   grep -l 'source:[[:space:]]*"\[\[prd/<name>\]\]"' \
-     <vault>/tasks/*.md <vault>/tasks/done/*.md 2>/dev/null
+   find <vault>/tasks <vault>/tasks/done -maxdepth 1 -name '*.md' \
+     -exec grep -l "\[\[prd/<name>\]\]" {} + 2>/dev/null
    ```
 
-   Since `<name>` is already validated as `[a-z0-9-]+`, no shell-escaping or regex-escaping is required. The grep returns the file paths of all sibling tasks; we never need to parse their frontmatter beyond classifying location/status.
+   The grep matches any occurrence of the wikilink `[[prd/<name>]]` so it accepts every YAML quoting style (`source: "[[prd/<name>]]"`, `source: '[[prd/<name>]]'`, or `source: [[prd/<name>]]`) — strict double-quote-only matching would miss legitimate siblings and cause premature PRD retirement. Since `<name>` is already validated as `[a-z0-9-]{1,64}`, the regex is unambiguous and needs no shell-escaping or regex-escaping. The grep returns the file paths of all sibling tasks; we never need to parse their frontmatter beyond classifying location.
 4. For every matching sibling, classify as **done** or **active**:
-   - The sibling is **done** if it lives in `<vault>/tasks/done/` (cheap path check) OR its frontmatter `status` is `done` (or `superseded`). Check the path first; only read the file's frontmatter if it lives at top-level.
-   - Otherwise it is **active**. Short-circuit as soon as one active sibling is found — there is no need to classify the rest before deciding to suppress the prompt.
+   - The sibling is **done** iff it lives in `<vault>/tasks/done/` (location is the canonical signal — a path check, no frontmatter read needed).
+   - A sibling at top-level (`<vault>/tasks/<name>.md`) is **active** even if its frontmatter `status` is `done` or `superseded`. That state is non-canonical (a prior transition's `mv` did not land, or a manual edit drifted) — the user must reconcile via `/xavier mark` before the loop's PRD-retirement can fire. Log a warning naming the file but do **not** count it as done.
+   - Short-circuit as soon as one active sibling is found — no need to classify the rest before suppressing the prompt.
 5. **Branch on the result:**
    - **At least one sibling is still active** → do not prompt. The PRD is not yet ready to retire. Stop this step silently.
    - **Every sibling is done** → prompt via **AskUserQuestion**:

@@ -23,11 +23,11 @@ There are three states for a PRD or task file:
 
 Before performing **any** filesystem operation, the `<name>` argument MUST be validated as a basename. Reject anything that is not a basename:
 
-- The name **must** match the regex `^[a-z0-9][a-z0-9-]*$` (lowercase letters, digits, hyphens; must start with letter or digit).
+- The name **must** match the regex `^[a-z0-9][a-z0-9-]{0,63}$` (lowercase letters, digits, hyphens; must start with a letter or digit; total length 1–64 characters to keep resulting filenames well below the 255-byte filesystem limit).
 - Reject names containing `/`, `\`, `..`, leading `.`, whitespace, absolute paths, or any character outside `[a-z0-9-]`.
 - Names sourced from frontmatter wikilinks (e.g., a `source: "[[prd/<name>]]"` field) are **not** trusted — apply the same validation after extracting `<name>` from the wikilink.
 
-If `<name>` fails validation, abort with: `Invalid name '<name>': must match [a-z0-9][a-z0-9-]*. Aborting — no filesystem changes made.` This rule applies in arg mode (Step 3), backfill (Step 5), and any sibling-scan that consumes a `source` field.
+If `<name>` fails validation, abort with: `Invalid name '<name>': must match [a-z0-9][a-z0-9-]{0,63}. Aborting — no filesystem changes made.` This rule applies in arg mode (Step 3), one-arg picker pre-filter (Step 2), backfill (Step 5), and any sibling-scan that consumes a `source` field.
 
 ## Transition Operations
 
@@ -40,18 +40,18 @@ The contract below is **canonical** — `loop/SKILL.md` and `tasks/SKILL.md` ref
 1. **Validate name** per the rules above. Abort on failure.
 2. **Idempotency check.** If the file is already at `<vault>/<kind>/done/<name>.md` AND its frontmatter `status` is already `done`: no-op. Stop.
 3. **Move precondition.** If the file currently lives at `<vault>/<kind>/<name>.md` (top-level), verify that `<vault>/<kind>/done/<name>.md` does **not** already exist. If it does, abort with: `Cannot transition <kind>/<name> → done: destination <vault>/<kind>/done/<name>.md already exists. Resolve the conflict manually and re-run.` Do **not** overwrite — `mv` would silently destroy the existing done-side file.
-4. **Frontmatter write (first).** At the file's current path, set the frontmatter `status` field to `done` (insert if absent; overwrite if `superseded`). Bump `updated:` to today's ISO date. Save the prior frontmatter state in memory in case rollback is needed.
+4. **Frontmatter write (first).** At the file's current path, set the frontmatter `status` field to `done` (insert if absent; overwrite if `superseded`). Bump `updated:` to today's ISO date. Save the **prior** `status` value (which may be absent or `superseded`) and the prior `updated:` value in memory in case rollback is needed.
 5. **Move (second).** If the file was at the top level, run `mv <vault>/<kind>/<name>.md <vault>/<kind>/done/<name>.md`.
-6. **Rollback on move failure.** If `mv` returns non-zero, revert the frontmatter changes from step 4 (remove `status`, restore the prior `updated:`) so the file remains at top-level with no status — exactly as it was before the transition started. Surface the original `mv` error to the user.
+6. **Rollback on move failure.** If `mv` returns non-zero, revert the frontmatter changes from step 4: restore the prior `status` value (re-insert `superseded` if that was the prior value, or remove the `status` field entirely if it was previously absent) and restore the prior `updated:` value. The file ends in exactly the on-disk state it had before the transition started. Surface the original `mv` error to the user.
 
 ### `→ superseded`
 
 1. **Validate name** per the rules above. Abort on failure.
 2. **Idempotency check.** If the file is already at `<vault>/<kind>/done/<name>.md` AND its frontmatter `status` is already `superseded`: no-op. Stop.
 3. **Move precondition.** If the file lives at `<vault>/<kind>/<name>.md` (top-level), verify `<vault>/<kind>/done/<name>.md` does not exist. If it does, abort with the equivalent error from `→ done` step 3. Do not overwrite.
-4. **Frontmatter write.** Set `status: superseded` (insert if absent; overwrite if `done`). Bump `updated:`. Save prior state.
+4. **Frontmatter write.** Set `status: superseded` (insert if absent; overwrite if `done`). Bump `updated:`. Save the **prior** `status` value (absent or `done`) and prior `updated:`.
 5. **Move.** If at top-level, `mv` to `<vault>/<kind>/done/<name>.md`.
-6. **Rollback on move failure.** Same contract as `→ done` step 6.
+6. **Rollback on move failure.** Restore the prior `status` value (re-insert `done` if that was the prior value, or remove the field if previously absent) and prior `updated:`. The file ends exactly as it was before the transition started.
 
 ### `→ active`
 
@@ -163,9 +163,9 @@ Show the list in full (one per line). Do not paginate.
 
 **What it scans.** First, build a `source → {total, done}` map in a **single pass** over `<vault>/tasks/*.md` and `<vault>/tasks/done/*.md` so the eligibility check below runs in O(P) instead of O(P × T):
 
-1. For each task file, read its frontmatter `source` field — a wikilink of the form `"[[prd/<prd-name>]]"`.
-2. Extract `<prd-name>` and **validate it** as a basename (must match `^[a-z0-9][a-z0-9-]*$` per the Name Validation rules). Skip the task and log a warning if validation fails — never derive filesystem operations from an unvalidated `source` value.
-3. Increment `map[<prd-name>].total`. If the task lives in `<vault>/tasks/done/` OR has frontmatter `status: done` or `status: superseded`, also increment `map[<prd-name>].done`.
+1. For each task file, read its frontmatter `source` field — a wikilink of the form `"[[prd/<prd-name>]]"` (any quoting style — single-quoted, unquoted, or double-quoted).
+2. Extract `<prd-name>` and **validate it** as a basename (must match `^[a-z0-9][a-z0-9-]{0,63}$` per the Name Validation rules). Skip the task and log a warning if validation fails — never derive filesystem operations from an unvalidated `source` value.
+3. Increment `map[<prd-name>].total`. **Classify the task as done iff it lives in `<vault>/tasks/done/`** — the canonical signal is location, not the frontmatter status. If a task lives at top-level (`<vault>/tasks/<name>.md`) but its frontmatter `status` is `done` or `superseded`, the vault is in non-canonical state (a prior transition's `mv` did not land or a manual edit drifted from the contract). Log a warning naming that file and treat it as **active** for inference purposes — do **not** silently count it as done. The user should run `/xavier mark <name> active` to clear the spurious status, or move the file to `done/` manually.
 
 Note: sub-phase 5a will have just moved tasks into `tasks/done/`, so re-glob — do not rely on a snapshot taken before sub-phase 5a ran.
 
