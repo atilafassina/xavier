@@ -148,6 +148,7 @@ Both Claude Code and Cursor can be installed simultaneously — Xavier registers
 | `/xavier setup`       | Create and configure the Xavier vault                               |
 | `/xavier self-update` | Update Xavier skills and references to the latest release           |
 | `/xavier export`      | Export a vault note to your personal Obsidian vault                 |
+| `/xavier mark`        | Move a PRD or task between active, done, and superseded states      |
 | `/xavier feedback`    | Open a GitHub Discussion in the Xavier upstream repository          |
 | `/xavier bug`         | File a bug report as a GitHub Issue in the Xavier upstream repo     |
 | `/xavier uninstall`   | Remove the Xavier vault and all symlinks                            |
