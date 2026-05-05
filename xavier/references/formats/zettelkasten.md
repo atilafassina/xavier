@@ -32,6 +32,17 @@ related:
 | `related` | list   | Wikilinks (`[[path/name]]`) to other vault notes that provide context    |
 
 
+## Optional Fields
+
+### `status`
+
+Lifecycle marker for time-bound notes (PRDs, tasks). Allowed values:
+
+- `done` — work is complete; the note has been moved to the `done/` subdirectory
+- `superseded` — replaced by another note (typically referenced via `related`)
+
+**Rule: absence of `status` ≡ active.** Notes without a `status` field are treated as live, in-flight work. The router's `prd-index` and `tasks-index` requires keys glob top-level `*.md` only and never recurse into `done/`, so moving a note to `done/` (and setting `status: done`) hides it from active choice lists while preserving full history on disk.
+
 ## Type-Specific Fields
 
 ### Reviews

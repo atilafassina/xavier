@@ -76,8 +76,8 @@ The following 14 keys are the only valid values in a skill's `requires` list:
 | `recurring-patterns` | Extract recurring patterns from the 10 most recent review notes in `<vault>/knowledge/reviews/` for the current repo           |
 | `team-conventions`   | Read files in `<vault>/knowledge/teams/` matching the current repo or team                                                     |
 | `repo-conventions`   | Read files in `<vault>/knowledge/repos/` matching the current repo                                                             |
-| `prd-index`          | List all `.md` files in `<vault>/prd/` with titles and frontmatter                                                             |
-| `tasks-index`        | List all `.md` files in `<vault>/tasks/` with titles and frontmatter                                                           |
+| `prd-index`          | List `.md` files at the top level of `<vault>/prd/` only — never recurse into `<vault>/prd/done/`. Surface titles and frontmatter for active PRDs. |
+| `tasks-index`        | List `.md` files at the top level of `<vault>/tasks/` only — never recurse into `<vault>/tasks/done/`. Surface titles and frontmatter for active tasks. |
 | `skills-index`       | List all directories in `<vault>/skills/`                                                                                      |
 | `deps-index`         | List all directories in `<vault>/deps/`                                                                                        |
 | `vault-memory`       | Read `<vault>/MEMORY.md`                                                                                                       |
@@ -102,6 +102,20 @@ requires: [config, personas:required, recurring-patterns:optional]
 Skills MUST NOT read vault paths that are not covered by their `requires` list. Every vault directory a skill reads from must have a corresponding requires key declared in the frontmatter. Skills that only WRITE to a vault path (e.g., writing a new file to `tasks/`) do not need the corresponding index key — only skills that READ or LIST from those paths do.
 
 If a `requires` key cannot be resolved (e.g., directory is empty or doesn't exist), provide an empty result for that key — do not fail. The skill decides how to handle missing context.
+
+### Choice-list count hint
+
+When a skill (or the router itself, when listing PRDs / tasks for the user to pick from) presents a choice list backed by `prd-index` or `tasks-index`, append a count hint that surfaces how many archived items exist alongside the active ones. Use this exact format:
+
+```
+(N active, M done — /xavier mark to revive)
+```
+
+- `N` — number of top-level `.md` files (active items returned by the index)
+- `M` — number of `.md` files inside the corresponding `done/` subdirectory
+- The `/xavier mark to revive` tail is literal — it tells the user how to bring an archived item back into the active list
+
+This hint is informational and never gates the choice list — archived items remain hidden until the user explicitly revives them.
 
 ---
 

@@ -79,6 +79,62 @@ for skill_dir in "$SKILLS_DIR"/*/; do
   fi
 done
 
+# Validate `status` field in vault notes (when present, must be `done` or `superseded`).
+# This walks every .md file under XAVIER_HOME if it exists, plus any vault note fixtures
+# passed via XAVIER_VALIDATE_PATHS (space-separated). Notes without a `status` field pass.
+echo ""
+echo "=== Checking optional 'status' field in vault notes ==="
+STATUS_ERRORS=0
+VALID_STATUS="done superseded"
+
+# Build search roots: XAVIER_HOME (if it exists) plus any extra paths from env.
+SEARCH_ROOTS=""
+if [ -n "${XAVIER_HOME:-}" ] && [ -d "${XAVIER_HOME}" ]; then
+  SEARCH_ROOTS="$SEARCH_ROOTS ${XAVIER_HOME}"
+fi
+if [ -n "${XAVIER_VALIDATE_PATHS:-}" ]; then
+  SEARCH_ROOTS="$SEARCH_ROOTS ${XAVIER_VALIDATE_PATHS}"
+fi
+
+if [ -n "$SEARCH_ROOTS" ]; then
+  for root in $SEARCH_ROOTS; do
+    [ -e "$root" ] || continue
+
+    # Collect candidate files: a directory expands to its .md files, a file is checked directly.
+    if [ -d "$root" ]; then
+      candidates="$(find "$root" -type f -name '*.md' 2>/dev/null || true)"
+    else
+      candidates="$root"
+    fi
+
+    [ -z "$candidates" ] && continue
+
+    while IFS= read -r note_file; do
+      [ -f "$note_file" ] || continue
+
+      # Extract status field from the first frontmatter block only.
+      status_value="$(awk '/^---$/{c++; next} c==1 && /^status:/{sub(/^status:[[:space:]]*/, ""); gsub(/[[:space:]]*$/, ""); print; exit}' "$note_file")"
+
+      # No status field → accept silently.
+      [ -z "$status_value" ] && continue
+
+      # Strip surrounding quotes if present.
+      status_value="$(echo "$status_value" | sed 's/^["'\'']//;s/["'\'']$//')"
+
+      if ! echo "$VALID_STATUS" | grep -qw "$status_value"; then
+        echo "FAIL: $note_file has invalid status: '$status_value' (allowed: done, superseded)"
+        STATUS_ERRORS=$((STATUS_ERRORS + 1))
+      fi
+    done <<< "$candidates"
+  done
+fi
+
+if [ $STATUS_ERRORS -eq 0 ]; then
+  echo "PASS: 'status' field validation"
+else
+  ERRORS=$((ERRORS + STATUS_ERRORS))
+fi
+
 # Check that note-writing skills include all 6 base Zettelkasten fields in their templates
 echo ""
 echo "=== Checking base Zettelkasten fields in note-writing skill templates ==="
