@@ -77,6 +77,10 @@ Three invocation modes:
 
 1. From the resolved `prd-index` and `tasks-index` contexts, gather the active items (top-level `*.md` only — these contexts already exclude `done/`).
 2. Glob `<vault>/prd/done/*.md` and `<vault>/tasks/done/*.md` directly to gather the archived items. The indexes do not surface these. **Read each archived file's frontmatter** to recover its current state — both `done` and `superseded` items live in the same `done/` directory, so the path alone cannot distinguish them. Read only the frontmatter (stop at the second `---`); never read the full body.
+3. **One-arg pre-filter** (entered when Step 1 detected exactly one argument that was already validated as a basename): apply the filter to the combined active + archived set before showing any picker. Match a candidate when its `<name>` (basename without `.md`) **exactly equals** the argument — substring matches and fuzzy matches are explicitly out of scope. Branch on the filtered count:
+   - **Zero matches** → error: `No PRD or task named '<arg>' found in active or archived sets.` Stop. Do NOT fall through to a full picker; the user explicitly named something that does not exist.
+   - **Exactly one match** → skip the multi-select; immediately prompt for the target state via **AskUserQuestion** (`done` / `superseded` / `active`) and dispatch the matching transition operation. This is the auto-prompt path documented in Step 1.
+   - **More than one match** (e.g., the same basename in both `prd/` and `tasks/` trees, or both top-level and archived in one tree) → render the multi-select picker pre-filtered to just those matches so the user disambiguates.
 3. Present the choices using **AskUserQuestion** with `multiSelect: true`. Format the options into two clearly separated sections, **active first**:
 
    ```

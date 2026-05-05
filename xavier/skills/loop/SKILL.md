@@ -14,7 +14,19 @@ Execute a task file (or freeform task) as an autonomous loop using the Shark pat
 1. **Task source**: Accept either:
    - A task file from `~/.xavier/tasks/` — list available files and let the user pick, or accept a **basename** argument (no path-style input).
    - A freeform task description (at least 2 sentences)
-2. **Basename validation for task-file argument.** When the user supplies a task name (any mode other than picker or freeform), the argument MUST be a basename matching `^[a-z0-9][a-z0-9-]{0,63}$` (per the Name Validation rules in `xavier/skills/mark/SKILL.md`). Reject `/`, `\`, `..`, leading `.`, whitespace, absolute paths, and anything outside `[a-z0-9-]`. After validation, resolve **only** to `~/.xavier/tasks/<name>.md` (active) or apply the soft-resolve fallback against `~/.xavier/tasks/done/<name>.md`. Never accept arbitrary filesystem paths — the loop reads and executes shell commands from the resolved task file's "Backpressure Commands" section, so an unvalidated path would let any reachable file drive command execution.
+2. **Basename validation for task-file argument.** When the user supplies a task name (any mode other than picker or freeform), the argument MUST be a basename matching `^[a-z0-9][a-z0-9-]{0,63}$` (per the Name Validation rules in `xavier/skills/mark/SKILL.md`). Reject `/`, `\`, `..`, leading `.`, whitespace, absolute paths, and anything outside `[a-z0-9-]`. Never accept arbitrary filesystem paths — the loop reads and executes shell commands from the resolved task file's "Backpressure Commands" section, so an unvalidated path would let any reachable file drive command execution.
+
+   After validation, resolve `<name>` against the four lifecycle cases:
+
+   - **Active-only** (`~/.xavier/tasks/<name>.md` exists, NOT in `tasks/done/`) → use it directly. Proceed to extraction.
+   - **Done-only** (`~/.xavier/tasks/done/<name>.md` exists, no top-level counterpart) → read the file's frontmatter `status` (`done` or `superseded`) to inform the message. Emit a revival hint and exit cleanly without starting a loop:
+     - `task <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` (status: done)
+     - `task <name> is marked superseded. Revive it with /xavier mark <name> active first, then re-run.` (status: superseded)
+     - If status is missing or invalid, surface the validator-pointer message: `task <name> lives in tasks/done/ but its status field is missing or invalid. Run 'bash validate-xavier-frontmatter.sh' against your vault to surface the offending file.`
+
+     Never load and execute a `done/`-side task file. Archived tasks are explicitly out of scope — their backpressure commands may be stale, point at moved code, or have been intentionally retired.
+   - **Ambiguous** (file exists at BOTH `~/.xavier/tasks/<name>.md` and `~/.xavier/tasks/done/<name>.md`) → silently prefer the active top-level task file.
+   - **Missing** (file exists at NEITHER path) → fall through to the existing "task not found" error.
 3. **If task file**: extract phases, completion criteria, and backpressure commands from the file (same extraction as ralph-loop)
 4. **If freeform**: ask the user for completion criteria, backpressure commands, and max iterations. If the user does not specify backpressure commands, auto-detect them using `references/patterns/backpressure-detection.md`.
 5. **Max iterations**: default 10. Warn at >25 about cost implications

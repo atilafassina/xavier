@@ -24,11 +24,12 @@ List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context)
 
 1. **PRD lookup first** (the skill operates on PRDs):
    - **Active-only** (file exists at `<vault>/prd/<name>.md`, NOT at `<vault>/prd/done/<name>.md`) → read it directly and proceed. Whether `tasks/<name>.md` or `tasks/done/<name>.md` also exists is irrelevant here — a same-basename task is a known legacy pattern, not an error.
-   - **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → read the file's frontmatter `status` to recover the actual lifecycle state. Emit the matching revival message:
-     - If `status: done`: `PRD <name> is marked done. Revive it before re-running.`
-     - If `status: superseded`: `PRD <name> is marked superseded. Revive it before re-running.`
+   - **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → read the file's frontmatter `status` to recover the actual lifecycle state. Branch:
+     - If `status: done`: emit `PRD <name> is marked done. Revive it before re-running.`
+     - If `status: superseded`: emit `PRD <name> is marked superseded. Revive it before re-running.`
+     - If `status` is missing OR has any other value (drift): emit `PRD <name> lives in prd/done/ but its status field is missing or invalid. The vault is in non-canonical state — run 'bash validate-xavier-frontmatter.sh' against your vault to surface the offending file, then either set status to done/superseded or move the file back to prd/<name>.md before re-running.` Exit cleanly without proceeding to task generation.
 
-     Then suggest the recovery path with cross-kind ambiguity awareness: if `<vault>/tasks/<name>.md` or `<vault>/tasks/done/<name>.md` also exists, `/xavier mark <name> active` would hit `mark`'s cross-kind ambiguity error, so suggest the picker form: `Run /xavier mark (no args), select prd/<name>, and choose 'active'. Then re-run.` Otherwise suggest the arg form: `Run /xavier mark <name> active, then re-run.` Exit cleanly. Do NOT continue with task generation.
+     For the done and superseded cases, then suggest the recovery path with cross-kind ambiguity awareness: if `<vault>/tasks/<name>.md` or `<vault>/tasks/done/<name>.md` also exists, `/xavier mark <name> active` would hit `mark`'s cross-kind ambiguity error, so suggest the picker form: `Run /xavier mark (no args), select prd/<name>, and choose 'active'. Then re-run.` Otherwise suggest the arg form: `Run /xavier mark <name> active, then re-run.` Exit cleanly. Do NOT continue with task generation.
    - **Ambiguous within PRD tree** (file exists at BOTH `<vault>/prd/<name>.md` and `<vault>/prd/done/<name>.md`) → silently prefer the active top-level PRD. Do not emit a revival prompt.
 
 2. **PRD lookup failed (no file in `prd/` or `prd/done/`).** Before reporting "not found", check if the argument matches a task instead. This catches a common mistake: the user typed a task name where a PRD basename was expected.
@@ -122,7 +123,11 @@ Then write the task body: architectural decisions, backpressure commands, comple
 
 Decomposition is the start of implementation, not the end of it — `done` is **not** offered here. (The source PRD becomes a candidate for `done` only when its derived tasks finish, which happens via `xavier/skills/loop/SKILL.md` Step 6 after the last sibling task is auto-marked done.)
 
-This step exists for one case only: a fresh decomposition that **replaces** an older PRD on the same topic. In that case, the older PRD should be marked `superseded`. Prompt the user via **AskUserQuestion**:
+This step exists for one case only: a fresh decomposition that **replaces** an older PRD on the same topic. In that case, the older PRD should be marked `superseded`.
+
+**Pre-flight: skip the prompt entirely if there is no candidate to supersede.** Look at the resolved `prd-index` minus the just-decomposed PRD's basename. If the resulting candidate set is empty, there is nothing the user could pick in the follow-up picker — surface a one-line note (`No other active PRDs to supersede; skipping.`) and proceed to Step 9 without prompting. Asking the user a question whose follow-up has zero options is a dead-end flow.
+
+Otherwise, prompt the user via **AskUserQuestion**:
 
 > Does this decomposition replace an older PRD that should be marked `superseded`?
 
@@ -130,7 +135,7 @@ Options: `superseded`, `skip` (default).
 
 Dispatch:
 
-- **`superseded`** → first ask which PRD to supersede (via a follow-up **AskUserQuestion** picker drawn from the resolved `prd-index`, excluding the just-decomposed PRD). Validate the picked basename per the Name Validation rules in `xavier/skills/mark/SKILL.md`. Then apply the `→ superseded` transition from `xavier/skills/mark/SKILL.md` to the chosen PRD. The canonical transition contract — name validation, idempotency, move-precondition, frontmatter-then-mv ordering, and rollback — lives in `mark`; do not duplicate it here.
+- **`superseded`** → ask which PRD to supersede via a follow-up **AskUserQuestion** picker drawn from the candidate set computed in pre-flight (every active PRD except the just-decomposed one). Validate the picked basename per the Name Validation rules in `xavier/skills/mark/SKILL.md`. Then apply the `→ superseded` transition from `xavier/skills/mark/SKILL.md` to the chosen PRD. The canonical transition contract — name validation, idempotency, move-precondition, frontmatter-then-mv ordering, and rollback — lives in `mark`; do not duplicate it here.
 - **`skip`** → leave all PRDs untouched. No filesystem or frontmatter change.
 
 Do not commit here. The router commits vault changes after the skill completes (mirroring the policy in `mark/SKILL.md`).

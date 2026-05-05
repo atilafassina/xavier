@@ -388,6 +388,8 @@ remove-dep|Delete a dependency-skill
 research|Research a topic across web, internal docs, and codebase
 deps-update|Scan lockfile and regenerate stale dependency-skills
 export|Export a vault note to your personal Obsidian vault
+bug|File a bug report as a GitHub Issue in the Xavier upstream repo
+feedback|Open a GitHub Discussion in the Xavier upstream repository
 self-update|Update Xavier skills and references to the latest release
 uninstall|Remove the Xavier vault and all symlinks
 "
@@ -414,10 +416,12 @@ Do NOT execute this skill directly. Do NOT read vault files. Delegate to the xav
 ALIASEOF
 
     # Cursor: ~/.cursor/skills/<prefix>-<cmd>/SKILL.md
+    # Always rewrite so refresh-only and self-update flows pick up content/format
+    # changes (e.g. new fields, updated descriptions). Skipping when the file
+    # already exists left existing Cursor users on stale aliases after upgrades.
     cursor_alias="$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md"
-    if [ ! -e "$cursor_alias" ]; then
-      mkdir -p "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}"
-      cat > "$cursor_alias" << ALIASEOF
+    mkdir -p "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}"
+    cat > "$cursor_alias" << ALIASEOF
 ---
 name: ${ALIAS_PREFIX}-${cmd}
 description: "${desc}. Use when user says /xavier ${cmd}."
@@ -428,7 +432,6 @@ Execute /xavier ${cmd}.
 1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
 2. Follow the Router Lifecycle with subcommand: ${cmd}
 ALIASEOF
-    fi
   done
 
   info "Command aliases installed for Claude Code and Cursor."

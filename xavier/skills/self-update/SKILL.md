@@ -193,7 +193,7 @@ fi
 
 If `ALIASES_ENABLED` is `"no"`, skip the rest of this step and proceed to Step 9.
 
-Otherwise, write an alias file for each of the following 17 commands. This human-readable list MUST stay in sync with the executable `COMMANDS` block below and with the `COMMANDS` table in `xavier/install.sh` — adding a skill in one place without the others causes upgrade-vs-fresh-install drift:
+Otherwise, write an alias file for each of the following 19 commands. This human-readable list MUST stay in sync with the executable `COMMANDS` block below and with the `COMMANDS` table in `xavier/install.sh` — adding a skill in one place without the others causes upgrade-vs-fresh-install drift:
 
 | Command | Description |
 |---|---|
@@ -212,10 +212,12 @@ Otherwise, write an alias file for each of the following 17 commands. This human
 | research | Research a topic across web, internal docs, and codebase |
 | deps-update | Scan lockfile and regenerate stale dependency-skills |
 | export | Export a vault note to your personal Obsidian vault |
+| bug | File a bug report as a GitHub Issue in the Xavier upstream repo |
+| feedback | Open a GitHub Discussion in the Xavier upstream repository |
 | self-update | Update Xavier skills and references to the latest release |
 | uninstall | Remove the Xavier vault and all symlinks |
 
-For each command, write the alias file at `~/.claude/commands/${ALIAS_PREFIX}-${cmd}.md` with the following content:
+First, define the canonical command list as a shell variable. Keep this list in lockstep with the `COMMANDS` table in `xavier/install.sh` — missing entries cause in-product self-update to skip alias regeneration for new skills, leading to drift between fresh installs and updated installs.
 
 ```bash
 COMMANDS="
@@ -234,13 +236,12 @@ remove-dep|Delete a dependency-skill
 research|Research a topic across web, internal docs, and codebase
 deps-update|Scan lockfile and regenerate stale dependency-skills
 export|Export a vault note to your personal Obsidian vault
+bug|File a bug report as a GitHub Issue in the Xavier upstream repo
+feedback|Open a GitHub Discussion in the Xavier upstream repository
 self-update|Update Xavier skills and references to the latest release
 uninstall|Remove the Xavier vault and all symlinks
 "
-
-# Keep this list in lockstep with the COMMANDS table in xavier/install.sh.
-# Missing entries cause in-product self-update to skip alias regeneration for
-# new skills, leading to drift between fresh installs and updated installs.
+```
 
 Regenerate aliases for **every runtime** that the original install touched, using each runtime's own alias layout. The Claude Code and Cursor formats differ — they are NOT interchangeable — so this step must mirror `install_command_aliases()` in `xavier/install.sh` exactly:
 
@@ -289,7 +290,7 @@ ALIASEOF
 done
 ```
 
-Once every alias has been regenerated for every detected runtime (currently 17 entries × the number of detected runtimes), proceed to Step 9. If `install_command_aliases()` in `xavier/install.sh` ever changes its format or paths, this block must be updated to match.
+Once every alias has been regenerated for every detected runtime (currently 19 entries × the number of detected runtimes), proceed to Step 9. If `install_command_aliases()` in `xavier/install.sh` ever changes its format or paths, this block must be updated to match.
 
 ## Step 9: Update Version in Config
 
