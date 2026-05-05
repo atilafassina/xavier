@@ -131,11 +131,11 @@ After Step 5 has marked the task as `done`, check whether the source PRD is now 
 3. Find sibling tasks in a **single pass** instead of reading every task file. The match MUST be anchored to the `source:` frontmatter field — a bare `[[prd/<name>]]` anywhere in a task body or in the `related:` list is **not** evidence the task derives from that PRD, and counting it would let unrelated tasks suppress the prompt or trigger a wrong retirement. Use `find -exec grep -l` to avoid ARG_MAX at scale, and grep against an anchored pattern that accepts all YAML quoting styles for the `source` field:
 
    ```
-   find <vault>/tasks <vault>/tasks/done -maxdepth 1 -name '*.md' \
+   find <vault>/tasks -type f -name '*.md' \
      -exec grep -lE '^source:[[:space:]]*['\''"]?\[\[prd/<name>\]\]['\''"]?[[:space:]]*$' {} + 2>/dev/null
    ```
 
-   The pattern is line-anchored (`^…$`), targets the `source:` key, and tolerates optional surrounding single or double quotes around the wikilink. Since `<name>` is already validated as `[a-z0-9-]{1,64}`, the regex is unambiguous and needs no shell-escaping. The grep returns the file paths of all sibling tasks; we never need to parse their frontmatter beyond classifying location.
+   The single `<vault>/tasks` argument lets `find` recurse into the `done/` subdir naturally, so this one invocation returns both active siblings and archived siblings without relying on `-maxdepth` (which is a non-POSIX extension some BSD `find` implementations may not provide). The pattern is line-anchored (`^…$`), targets the `source:` key, and tolerates optional surrounding single or double quotes around the wikilink. Since `<name>` is already validated as `[a-z0-9-]{1,64}`, the regex is unambiguous and needs no shell-escaping. The grep returns the file paths of all sibling tasks; we never need to parse their frontmatter beyond classifying location.
 4. For every matching sibling, classify as **done** or **active**:
    - The sibling is **done** iff it lives in `<vault>/tasks/done/` (location is the canonical signal — a path check, no frontmatter read needed).
    - A sibling at top-level (`<vault>/tasks/<name>.md`) is **active** even if its frontmatter `status` is `done` or `superseded`. That state is non-canonical (a prior transition's `mv` did not land, or a manual edit drifted) — the user must reconcile via `/xavier mark` before the loop's PRD-retirement can fire. Log a warning naming the file but do **not** count it as done.

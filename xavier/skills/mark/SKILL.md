@@ -139,11 +139,12 @@ Begin by announcing to the user that backfill is a three-step migration and that
 - The literal string `Loop complete` anywhere in the file
 - A line `status: complete` (the marker written by the loop skill's Step 5 success path going forward)
 
-If **any** of those patterns matches, the loop-state's basename is a candidate. For each candidate basename `<name>`, look up `<vault>/tasks/<name>.md`:
+If **any** of those patterns matches, the loop-state's basename is a candidate. **Validate `<name>` as a basename** per the Name Validation rules above (`^[a-z0-9][a-z0-9-]{0,63}$`) before using it in any filesystem lookup. Loop-state files are in principle written only by `/xavier loop`, but legacy or hand-edited filenames may not satisfy the allowlist; rejecting them here keeps backfill from probing arbitrary paths even in defense-in-depth scenarios. For each validated candidate basename `<name>`, look up `<vault>/tasks/<name>.md`:
 
 - If it exists at top-level → eligible for the batch.
 - If it already lives in `<vault>/tasks/done/<name>.md` → skip (idempotent).
 - If neither path exists → skip (orphan loop-state, not actionable).
+- If validation failed → skip and log a warning naming the loop-state file so the user can rename it manually.
 
 **What prompt it shows.** Present the eligible basenames as a single bulk-confirm via **AskUserQuestion**:
 
@@ -166,24 +167,31 @@ Show the list in full (one per line). Do not paginate.
 1. For each task file, read its frontmatter `source` field — a wikilink of the form `"[[prd/<prd-name>]]"` (any quoting style — single-quoted, unquoted, or double-quoted).
 2. Extract `<prd-name>` and **validate it** as a basename (must match `^[a-z0-9][a-z0-9-]{0,63}$` per the Name Validation rules). Skip the task and log a warning if validation fails — never derive filesystem operations from an unvalidated `source` value.
 3. **Resolve `<prd-name>` to an actual PRD file.** Verify that **at least one** of `<vault>/prd/<prd-name>.md` or `<vault>/prd/done/<prd-name>.md` exists. If neither exists, the task references a non-existent PRD — typically because legacy task notes (predating the lifecycle feature) recorded `source` as the task's own filename rather than the PRD basename. Skip the task entirely and log a warning naming the file and the unresolvable `source` value: `Skipping <task-file>: source [[prd/<prd-name>]] does not resolve to any PRD. Update the task's source field to point at an existing PRD.` Do not include this task in the map; do not propose any PRD retirement based on it.
-4. Increment `map[<prd-name>].total`. **Classify the task as done iff it lives in `<vault>/tasks/done/`** — the canonical signal is location, not the frontmatter status. If a task lives at top-level (`<vault>/tasks/<name>.md`) but its frontmatter `status` is `done` or `superseded`, the vault is in non-canonical state (a prior transition's `mv` did not land or a manual edit drifted from the contract). Log a warning naming that file and treat it as **active** for inference purposes — do **not** silently count it as done. The user should run `/xavier mark <name> active` to clear the spurious status, or move the file to `done/` manually.
+4. Increment `map[<prd-name>].total`. Then classify the task and update the map's lifecycle counters — the canonical signal is **location**, not the frontmatter status:
+   - Task lives in `<vault>/tasks/done/` AND frontmatter `status: done` → increment `map[<prd-name>].done`
+   - Task lives in `<vault>/tasks/done/` AND frontmatter `status: superseded` → increment `map[<prd-name>].superseded`
+   - Task lives in `<vault>/tasks/done/` with missing or invalid status → log a warning, skip — the validator should already catch this drift; do not infer past it
+   - Task lives at top-level (`<vault>/tasks/<name>.md`) — regardless of any status field, classify as **active** (do not increment `done` or `superseded`). A top-level file with `status: done|superseded` is non-canonical drift; log a warning and let the user reconcile via `/xavier mark`. Never silently count it as completed.
 
 Note: sub-phase 5a will have just moved tasks into `tasks/done/`, so re-glob — do not rely on a snapshot taken before sub-phase 5a ran.
 
 Then, evaluate eligibility for each PRD via a single map lookup:
 
 - Glob `<vault>/prd/*.md` (top-level, active PRDs only). For each PRD basename `<name>`, look up `map[<name>]`.
-- A PRD is **eligible** when `map[<name>].total >= 1` AND `map[<name>].total == map[<name>].done`.
-- PRDs with no derived tasks (`map[<name>]` is missing or `total == 0`) are **not** eligible here — they are surfaced in sub-phase 5c instead.
+- A PRD is eligible **only when every sibling task is canonical `status: done`** — i.e., `map[<name>].total >= 1` AND `map[<name>].done == map[<name>].total` AND `map[<name>].superseded == 0`. Auto-batching mixed-state PRDs as `done` would lose the lifecycle distinction this PR introduces.
+- PRDs whose siblings include any `superseded` task (i.e., `map[<name>].superseded > 0`) are **not** eligible for the auto-batch — they fall through to sub-phase 5c, where the user can pick the correct retirement state per PRD.
+- PRDs with no derived tasks (`map[<name>]` is missing or `total == 0`) are also **not** eligible here — they are surfaced in sub-phase 5c instead.
 - Skip PRDs already at `<vault>/prd/done/<name>.md` (idempotent).
 
-Cache the map for sub-phase 5c if it needs to know which active items lack derived tasks — do not re-scan.
+Cache the map for sub-phase 5c — it surfaces both the no-derived-tasks PRDs and the mixed-state PRDs, and reusing the map avoids re-scanning.
 
 **What prompt it shows.** Bulk-confirm via **AskUserQuestion**:
 
-> Found N PRDs whose every derived task is now done: `<name1>`, `<name2>`, ... Mark them all as `done`?
+> Found N PRDs whose every derived task is `done`: `<name1>`, `<name2>`, ... Mark them all as `done`?
 >
 > Options: `yes`, `no`.
+
+(Mixed-state PRDs intentionally do **not** appear here — see sub-phase 5c.)
 
 **Consequence of "no".** The vault is unchanged. **Proceed to sub-phase 5c** — do not abort.
 

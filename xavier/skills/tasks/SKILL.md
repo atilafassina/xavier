@@ -20,14 +20,14 @@ List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context)
 **Soft-resolve fallback for explicit PRD name argument** — When the user invokes the skill with an explicit PRD name (skipping the picker), first **validate `<name>` as a basename** per the Name Validation rules in `xavier/skills/mark/SKILL.md` (must match `^[a-z0-9][a-z0-9-]{0,63}$`). If validation fails, abort with the same error message before any filesystem check — never let an unvalidated argument reach a path. Then resolve `<name>` against the four lifecycle cases:
 
 - **Active-only** (file exists at `<vault>/prd/<name>.md`, NOT at `<vault>/prd/done/<name>.md`) → read it directly and proceed.
-- **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → output the revival message and exit cleanly: `PRD <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` Do NOT continue with task generation.
+- **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → read the file's frontmatter `status` to recover the actual lifecycle state (the directory holds both `done` and `superseded`). Emit the matching revival message — `PRD <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` if `status: done`, or `PRD <name> is marked superseded. Revive it with /xavier mark <name> active first, then re-run.` if `status: superseded`. Exit cleanly. Do NOT continue with task generation.
 - **Ambiguous** (file exists at BOTH `<vault>/prd/<name>.md` and `<vault>/prd/done/<name>.md`) → silently prefer the active top-level PRD. Do not emit a revival prompt.
 - **Missing** (file exists at NEITHER path) → fall through to the existing "not found" behavior (no revival prompt, no soft-resolve). No behavior change here.
 
 **Soft-resolve fallback for explicit task name argument** — In the rare case that a task name argument is supplied (e.g., when the skill is invoked to operate on or regenerate an existing task file), **validate `<name>` as a basename first** (same rule and error path as above). Then apply the same four-case resolution against `<vault>/tasks/<name>.md` vs `<vault>/tasks/done/<name>.md`:
 
 - **Active-only** (file exists at `<vault>/tasks/<name>.md`, NOT at `<vault>/tasks/done/<name>.md`) → proceed normally with the active task file.
-- **Done-only** (file exists ONLY at `<vault>/tasks/done/<name>.md`, no top-level counterpart) → output the revival message and exit cleanly: `task <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` Do NOT continue.
+- **Done-only** (file exists ONLY at `<vault>/tasks/done/<name>.md`, no top-level counterpart) → read the file's frontmatter `status` to recover the actual lifecycle state (the directory holds both `done` and `superseded`). Emit the matching revival message — `task <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` if `status: done`, or `task <name> is marked superseded. Revive it with /xavier mark <name> active first, then re-run.` if `status: superseded`. Exit cleanly. Do NOT continue.
 - **Ambiguous** (file exists at BOTH `<vault>/tasks/<name>.md` and `<vault>/tasks/done/<name>.md`) → silently prefer the active top-level task file. Do not emit a revival prompt.
 - **Missing** (file exists at NEITHER path) → fall through to the existing "not found" behavior (no revival prompt, no soft-resolve). No behavior change here.
 
@@ -76,11 +76,15 @@ Iterate until the user approves.
 
 ## Step 7: Write Tasks File
 
-**Before writing**, check if `~/.xavier/tasks/<filename>.md` already exists. If it does, use **AskUserQuestion** to confirm:
+**Before writing**, check both `~/.xavier/tasks/<task-filename>.md` and `~/.xavier/tasks/done/<task-filename>.md`:
 
-> Task file `tasks/{filename}.md` already exists. Overwrite it? (yes/no)
+- If `~/.xavier/tasks/<task-filename>.md` exists, use **AskUserQuestion** to confirm:
 
-If the user declines, ask for an alternative filename or abort.
+  > Task file `tasks/{task-filename}.md` already exists. Overwrite it? (yes/no)
+
+  If the user declines, ask for an alternative filename or abort.
+
+- If `~/.xavier/tasks/done/<task-filename>.md` exists (the archive side), abort with: `Cannot create task '<task-filename>': an archived task with the same basename already exists at <vault>/tasks/done/<task-filename>.md. Pick a different basename, or revive the archived one with '/xavier mark <task-filename> active' first.` Allowing a write here would create an active+archived basename collision that `/xavier mark` arg mode refuses to resolve.
 
 Write to `~/.xavier/tasks/<task-filename>.md` with Zettelkasten frontmatter (see `~/.xavier/references/formats/zettelkasten.md`).
 

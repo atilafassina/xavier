@@ -221,10 +221,12 @@ setup|Create and configure the Xavier vault
 review|Run Shark-pattern code review with concurrent reviewer personas
 babysit|Monitor a PR — poll CI status, auto-fix lint failures, surface review comments
 grill|Interview about a plan or design until reaching shared understanding
+investigate|Investigate a bug or system behavior with structured diagnosis
 prd|Create a PRD through user interview, codebase exploration, and module design
 tasks|Decompose a PRD into phased implementation tasks
 learn|Explore a codebase and produce knowledge notes in the vault
 loop|Execute a task file as an autonomous loop using the Shark pattern
+mark|Move a PRD or task between active, done, and superseded states
 add-dep|Create a dependency-skill for a package with best practices and API patterns
 remove-dep|Delete a dependency-skill
 research|Research a topic across web, internal docs, and codebase
@@ -233,6 +235,10 @@ export|Export a vault note to your personal Obsidian vault
 self-update|Update Xavier skills and references to the latest release
 uninstall|Remove the Xavier vault and all symlinks
 "
+
+# Keep this list in lockstep with the COMMANDS table in xavier/install.sh.
+# Missing entries cause in-product self-update to skip alias regeneration for
+# new skills, leading to drift between fresh installs and updated installs.
 
 mkdir -p "$HOME/.claude/commands"
 
@@ -255,7 +261,7 @@ ALIASEOF
 done
 ```
 
-Once all 15 alias files have been written, proceed to Step 9.
+Once every alias file in the COMMANDS list has been written (currently 17 entries — keep this count synchronized with the table above and with `xavier/install.sh`), proceed to Step 9.
 
 ## Step 9: Update Version in Config
 
