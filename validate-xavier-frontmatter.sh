@@ -122,9 +122,9 @@ if [ -n "$SEARCH_ROOTS" ]; then
     # detect done/-side notes that are missing the mandatory status field), not just
     # files that already grep positive for `status:`.
     if [ -d "$root" ]; then
-      # `--` keeps find treating $root as a path even if a future caller sneaks a
-      # leading hyphen past the add_root vetting.
-      candidates="$(find -- "$root" -type f -name '*.md' 2>/dev/null || true)"
+      # No `--` separator: BSD find on macOS rejects it (`find -- path` is GNU-only).
+      # add_root already rejects entries starting with -/!/( so $root cannot be misparsed.
+      candidates="$(find "$root" -type f -name '*.md' 2>/dev/null || true)"
     else
       candidates="$root"
     fi
@@ -134,8 +134,11 @@ if [ -n "$SEARCH_ROOTS" ]; then
     while IFS= read -r note_file; do
       [ -f "$note_file" ] || continue
 
-      # Determine whether this file lives in a done/ subtree — done/ files MUST carry
-      # a valid status (per references/formats/zettelkasten.md canonical state rules).
+      # Determine whether this file lives in a done/ subtree — canonical state rules
+      # in references/formats/zettelkasten.md require:
+      #   * done/ files MUST carry a valid status field
+      #   * top-level (non-done/) files MUST NOT carry a status field
+      # Both directions of drift are validation failures.
       is_done_side=false
       case "$note_file" in
         */prd/done/*|*/tasks/done/*) is_done_side=true ;;
@@ -144,9 +147,8 @@ if [ -n "$SEARCH_ROOTS" ]; then
       # Extract status field from the first frontmatter block only.
       status_value="$(awk '/^---$/{c++; if(c==2) exit; next} c==1 && /^status:/{sub(/^status:[[:space:]]*/, ""); gsub(/[[:space:]]*$/, ""); print; exit}' "$note_file")"
 
-      # No status field on a top-level file → accept silently (canonical active).
-      # No status field on a done/-side file → FAIL (canonical state requires it).
       if [ -z "$status_value" ]; then
+        # No status field. Canonical for top-level; drift for done/-side.
         if [ "$is_done_side" = "true" ]; then
           printf 'FAIL: %s lives in done/ but is missing the mandatory status field\n' "$note_file"
           STATUS_ERRORS=$((STATUS_ERRORS + 1))
@@ -154,14 +156,25 @@ if [ -n "$SEARCH_ROOTS" ]; then
         continue
       fi
 
-      # Strip surrounding quotes if present (parameter expansion — no subshell, no echo).
+      # Has a status field. Strip surrounding quotes (parameter expansion — no subshell).
       status_value="${status_value#[\"\']}"
       status_value="${status_value%[\"\']}"
 
-      # Exact string match — never delegate to grep (which would let `.*` bypass the allowlist).
+      # First, the value must be in the allowlist regardless of location.
+      # Exact string match — never delegate to grep (would let `.*` bypass the allowlist).
       # printf instead of echo so leading -e / -n etc. cannot be parsed as options.
       if [ "$status_value" != "done" ] && [ "$status_value" != "superseded" ]; then
         printf 'FAIL: %s has invalid status: %s (allowed: done, superseded)\n' "$note_file" "'$status_value'"
+        STATUS_ERRORS=$((STATUS_ERRORS + 1))
+        continue
+      fi
+
+      # Then enforce location ↔ status agreement: a top-level file with a status
+      # field is non-canonical drift (a transition's mv didn't land, or a manual
+      # edit escaped the contract). Surface it so the user can reconcile via
+      # /xavier mark <name> active or by moving the file to done/ manually.
+      if [ "$is_done_side" = "false" ]; then
+        printf 'FAIL: %s lives at top-level but carries status: %s — top-level files must not have a status field (run /xavier mark to reconcile)\n' "$note_file" "$status_value"
         STATUS_ERRORS=$((STATUS_ERRORS + 1))
       fi
     done <<< "$candidates"

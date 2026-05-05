@@ -268,18 +268,21 @@ Do NOT modify any other content in `config.md`.
 
 ## Step 10: Ensure Vault Directories
 
-Create any new vault directories that new skills might expect. Run `mkdir -p` for the standard set:
+Create any new vault directories that new skills might expect. The set MUST stay in lockstep with `ensure_vault_dirs()` in `xavier/install.sh` so in-product self-update produces the same layout as a fresh install (including lifecycle archive subdirs):
 
 ```bash
 mkdir -p "$XAVIER_HOME/knowledge/repos"
 mkdir -p "$XAVIER_HOME/knowledge/teams"
 mkdir -p "$XAVIER_HOME/knowledge/reviews"
 mkdir -p "$XAVIER_HOME/prd"
+mkdir -p "$XAVIER_HOME/prd/done"
 mkdir -p "$XAVIER_HOME/tasks"
+mkdir -p "$XAVIER_HOME/tasks/done"
 mkdir -p "$XAVIER_HOME/loop-state"
 mkdir -p "$XAVIER_HOME/shark-state"
 mkdir -p "$XAVIER_HOME/deps"
 mkdir -p "$XAVIER_HOME/research"
+mkdir -p "$XAVIER_HOME/investigations"
 mkdir -p "$XAVIER_HOME/babysit-pr"
 ```
 

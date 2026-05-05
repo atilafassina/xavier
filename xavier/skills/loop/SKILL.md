@@ -98,7 +98,7 @@ When — and only when — the loop reaches the **All phases complete** branch o
 - **User stop / stall**: not a success. Skip.
 - **Partial progress only**: not a success. Skip.
 
-**First, validate the task name.** The `<name>` is the basename of the task file selected in Step 1; it must already match the Name Validation rules in `xavier/skills/mark/SKILL.md` (`^[a-z0-9][a-z0-9-]*$`). If validation fails, abort Step 5 — leave the task as-is and let the user run `/xavier mark` manually. Never derive filesystem operations from an unvalidated name.
+**First, validate the task name.** The `<name>` is the basename of the task file selected in Step 1; it must match the canonical Name Validation regex from `xavier/skills/mark/SKILL.md` exactly: `^[a-z0-9][a-z0-9-]{0,63}$` (1–64 characters). Reuse mark's validator verbatim — never relax it here. If validation fails, abort Step 5 before writing the loop-state completion marker; leave the task as-is and let the user run `/xavier mark` manually after the underlying name is sorted out. Never derive filesystem operations from an unvalidated name, and never half-record completion (loop-state marker without the source-task move) for a name the canonical transition will reject.
 
 **Second, write a completion marker to the loop-state file.** Append (or update, if already present) the line `status: complete` at the top of `~/.xavier/loop-state/<name>.md`, immediately after the `# Loop State` heading. This is a stable, machine-readable signal consumed by `/xavier mark --backfill` (sub-phase 5a) so future migrations can detect completed loops without relying on heuristic phase-table parsing. The write is a single short line and must precede the source-task move below — if the move fails and the transition rolls back, the loop-state marker can stay, since rolling forward later (e.g., manually marking the task as done) still leaves the vault consistent.
 
@@ -128,14 +128,14 @@ After Step 5 has marked the task as `done`, check whether the source PRD is now 
    - If `<vault>/prd/done/<name>.md` exists → PRD is already done. **Skip the prompt.** Stop.
    - Else if `<vault>/prd/<name>.md` exists → PRD is active. Continue with the sibling scan below.
    - Else → the `source` field points at a non-existent PRD (typically legacy task notes that recorded `source` as the task's own filename rather than the PRD basename). **Skip Step 6 entirely** — do not run the sibling scan, do not prompt. Log a warning: `Cannot offer PRD retirement: source [[prd/<name>]] does not resolve to any PRD. Update the task's source field if the PRD lives under a different basename.`
-3. Find sibling tasks in a **single pass** instead of reading every task file. Use `find -exec grep -l` to handle large vaults safely (avoids ARG_MAX) and to short-circuit on the wikilink itself rather than a strict quoting pattern:
+3. Find sibling tasks in a **single pass** instead of reading every task file. The match MUST be anchored to the `source:` frontmatter field — a bare `[[prd/<name>]]` anywhere in a task body or in the `related:` list is **not** evidence the task derives from that PRD, and counting it would let unrelated tasks suppress the prompt or trigger a wrong retirement. Use `find -exec grep -l` to avoid ARG_MAX at scale, and grep against an anchored pattern that accepts all YAML quoting styles for the `source` field:
 
    ```
    find <vault>/tasks <vault>/tasks/done -maxdepth 1 -name '*.md' \
-     -exec grep -l "\[\[prd/<name>\]\]" {} + 2>/dev/null
+     -exec grep -lE '^source:[[:space:]]*['\''"]?\[\[prd/<name>\]\]['\''"]?[[:space:]]*$' {} + 2>/dev/null
    ```
 
-   The grep matches any occurrence of the wikilink `[[prd/<name>]]` so it accepts every YAML quoting style (`source: "[[prd/<name>]]"`, `source: '[[prd/<name>]]'`, or `source: [[prd/<name>]]`) — strict double-quote-only matching would miss legitimate siblings and cause premature PRD retirement. Since `<name>` is already validated as `[a-z0-9-]{1,64}`, the regex is unambiguous and needs no shell-escaping or regex-escaping. The grep returns the file paths of all sibling tasks; we never need to parse their frontmatter beyond classifying location.
+   The pattern is line-anchored (`^…$`), targets the `source:` key, and tolerates optional surrounding single or double quotes around the wikilink. Since `<name>` is already validated as `[a-z0-9-]{1,64}`, the regex is unambiguous and needs no shell-escaping. The grep returns the file paths of all sibling tasks; we never need to parse their frontmatter beyond classifying location.
 4. For every matching sibling, classify as **done** or **active**:
    - The sibling is **done** iff it lives in `<vault>/tasks/done/` (location is the canonical signal — a path check, no frontmatter read needed).
    - A sibling at top-level (`<vault>/tasks/<name>.md`) is **active** even if its frontmatter `status` is `done` or `superseded`. That state is non-canonical (a prior transition's `mv` did not land, or a manual edit drifted) — the user must reconcile via `/xavier mark` before the loop's PRD-retirement can fire. Log a warning naming the file but do **not** count it as done.

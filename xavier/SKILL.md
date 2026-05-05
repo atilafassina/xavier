@@ -108,11 +108,11 @@ If a `requires` key cannot be resolved (e.g., directory is empty or doesn't exis
 When a skill (or the router itself, when listing PRDs / tasks for the user to pick from) presents a choice list backed by `prd-index` or `tasks-index`, append a count hint that surfaces how many archived items exist alongside the active ones. Use this exact format:
 
 ```
-(N active, M done — /xavier mark to revive)
+(N active, M archived — /xavier mark to revive)
 ```
 
 - `N` — number of top-level `.md` files (active items returned by the index)
-- `M` — number of `.md` files inside the corresponding `done/` subdirectory
+- `M` — number of `.md` files inside the corresponding `done/` subdirectory. The `done/` directory holds **both** `status: done` and `status: superseded` items, so the count is "archived" rather than "done" specifically — the label "done" would overstate completion once users start superseding items.
 - The `/xavier mark to revive` tail is literal — it tells the user how to bring an archived item back into the active list
 
 This hint is informational and never gates the choice list — archived items remain hidden until the user explicitly revives them.

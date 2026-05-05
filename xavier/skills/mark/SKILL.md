@@ -76,7 +76,7 @@ Three invocation modes:
 ## Step 2: Picker Mode
 
 1. From the resolved `prd-index` and `tasks-index` contexts, gather the active items (top-level `*.md` only — these contexts already exclude `done/`).
-2. Glob `<vault>/prd/done/*.md` and `<vault>/tasks/done/*.md` directly to gather the archived items. The indexes do not surface these — read filenames only, no need to read full bodies for the picker.
+2. Glob `<vault>/prd/done/*.md` and `<vault>/tasks/done/*.md` directly to gather the archived items. The indexes do not surface these. **Read each archived file's frontmatter** to recover its current state — both `done` and `superseded` items live in the same `done/` directory, so the path alone cannot distinguish them. Read only the frontmatter (stop at the second `---`); never read the full body.
 3. Present the choices using **AskUserQuestion** with `multiSelect: true`. Format the options into two clearly separated sections, **active first**:
 
    ```
