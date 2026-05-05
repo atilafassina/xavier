@@ -75,11 +75,13 @@ check_existing() {
 # --- Scaffold vault directory structure ---
 # Idempotent — creates any missing vault directories. Runs on fresh installs AND
 # upgrades so new layout requirements (e.g. prd/done, tasks/done) materialize for
-# vaults that predate them.
+# vaults that predate them. This list is the single source of truth for the vault
+# scaffold; xavier/skills/self-update/SKILL.md Step 10 mirrors it line-for-line.
 ensure_vault_dirs() {
   mkdir -p "$XAVIER_HOME/personas"
   mkdir -p "$XAVIER_HOME/adapters"
   mkdir -p "$XAVIER_HOME/skills"
+  mkdir -p "$XAVIER_HOME/deps"
   mkdir -p "$XAVIER_HOME/knowledge/repos"
   mkdir -p "$XAVIER_HOME/knowledge/teams"
   mkdir -p "$XAVIER_HOME/knowledge/reviews"
@@ -91,6 +93,7 @@ ensure_vault_dirs() {
   mkdir -p "$XAVIER_HOME/investigations"
   mkdir -p "$XAVIER_HOME/loop-state"
   mkdir -p "$XAVIER_HOME/shark-state"
+  mkdir -p "$XAVIER_HOME/babysit-pr"
 }
 
 scaffold_vault() {

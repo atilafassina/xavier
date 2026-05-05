@@ -24,12 +24,7 @@ List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context)
 - **Ambiguous** (file exists at BOTH `<vault>/prd/<name>.md` and `<vault>/prd/done/<name>.md`) → silently prefer the active top-level PRD. Do not emit a revival prompt.
 - **Missing** (file exists at NEITHER path) → fall through to the existing "not found" behavior (no revival prompt, no soft-resolve). No behavior change here.
 
-**Soft-resolve fallback for explicit task name argument** — In the rare case that a task name argument is supplied (e.g., when the skill is invoked to operate on or regenerate an existing task file), **validate `<name>` as a basename first** (same rule and error path as above). Then apply the same four-case resolution against `<vault>/tasks/<name>.md` vs `<vault>/tasks/done/<name>.md`:
-
-- **Active-only** (file exists at `<vault>/tasks/<name>.md`, NOT at `<vault>/tasks/done/<name>.md`) → proceed normally with the active task file.
-- **Done-only** (file exists ONLY at `<vault>/tasks/done/<name>.md`, no top-level counterpart) → read the file's frontmatter `status` to recover the actual lifecycle state (the directory holds both `done` and `superseded`). Emit the matching revival message — `task <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` if `status: done`, or `task <name> is marked superseded. Revive it with /xavier mark <name> active first, then re-run.` if `status: superseded`. Exit cleanly. Do NOT continue.
-- **Ambiguous** (file exists at BOTH `<vault>/tasks/<name>.md` and `<vault>/tasks/done/<name>.md`) → silently prefer the active top-level task file. Do not emit a revival prompt.
-- **Missing** (file exists at NEITHER path) → fall through to the existing "not found" behavior (no revival prompt, no soft-resolve). No behavior change here.
+**Reject explicit task name arguments.** This skill operates on PRDs, not tasks — the rest of the body (Steps 2-7) reads the resolved file as a PRD and writes a new task file derived from it. If a caller passes what looks like a task basename instead of a PRD basename, abort with: `/xavier tasks operates on PRDs, not tasks. To regenerate or modify an existing task file, edit it directly or run /xavier mark <name> active first if the source PRD is archived. Aborting.` The skill's frontmatter does not declare any task-write behavior on existing task files, and silently treating a task argument as a PRD would generate the wrong output without surfacing the error.
 
 ## Step 2: Load PRD and Follow Related Links
 
@@ -43,7 +38,11 @@ List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context)
    - **Every** path segment after the namespace MUST independently match the basename allowlist `^[a-z0-9][a-z0-9-]{0,63}$` from `xavier/skills/mark/SKILL.md`. The full path under the namespace must be 1–4 such segments — no deeper nesting, no empty segments, no segment containing `..`, leading `.`, absolute paths, whitespace, or characters outside `[a-z0-9-]`.
    - The resolved filesystem path MUST canonicalize (via `realpath` or equivalent) to a child of `$XAVIER_HOME` — never auto-load a path that escapes the vault root, even if it textually appears to.
    Log a warning naming any wikilink that fails validation; skip it and continue with the remaining links.
-4. **Auto-load** the validated linked notes that exist in `~/.xavier/`. Missing files are not an error — skip silently.
+4. **Auto-load** the validated linked notes. The resolved path under `$XAVIER_HOME/<wikilink-target>.md` may point at either a file or a directory:
+   - **File** (`<target>.md` exists and is a regular file) → read its full contents.
+   - **Directory** (`<target>` exists as a directory) → some Xavier note conventions use directory-style links (e.g., `/xavier learn` writes `[[knowledge/teams/<team>]]` even though the actual note lives at `knowledge/teams/<team>/conventions.md`). For each directory-style target, look for a single conventional note file inside, in this priority order: `<target>/conventions.md`, `<target>/architecture.md`, `<target>/dependencies.md`, `<target>/decisions.md`. Read the first one that exists. If none exist, skip the link with a warning naming the directory.
+   - **Missing** (neither file nor directory) → skip silently. Missing wikilink targets are not an error.
+   Never read more than one note per wikilink — if a directory holds multiple convention files, the priority list is authoritative.
 5. **If 8+ linked notes**: warn the user with a word count estimate and ask whether to load all or pick a subset
 6. The loaded context informs the decomposition — understanding prior PRDs, team conventions, and repo knowledge helps produce better slices
 
