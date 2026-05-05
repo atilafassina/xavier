@@ -1,6 +1,6 @@
 ---
 name: loop
-requires: [config, shark, tasks-index, prd-index]
+requires: [config, shark, tasks-index, prd-index:optional]
 ---
 
 # Loop
@@ -136,23 +136,28 @@ After Step 5 has marked the task as `done`, check whether the source PRD is now 
    ```
 
    The single `<vault>/tasks` argument lets `find` recurse into the `done/` subdir naturally, so this one invocation returns both active siblings and archived siblings without relying on `-maxdepth` (which is a non-POSIX extension some BSD `find` implementations may not provide). The pattern is line-anchored (`^…$`), targets the `source:` key, and tolerates optional surrounding single or double quotes around the wikilink. Since `<name>` is already validated as `[a-z0-9-]{1,64}`, the regex is unambiguous and needs no shell-escaping. The grep returns the file paths of all sibling tasks; we never need to parse their frontmatter beyond classifying location.
-4. For every matching sibling, classify as **done** or **active**:
-   - The sibling is **done** iff it lives in `<vault>/tasks/done/` (location is the canonical signal — a path check, no frontmatter read needed).
-   - A sibling at top-level (`<vault>/tasks/<name>.md`) is **active** even if its frontmatter `status` is `done` or `superseded`. That state is non-canonical (a prior transition's `mv` did not land, or a manual edit drifted) — the user must reconcile via `/xavier mark` before the loop's PRD-retirement can fire. Log a warning naming the file but do **not** count it as done.
-   - Short-circuit as soon as one active sibling is found — no need to classify the rest before suppressing the prompt.
+4. For every matching sibling, classify into one of three buckets — **active**, **done**, or **superseded**:
+   - **active**: lives at top-level (`<vault>/tasks/<name>.md`). Top-level + any status field is non-canonical drift; classify as active anyway and log a warning naming the file (the user must reconcile via `/xavier mark` before retirement can fire). No silent inference past drift.
+   - **done**: lives in `<vault>/tasks/done/` AND frontmatter `status: done`.
+   - **superseded**: lives in `<vault>/tasks/done/` AND frontmatter `status: superseded`.
+   - In `done/` with missing/invalid status → log a warning, treat as drift, do **not** infer past it (skip the entire Step 6 for this PRD until reconciled — the validator should already catch this case).
 5. **Branch on the result:**
-   - **At least one sibling is still active** → do not prompt. The PRD is not yet ready to retire. Stop this step silently.
-   - **Every sibling is done** → prompt via **AskUserQuestion**:
+   - **At least one sibling is active** → do not prompt. The PRD is not yet ready to retire. Stop this step silently.
+   - **Every sibling is `done` (no superseded, no active)** → prompt via **AskUserQuestion**:
 
      > All tasks for PRD `<name>` are now done. Mark the PRD?
 
-     Options: `done`, `superseded`, `skip`.
+     Options: `done`, `superseded`, `skip`. Dispatch:
 
-     Dispatch based on the answer:
-
-     - **`done`** → apply the `→ done` transition from `xavier/skills/mark/SKILL.md` to `<vault>/prd/<name>.md`. Do not duplicate the transition logic — the canonical operation lives in the `mark` skill.
+     - **`done`** → apply the `→ done` transition from `xavier/skills/mark/SKILL.md` to `<vault>/prd/<name>.md`.
      - **`superseded`** → apply the `→ superseded` transition from `xavier/skills/mark/SKILL.md` to the same PRD.
-     - **`skip`** → leave the PRD untouched. No filesystem or frontmatter change.
+     - **`skip`** → leave the PRD untouched.
+
+   - **Mixed: at least one sibling is `superseded` AND no sibling is active** → the PRD is implementation-complete in some sense but the lifecycle has been intentionally split (some tasks were replaced rather than completed). Auto-claiming "all tasks are done" would lose that distinction. Prompt with a different message:
+
+     > Tasks for PRD `<name>` are all archived (some `done`, some `superseded`). Mark the PRD?
+
+     Options: `done`, `superseded`, `skip`. Dispatch as above. The user picks the retirement state appropriate to the mix.
 
 **Do not commit here.** The PRD frontmatter edit and `mv` are filesystem operations only; the router commits vault changes after the skill completes (mirroring the policy in `mark/SKILL.md` and Step 5 above).
 

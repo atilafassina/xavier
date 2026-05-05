@@ -20,29 +20,32 @@ Branch on whether the user supplied an explicit PRD name argument:
 
 List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context) showing filename, title, date, and tags from frontmatter. Present as a numbered list using AskUserQuestion. If the user already specified a PRD by name, skip the listing and read it directly.
 
-**Soft-resolve fallback for explicit PRD name argument** — When the user invokes the skill with an explicit PRD name (skipping the picker), first **validate `<name>` as a basename** per the Name Validation rules in `xavier/skills/mark/SKILL.md` (must match `^[a-z0-9][a-z0-9-]{0,63}$`). If validation fails, abort with the same error message before any filesystem check — never let an unvalidated argument reach a path. Then resolve `<name>` against the four lifecycle cases:
+**Soft-resolve fallback for explicit name argument** — When the user invokes the skill with an explicit name (skipping the picker), first **validate `<name>` as a basename** per the Name Validation rules in `xavier/skills/mark/SKILL.md` (must match `^[a-z0-9][a-z0-9-]{0,63}$`). If validation fails, abort with the same error message before any filesystem check — never let an unvalidated argument reach a path. Then resolve `<name>` in this **strict order**:
 
-- **Active-only** (file exists at `<vault>/prd/<name>.md`, NOT at `<vault>/prd/done/<name>.md`) → read it directly and proceed.
-- **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → read the file's frontmatter `status` to recover the actual lifecycle state (the directory holds both `done` and `superseded`). Emit the matching revival message:
-  - If `status: done`: `PRD <name> is marked done. Revive it before re-running.`
-  - If `status: superseded`: `PRD <name> is marked superseded. Revive it before re-running.`
+1. **PRD lookup first** (the skill operates on PRDs):
+   - **Active-only** (file exists at `<vault>/prd/<name>.md`, NOT at `<vault>/prd/done/<name>.md`) → read it directly and proceed. Whether `tasks/<name>.md` or `tasks/done/<name>.md` also exists is irrelevant here — a same-basename task is a known legacy pattern, not an error.
+   - **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → read the file's frontmatter `status` to recover the actual lifecycle state. Emit the matching revival message:
+     - If `status: done`: `PRD <name> is marked done. Revive it before re-running.`
+     - If `status: superseded`: `PRD <name> is marked superseded. Revive it before re-running.`
 
-  Then suggest the recovery path with cross-kind ambiguity awareness: if `<vault>/tasks/<name>.md` or `<vault>/tasks/done/<name>.md` also exists, `/xavier mark <name> active` would hit `mark`'s cross-kind ambiguity error, so suggest the picker form: `Run /xavier mark (no args), select prd/<name>, and choose 'active'. Then re-run.` Otherwise suggest the arg form: `Run /xavier mark <name> active, then re-run.` Exit cleanly. Do NOT continue with task generation.
-- **Ambiguous** (file exists at BOTH `<vault>/prd/<name>.md` and `<vault>/prd/done/<name>.md`) → silently prefer the active top-level PRD. Do not emit a revival prompt.
-- **Missing** (file exists at NEITHER path) → fall through to the existing "not found" behavior (no revival prompt, no soft-resolve). No behavior change here.
+     Then suggest the recovery path with cross-kind ambiguity awareness: if `<vault>/tasks/<name>.md` or `<vault>/tasks/done/<name>.md` also exists, `/xavier mark <name> active` would hit `mark`'s cross-kind ambiguity error, so suggest the picker form: `Run /xavier mark (no args), select prd/<name>, and choose 'active'. Then re-run.` Otherwise suggest the arg form: `Run /xavier mark <name> active, then re-run.` Exit cleanly. Do NOT continue with task generation.
+   - **Ambiguous within PRD tree** (file exists at BOTH `<vault>/prd/<name>.md` and `<vault>/prd/done/<name>.md`) → silently prefer the active top-level PRD. Do not emit a revival prompt.
 
-**Reject explicit task name arguments.** This skill operates on PRDs, not tasks — the rest of the body (Steps 2-7) reads the resolved file as a PRD and writes a new task file derived from it. If a caller passes what looks like a task basename instead of a PRD basename, abort with: `/xavier tasks operates on PRDs, not tasks. To regenerate or modify an existing task file, edit it directly or run /xavier mark <name> active first if the source PRD is archived. Aborting.` The skill's frontmatter does not declare any task-write behavior on existing task files, and silently treating a task argument as a PRD would generate the wrong output without surfacing the error.
+2. **PRD lookup failed (no file in `prd/` or `prd/done/`).** Before reporting "not found", check if the argument matches a task instead. This catches a common mistake: the user typed a task name where a PRD basename was expected.
+   - If `<vault>/tasks/<name>.md` or `<vault>/tasks/done/<name>.md` exists → abort with: `/xavier tasks operates on PRDs, not tasks. The argument '<name>' matches a task file but no PRD. To regenerate the task list for an existing PRD, pass the PRD's basename. To modify an existing task file, edit it directly. Aborting.` This rejection only fires after PRD resolution has failed, so a side-by-side `prd/<name>.md` + `tasks/<name>.md` (legacy layout) does not trigger it.
+   - Otherwise (neither PRD nor task matches) → fall through to the existing "not found" behavior (no revival prompt, no soft-resolve). No behavior change for the truly-missing case.
 
 ## Step 2: Load PRD and Follow Related Links
 
 1. Read the full contents of the selected PRD
 2. Check the PRD's `related` field in frontmatter for wikilinks (e.g., `[[prd/auth-middleware]]`, `[[knowledge/teams/platform]]`)
-3. **Validate every wikilink before any filesystem read.** A wikilink target has the form `[[<namespace>/<path>]]` where:
-   - `<namespace>` is the **prefix** that must match one of the approved values:
-     - **Single-segment leaf** (exactly one basename after the namespace): `prd`, `prd/done`, `tasks`, `tasks/done`, `knowledge/reviews`, `research`, `investigations`, `deps`.
-     - **Multi-segment leaf allowed** (the namespace can be followed by 1 to 3 basename segments to accommodate per-repo / per-package notes written by `/xavier learn`): `knowledge/repos`, `knowledge/teams`. For example `[[knowledge/repos/<repo>/<package>/dependencies]]` is a legal four-segment path under the `knowledge/repos` namespace.
+3. **Validate every wikilink before any filesystem read.** A wikilink target has the form `[[<namespace>/<path>]]`. Validation differs slightly per namespace because note-writing skills use different filename conventions:
+   - **Approved namespaces and per-segment grammar:**
+     - `prd`, `prd/done`, `tasks`, `tasks/done`, `research`, `deps` → single basename segment matching `^[a-z0-9][a-z0-9-]{0,63}$` (kebab-case).
+     - `knowledge/repos`, `knowledge/teams` → 1 to 3 trailing basename segments, each matching `^[a-z0-9][a-z0-9-]{0,63}$`. Accommodates per-repo / per-package notes written by `/xavier learn` (e.g. `[[knowledge/repos/<repo>/<package>/dependencies]]`).
+     - `knowledge/reviews`, `investigations` → single trailing segment matching `^[a-z0-9][a-z0-9_-]{0,127}$`. Both note types intentionally use underscores in the basename (`<repo>_<date>_<slug>.md`) — the kebab-only allowlist would reject every legitimate review or investigation note.
      - Reject anything whose namespace is not in this list.
-   - **Every** path segment after the namespace MUST independently match the basename allowlist `^[a-z0-9][a-z0-9-]{0,63}$` from `xavier/skills/mark/SKILL.md`. The full path under the namespace must be 1–4 such segments — no deeper nesting, no empty segments, no segment containing `..`, leading `.`, absolute paths, whitespace, or characters outside `[a-z0-9-]`.
+   - Reject any segment containing `..`, leading `.`, absolute paths, whitespace, or characters outside the per-namespace grammar above. No empty segments.
    - The resolved filesystem path MUST canonicalize (via `realpath` or equivalent) to a child of `$XAVIER_HOME` — never auto-load a path that escapes the vault root, even if it textually appears to.
    Log a warning naming any wikilink that fails validation; skip it and continue with the remaining links.
 4. **Auto-load** the validated linked notes. The resolved path under `$XAVIER_HOME/<wikilink-target>.md` may point at either a file or a directory:

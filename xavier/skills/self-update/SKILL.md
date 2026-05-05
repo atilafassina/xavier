@@ -242,20 +242,20 @@ uninstall|Remove the Xavier vault and all symlinks
 # Missing entries cause in-product self-update to skip alias regeneration for
 # new skills, leading to drift between fresh installs and updated installs.
 
-Detect which runtimes are installed by checking for the alias directories that `xavier/install.sh`'s `install_command_aliases()` writes — Claude Code at `~/.claude/commands/` and Cursor at `~/.cursor/commands/` (or wherever the original install wrote them; mirror the existing layout). Regenerate aliases for **every detected runtime** so an in-product self-update produces the same per-runtime alias coverage as a fresh install. Skipping a runtime here recreates the upgrade-vs-fresh-install drift this section is meant to prevent.
+Regenerate aliases for **every runtime** that the original install touched, using each runtime's own alias layout. The Claude Code and Cursor formats differ — they are NOT interchangeable — so this step must mirror `install_command_aliases()` in `xavier/install.sh` exactly:
+
+- **Claude Code**: a single Markdown file at `~/.claude/commands/<prefix>-<cmd>.md` containing frontmatter + Skill-tool delegation instructions.
+- **Cursor**: a directory at `~/.cursor/skills/<prefix>-<cmd>/` with `SKILL.md` inside, containing frontmatter + a "When user says /xavier <cmd>" trigger description.
+
+Detect each runtime by the presence of its alias root (`~/.claude/commands` for Claude; `~/.cursor/skills` for Cursor — note the `skills` path, NOT `commands`). Skip a runtime whose root does not exist; rewrite aliases for every runtime whose root does.
 
 ```bash
-# Detect which runtime alias directories exist and rewrite aliases for each.
-# This mirrors install_command_aliases() in xavier/install.sh — keep them in sync.
-RUNTIME_DIRS=""
-[ -d "$HOME/.claude/commands" ] && RUNTIME_DIRS="$RUNTIME_DIRS $HOME/.claude/commands"
-[ -d "$HOME/.cursor/commands" ] && RUNTIME_DIRS="$RUNTIME_DIRS $HOME/.cursor/commands"
+echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
+  [ -z "$cmd" ] && continue
 
-for runtime_dir in $RUNTIME_DIRS; do
-  mkdir -p "$runtime_dir"
-  echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
-    [ -z "$cmd" ] && continue
-    cat > "$runtime_dir/${ALIAS_PREFIX}-${cmd}.md" << ALIASEOF
+  # Claude Code: single-file alias at ~/.claude/commands/<prefix>-<cmd>.md
+  if [ -d "$HOME/.claude/commands" ]; then
+    cat > "$HOME/.claude/commands/${ALIAS_PREFIX}-${cmd}.md" << ALIASEOF
 ---
 name: ${ALIAS_PREFIX}-${cmd}
 description: ${desc}
@@ -269,11 +269,27 @@ Use the Skill tool to invoke:
 
 Do NOT execute this skill directly. Do NOT read vault files. Delegate to the xavier router.
 ALIASEOF
-  done
+  fi
+
+  # Cursor: directory alias at ~/.cursor/skills/<prefix>-<cmd>/SKILL.md
+  if [ -d "$HOME/.cursor/skills" ]; then
+    mkdir -p "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}"
+    cat > "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md" << ALIASEOF
+---
+name: ${ALIAS_PREFIX}-${cmd}
+description: "${desc}. Use when user says /xavier ${cmd}."
+---
+
+Execute /xavier ${cmd}.
+
+1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
+2. Follow the Router Lifecycle with subcommand: ${cmd}
+ALIASEOF
+  fi
 done
 ```
 
-Once every alias file in the COMMANDS list has been written for every detected runtime (currently 17 entries × the number of detected runtimes — keep this count synchronized with the table above and with `xavier/install.sh`'s `install_command_aliases()`), proceed to Step 9.
+Once every alias has been regenerated for every detected runtime (currently 17 entries × the number of detected runtimes), proceed to Step 9. If `install_command_aliases()` in `xavier/install.sh` ever changes its format or paths, this block must be updated to match.
 
 ## Step 9: Update Version in Config
 

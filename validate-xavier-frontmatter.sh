@@ -156,9 +156,19 @@ if [ -n "$SEARCH_ROOTS" ]; then
         continue
       fi
 
-      # Has a status field. Strip surrounding quotes (parameter expansion — no subshell).
-      status_value="${status_value#[\"\']}"
-      status_value="${status_value%[\"\']}"
+      # Has a status field. Strip a matched pair of surrounding quotes only —
+      # never strip mismatched pairs ("done' or 'done") which would let broken
+      # YAML pass the value check.
+      case "$status_value" in
+        \"*\")
+          status_value="${status_value#\"}"
+          status_value="${status_value%\"}"
+          ;;
+        \'*\')
+          status_value="${status_value#\'}"
+          status_value="${status_value%\'}"
+          ;;
+      esac
 
       # First, the value must be in the allowlist regardless of location.
       # Exact string match — never delegate to grep (would let `.*` bypass the allowlist).

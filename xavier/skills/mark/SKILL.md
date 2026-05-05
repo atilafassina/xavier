@@ -1,6 +1,6 @@
 ---
 name: mark
-requires: [config, prd-index, tasks-index]
+requires: [config, prd-index:optional, tasks-index:optional]
 ---
 
 # Mark
