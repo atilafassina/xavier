@@ -54,13 +54,14 @@ check_deps() {
 check_existing() {
   if [ -d "$XAVIER_HOME" ] && [ -f "$XAVIER_HOME/config.md" ]; then
     warn "Xavier vault already exists at $XAVIER_HOME"
-    printf "  [u] Update — re-run setup to update preferences\n"
-    printf "  [s] Skip — exit without changes\n"
+    printf "  [u] Update — re-run setup to update preferences (config.md will be re-prompted)\n"
+    printf "  [s] Refresh-only — keep existing config.md; create any missing vault directories,\n"
+    printf "                  refresh skill symlinks, and regenerate command aliases\n"
     printf "  Choice [u/s]: "
     read -r choice
     case "$choice" in
       u|U) info "Will re-run setup after scaffold check..." ;;
-      *)   info "Skipping vault setup. Updating symlinks..."
+      *)   info "Refreshing vault layout, symlinks, and aliases (config.md preserved)..."
            ensure_vault_dirs
            install_skill
            install_command_aliases

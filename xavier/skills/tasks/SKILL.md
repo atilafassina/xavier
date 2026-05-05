@@ -11,7 +11,10 @@ Decompose a PRD into a phased implementation task list using tracer-bullet verti
 
 ## Step 0: Pre-flight
 
-Check that the PRD list from the resolved `prd-index` context is non-empty (i.e., `~/.xavier/prd/` contains at least one `.md` file). If empty, print: "Error: no PRDs found in ~/.xavier/prd/. Create a PRD first before generating tasks." and stop.
+Branch on whether the user supplied an explicit PRD name argument:
+
+- **Explicit name argument given** → skip the empty-index check and proceed to Step 1's soft-resolve fallback. The name may resolve under `prd/done/` even when no active PRDs exist, and the soft-resolve fallback is what surfaces the revival hint in that case. Bailing here would suppress the hint and leave the user with a misleading "no PRDs found" error.
+- **No name argument (picker flow)** → check that the PRD list from the resolved `prd-index` context is non-empty (i.e., `~/.xavier/prd/` contains at least one active `.md` file). If empty, print: `Error: no active PRDs found in ~/.xavier/prd/. Create a PRD first before generating tasks (or revive an archived one with /xavier mark <name> active).` and stop.
 
 ## Step 1: Select PRD
 
@@ -20,7 +23,11 @@ List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context)
 **Soft-resolve fallback for explicit PRD name argument** — When the user invokes the skill with an explicit PRD name (skipping the picker), first **validate `<name>` as a basename** per the Name Validation rules in `xavier/skills/mark/SKILL.md` (must match `^[a-z0-9][a-z0-9-]{0,63}$`). If validation fails, abort with the same error message before any filesystem check — never let an unvalidated argument reach a path. Then resolve `<name>` against the four lifecycle cases:
 
 - **Active-only** (file exists at `<vault>/prd/<name>.md`, NOT at `<vault>/prd/done/<name>.md`) → read it directly and proceed.
-- **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → read the file's frontmatter `status` to recover the actual lifecycle state (the directory holds both `done` and `superseded`). Emit the matching revival message — `PRD <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` if `status: done`, or `PRD <name> is marked superseded. Revive it with /xavier mark <name> active first, then re-run.` if `status: superseded`. Exit cleanly. Do NOT continue with task generation.
+- **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → read the file's frontmatter `status` to recover the actual lifecycle state (the directory holds both `done` and `superseded`). Emit the matching revival message:
+  - If `status: done`: `PRD <name> is marked done. Revive it before re-running.`
+  - If `status: superseded`: `PRD <name> is marked superseded. Revive it before re-running.`
+
+  Then suggest the recovery path with cross-kind ambiguity awareness: if `<vault>/tasks/<name>.md` or `<vault>/tasks/done/<name>.md` also exists, `/xavier mark <name> active` would hit `mark`'s cross-kind ambiguity error, so suggest the picker form: `Run /xavier mark (no args), select prd/<name>, and choose 'active'. Then re-run.` Otherwise suggest the arg form: `Run /xavier mark <name> active, then re-run.` Exit cleanly. Do NOT continue with task generation.
 - **Ambiguous** (file exists at BOTH `<vault>/prd/<name>.md` and `<vault>/prd/done/<name>.md`) → silently prefer the active top-level PRD. Do not emit a revival prompt.
 - **Missing** (file exists at NEITHER path) → fall through to the existing "not found" behavior (no revival prompt, no soft-resolve). No behavior change here.
 

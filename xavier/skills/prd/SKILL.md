@@ -1,6 +1,6 @@
 ---
 name: prd
-requires: [config, prd-index, repo-conventions, team-conventions]
+requires: [config, prd-index, repo-conventions, team-conventions, tasks-index:optional]
 ---
 
 # PRD
@@ -15,7 +15,12 @@ Before the interview begins, present vault contents for the user to browse and s
 
 1. **PRD reference resolution (soft-resolve fallback)** — If the user invoked the skill with an explicit PRD name argument (e.g., `/xavier prd <name>`), first **validate `<name>` as a basename** per the Name Validation rules in `xavier/skills/mark/SKILL.md` (must match `^[a-z0-9][a-z0-9-]{0,63}$`). If validation fails, abort before any filesystem check — never let an unvalidated argument reach a path. Then resolve `<name>` against the four lifecycle cases:
    - **Active-only** (file exists at `<vault>/prd/<name>.md`, NOT at `<vault>/prd/done/<name>.md`) → proceed normally with the active PRD as context.
-   - **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → read the file's frontmatter `status` to recover the actual lifecycle state (the directory holds both `done` and `superseded`). Emit the matching revival message — `PRD <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` if `status: done`, or `PRD <name> is marked superseded. Revive it with /xavier mark <name> active first, then re-run.` if `status: superseded`. If the file lives in `done/` but the status field is missing or invalid, surface a separate warning (the validator should catch this; if it leaks through, point the user at `validate-xavier-frontmatter.sh`). Exit cleanly. Do NOT continue with vault context selection or the interview.
+   - **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → read the file's frontmatter `status` to recover the actual lifecycle state (the directory holds both `done` and `superseded`). Emit the matching revival message:
+     - If `status: done`: `PRD <name> is marked done. Revive it before re-running.`
+     - If `status: superseded`: `PRD <name> is marked superseded. Revive it before re-running.`
+     - If status is missing or invalid: surface a separate warning pointing the user at `validate-xavier-frontmatter.sh` (the validator should catch this; if it leaks through, the file needs reconciliation).
+
+     Then suggest the recovery path. **Check for cross-kind basename collisions first**: if `<vault>/tasks/<name>.md` or `<vault>/tasks/done/<name>.md` exists, `/xavier mark <name> active` would error with cross-kind ambiguity. In that case, suggest the picker form: `Run /xavier mark (no args), select prd/<name>, and choose 'active'. Then re-run.` Otherwise, suggest the arg form: `Run /xavier mark <name> active, then re-run.` Exit cleanly. Do NOT continue with vault context selection or the interview.
    - **Ambiguous** (file exists at BOTH `<vault>/prd/<name>.md` and `<vault>/prd/done/<name>.md`) → silently prefer the active top-level PRD. Do not emit a revival prompt.
    - **Missing** (file exists at NEITHER path) → fall through to the existing "not found" behavior (no revival prompt, no soft-resolve). No behavior change here.
 2. List titles and frontmatter from `~/.xavier/prd/` (from the resolved `prd-index` context), `~/.xavier/knowledge/repos/`, and `~/.xavier/knowledge/teams/`

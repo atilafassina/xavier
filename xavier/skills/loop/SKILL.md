@@ -83,9 +83,9 @@ Update `~/.xavier/loop-state/<task-name>.md`: increment iteration, log progress,
 
 - **Backpressure passed**: mark phase complete, advance to next phase
 - **Backpressure failed**: re-spawn the remora with error context from the failure. Include the exact error output in the prompt so the remora can fix it
-- **All phases complete**: run Step 5 (auto-mark task as done), then announce success and clean up state
-- **Max iterations reached**: announce limit, summarize remaining work. Do **not** auto-mark — the task is incomplete
-- **No progress for 2 consecutive iterations**: announce stall, ask user for guidance. Do **not** auto-mark — the task is incomplete
+- **All phases complete**: run Step 5 (auto-mark task as done), then announce success. **Do not delete `~/.xavier/loop-state/<name>.md`** — Step 5 writes a `status: complete` marker into that file as a stable signal for `/xavier mark --backfill` (sub-phase 5a). Deleting the file would erase that signal and reduce backfill to heuristic detection again. "Clean up state" here means clearing transient in-memory tracking only; the on-disk loop-state file persists with its completion marker.
+- **Max iterations reached**: announce limit, summarize remaining work. Do **not** auto-mark — the task is incomplete. The loop-state file persists without `status: complete` so a future run can resume.
+- **No progress for 2 consecutive iterations**: announce stall, ask user for guidance. Do **not** auto-mark — the task is incomplete. The loop-state file persists without `status: complete`.
 
 ## Step 5: Auto-Mark Source Task as Done (success path only)
 

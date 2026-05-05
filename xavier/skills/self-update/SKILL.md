@@ -242,11 +242,20 @@ uninstall|Remove the Xavier vault and all symlinks
 # Missing entries cause in-product self-update to skip alias regeneration for
 # new skills, leading to drift between fresh installs and updated installs.
 
-mkdir -p "$HOME/.claude/commands"
+Detect which runtimes are installed by checking for the alias directories that `xavier/install.sh`'s `install_command_aliases()` writes — Claude Code at `~/.claude/commands/` and Cursor at `~/.cursor/commands/` (or wherever the original install wrote them; mirror the existing layout). Regenerate aliases for **every detected runtime** so an in-product self-update produces the same per-runtime alias coverage as a fresh install. Skipping a runtime here recreates the upgrade-vs-fresh-install drift this section is meant to prevent.
 
-echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
-  [ -z "$cmd" ] && continue
-  cat > "$HOME/.claude/commands/${ALIAS_PREFIX}-${cmd}.md" << ALIASEOF
+```bash
+# Detect which runtime alias directories exist and rewrite aliases for each.
+# This mirrors install_command_aliases() in xavier/install.sh — keep them in sync.
+RUNTIME_DIRS=""
+[ -d "$HOME/.claude/commands" ] && RUNTIME_DIRS="$RUNTIME_DIRS $HOME/.claude/commands"
+[ -d "$HOME/.cursor/commands" ] && RUNTIME_DIRS="$RUNTIME_DIRS $HOME/.cursor/commands"
+
+for runtime_dir in $RUNTIME_DIRS; do
+  mkdir -p "$runtime_dir"
+  echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
+    [ -z "$cmd" ] && continue
+    cat > "$runtime_dir/${ALIAS_PREFIX}-${cmd}.md" << ALIASEOF
 ---
 name: ${ALIAS_PREFIX}-${cmd}
 description: ${desc}
@@ -260,10 +269,11 @@ Use the Skill tool to invoke:
 
 Do NOT execute this skill directly. Do NOT read vault files. Delegate to the xavier router.
 ALIASEOF
+  done
 done
 ```
 
-Once every alias file in the COMMANDS list has been written (currently 17 entries — keep this count synchronized with the table above and with `xavier/install.sh`), proceed to Step 9.
+Once every alias file in the COMMANDS list has been written for every detected runtime (currently 17 entries × the number of detected runtimes — keep this count synchronized with the table above and with `xavier/install.sh`'s `install_command_aliases()`), proceed to Step 9.
 
 ## Step 9: Update Version in Config
 
@@ -276,9 +286,13 @@ Do NOT modify any other content in `config.md`.
 
 ## Step 10: Ensure Vault Directories
 
-Create any new vault directories that new skills might expect. The set MUST stay in lockstep with `ensure_vault_dirs()` in `xavier/install.sh` so in-product self-update produces the same layout as a fresh install (including lifecycle archive subdirs):
+Create any new vault directories that new skills might expect. The set below MUST mirror `ensure_vault_dirs()` in `xavier/install.sh` line-for-line so in-product self-update produces the exact layout of a fresh install (including lifecycle archive subdirs and any partially-pruned legacy dirs):
 
 ```bash
+mkdir -p "$XAVIER_HOME/personas"
+mkdir -p "$XAVIER_HOME/adapters"
+mkdir -p "$XAVIER_HOME/skills"
+mkdir -p "$XAVIER_HOME/deps"
 mkdir -p "$XAVIER_HOME/knowledge/repos"
 mkdir -p "$XAVIER_HOME/knowledge/teams"
 mkdir -p "$XAVIER_HOME/knowledge/reviews"
@@ -286,11 +300,10 @@ mkdir -p "$XAVIER_HOME/prd"
 mkdir -p "$XAVIER_HOME/prd/done"
 mkdir -p "$XAVIER_HOME/tasks"
 mkdir -p "$XAVIER_HOME/tasks/done"
-mkdir -p "$XAVIER_HOME/loop-state"
-mkdir -p "$XAVIER_HOME/shark-state"
-mkdir -p "$XAVIER_HOME/deps"
 mkdir -p "$XAVIER_HOME/research"
 mkdir -p "$XAVIER_HOME/investigations"
+mkdir -p "$XAVIER_HOME/loop-state"
+mkdir -p "$XAVIER_HOME/shark-state"
 mkdir -p "$XAVIER_HOME/babysit-pr"
 ```
 
