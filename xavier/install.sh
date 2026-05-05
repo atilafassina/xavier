@@ -54,21 +54,27 @@ check_deps() {
 check_existing() {
   if [ -d "$XAVIER_HOME" ] && [ -f "$XAVIER_HOME/config.md" ]; then
     warn "Xavier vault already exists at $XAVIER_HOME"
-    printf "  [u] Update — re-run setup to update preferences (config.md will be re-prompted)\n"
-    printf "  [s] Refresh-only — keep existing config.md; create any missing vault directories,\n"
-    printf "                  refresh skill symlinks, and regenerate command aliases\n"
-    printf "  Choice [u/s]: "
-    read -r choice
-    case "$choice" in
-      u|U) info "Will re-run setup after scaffold check..." ;;
-      *)   info "Refreshing vault layout, symlinks, and aliases (config.md preserved)..."
-           ensure_vault_dirs
-           install_skill
-           install_command_aliases
-           link_xavier_skills_and_refs
-           exit 0 ;;
-    esac
-    return 0
+    while :; do
+      printf "  [u] Update — re-run setup to update preferences (config.md will be re-prompted)\n"
+      printf "  [s] Refresh-only — keep existing config.md; create any missing vault directories,\n"
+      printf "                  refresh skill symlinks, and regenerate command aliases\n"
+      printf "  [a] Abort — exit without changes\n"
+      printf "  Choice [u/s/a]: "
+      read -r choice
+      case "$choice" in
+        u|U) info "Will re-run setup after scaffold check..."
+             return 0 ;;
+        s|S) info "Refreshing vault layout, symlinks, and aliases (config.md preserved)..."
+             ensure_vault_dirs
+             install_skill
+             install_command_aliases
+             link_xavier_skills_and_refs
+             exit 0 ;;
+        a|A) info "Aborted. No changes made."
+             exit 0 ;;
+        *)   warn "Invalid choice '$choice'. Pick u, s, or a." ;;
+      esac
+    done
   fi
   return 1
 }

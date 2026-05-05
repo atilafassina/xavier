@@ -47,11 +47,23 @@ Run all checks before starting. If any check fails, stop immediately:
 
 ## Step 3: Initialize State
 
-Create state file at `~/.xavier/loop-state/<task-name>.md`:
+Create the state file at `~/.xavier/loop-state/<task-name>.md`. Loop-state files have a fixed top-level shape so downstream consumers (Step 5's completion-marker write, `/xavier mark --backfill` sub-phase 5a's heuristic detection) have stable insertion / parsing points:
+
+```
+# Loop State
+
+(Optional `status: complete` marker line written by Step 5 success path.)
+
+(Body sections below — content depends on mode.)
+```
+
+The first line of the file MUST be the literal heading `# Loop State`. Step 5's auto-mark logic relies on this heading as the insertion anchor for the `status: complete` marker; without it, the marker placement is undefined and backfill cannot detect completed loops deterministically.
+
+Body content:
 
 - **Task-file mode**: track current phase, iteration count, pass/fail history per phase, learnings
 - **Freeform mode**: lighter format — iteration count, progress log, learnings
-- Loop state files have **no Zettelkasten frontmatter** (they are ephemeral tracking, not knowledge)
+- Loop state files have **no Zettelkasten frontmatter** (they are ephemeral tracking, not knowledge). The `# Loop State` heading is a structural anchor, not Zettelkasten metadata.
 
 ## Step 4: Run the Loop
 

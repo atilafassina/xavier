@@ -1,6 +1,6 @@
 ---
 name: tasks
-requires: [config, tasks-index, prd-index, repo-conventions, team-conventions]
+requires: [config, tasks-index, prd-index, repo-conventions, team-conventions, deps-index:optional, research-index:optional, investigations-index:optional]
 ---
 
 # Tasks
@@ -40,10 +40,11 @@ List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context)
 
 1. Read the full contents of the selected PRD
 2. Check the PRD's `related` field in frontmatter for wikilinks (e.g., `[[prd/auth-middleware]]`, `[[knowledge/teams/platform]]`)
-3. **Validate every wikilink before any filesystem read.** A wikilink target has the form `[[<namespace>/<path>]]`. Validation differs slightly per namespace because note-writing skills use different filename conventions:
+3. **Validate every wikilink before any filesystem read.** A wikilink target has the form `[[<namespace>/<path>]]`. Validation differs per namespace because note-writing skills use different filename conventions:
    - **Approved namespaces and per-segment grammar:**
-     - `prd`, `prd/done`, `tasks`, `tasks/done`, `research`, `deps` → single basename segment matching `^[a-z0-9][a-z0-9-]{0,63}$` (kebab-case).
-     - `knowledge/repos`, `knowledge/teams` → 1 to 3 trailing basename segments, each matching `^[a-z0-9][a-z0-9-]{0,63}$`. Accommodates per-repo / per-package notes written by `/xavier learn` (e.g. `[[knowledge/repos/<repo>/<package>/dependencies]]`).
+     - `prd`, `prd/done`, `tasks`, `tasks/done`, `research` → single basename segment matching `^[a-z0-9][a-z0-9-]{0,63}$` (kebab-case).
+     - `deps` → either a single kebab-case segment matching `^[a-z0-9][a-z0-9-]{0,63}$` (unscoped npm package), or a two-segment scoped npm package matching `^@[a-z0-9][a-z0-9-]{0,63}$` (scope) + `^[a-z0-9][a-z0-9-]{0,63}$` (name). `[[deps/express]]` and `[[deps/@types/node]]` are both legal; the latter resolves to `<vault>/deps/@types/node/SKILL.md`. The `@` prefix is only allowed in the first segment of a `deps/` link.
+     - `knowledge/repos`, `knowledge/teams` → 1 to 3 trailing basename segments, each matching `^[a-z0-9][a-z0-9-]{0,63}$`. Accommodates per-repo / per-package notes written by `/xavier learn` (e.g. `[[knowledge/repos/<repo>/<package>/dependencies]]`). Scoped packages are NOT supported here — `/xavier learn` flattens scoped names to kebab-case before writing.
      - `knowledge/reviews`, `investigations` → single trailing segment matching `^[a-z0-9][a-z0-9_-]{0,127}$`. Both note types intentionally use underscores in the basename (`<repo>_<date>_<slug>.md`) — the kebab-only allowlist would reject every legitimate review or investigation note.
      - Reject anything whose namespace is not in this list.
    - Reject any segment containing `..`, leading `.`, absolute paths, whitespace, or characters outside the per-namespace grammar above. No empty segments.

@@ -248,15 +248,15 @@ Regenerate aliases for **every runtime** that the original install touched, usin
 - **Claude Code**: a single Markdown file at `~/.claude/commands/<prefix>-<cmd>.md` containing frontmatter + Skill-tool delegation instructions.
 - **Cursor**: a directory at `~/.cursor/skills/<prefix>-<cmd>/` with `SKILL.md` inside, containing frontmatter + a "When user says /xavier <cmd>" trigger description.
 
-Detect each runtime by the presence of its alias root (`~/.claude/commands` for Claude; `~/.cursor/skills` for Cursor — note the `skills` path, NOT `commands`). Skip a runtime whose root does not exist; rewrite aliases for every runtime whose root does.
+Mirror `install_command_aliases()` exactly: when aliases are enabled, regenerate aliases for **both runtimes unconditionally**, creating the root directories if they don't already exist. The original installer does not gate on directory existence — it `mkdir -p`s and writes — so self-update must too. Otherwise users who deleted an alias root (or whose original install never created one) would silently miss alias regeneration on update.
 
 ```bash
 echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
   [ -z "$cmd" ] && continue
 
   # Claude Code: single-file alias at ~/.claude/commands/<prefix>-<cmd>.md
-  if [ -d "$HOME/.claude/commands" ]; then
-    cat > "$HOME/.claude/commands/${ALIAS_PREFIX}-${cmd}.md" << ALIASEOF
+  mkdir -p "$HOME/.claude/commands"
+  cat > "$HOME/.claude/commands/${ALIAS_PREFIX}-${cmd}.md" << ALIASEOF
 ---
 name: ${ALIAS_PREFIX}-${cmd}
 description: ${desc}
@@ -270,12 +270,10 @@ Use the Skill tool to invoke:
 
 Do NOT execute this skill directly. Do NOT read vault files. Delegate to the xavier router.
 ALIASEOF
-  fi
 
   # Cursor: directory alias at ~/.cursor/skills/<prefix>-<cmd>/SKILL.md
-  if [ -d "$HOME/.cursor/skills" ]; then
-    mkdir -p "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}"
-    cat > "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md" << ALIASEOF
+  mkdir -p "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}"
+  cat > "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md" << ALIASEOF
 ---
 name: ${ALIAS_PREFIX}-${cmd}
 description: "${desc}. Use when user says /xavier ${cmd}."
@@ -286,11 +284,10 @@ Execute /xavier ${cmd}.
 1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
 2. Follow the Router Lifecycle with subcommand: ${cmd}
 ALIASEOF
-  fi
 done
 ```
 
-Once every alias has been regenerated for every detected runtime (currently 19 entries × the number of detected runtimes), proceed to Step 9. If `install_command_aliases()` in `xavier/install.sh` ever changes its format or paths, this block must be updated to match.
+Once every alias has been regenerated for both runtimes (currently 19 entries × 2 runtimes = 38 alias files), proceed to Step 9. If `install_command_aliases()` in `xavier/install.sh` ever changes its format, paths, or runtime set, this block must be updated to match.
 
 ## Step 9: Update Version in Config
 
