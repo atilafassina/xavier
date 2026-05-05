@@ -1,6 +1,6 @@
 ---
 name: loop
-requires: [config, shark, tasks-index]
+requires: [config, shark, tasks-index, prd-index]
 ---
 
 # Loop
@@ -108,6 +108,44 @@ The transition imposes a strict ordering and rollback contract that this step in
 **Loop-state file is unaffected.** The state file at `~/.xavier/loop-state/<name>.md` is keyed by **basename only** — the same `<name>` as the source task file. Moving the source from `<vault>/tasks/<name>.md` to `<vault>/tasks/done/<name>.md` does not touch `~/.xavier/loop-state/<name>.md`. The cleanup of loop-state is a separate action handled by the success branch of Step 4h after this step returns.
 
 **Do not commit here.** The auto-mark frontmatter edit and `mv` are filesystem operations only; the router commits vault changes after the skill completes (mirroring the policy in `mark/SKILL.md`).
+
+## Step 6: Offer to Mark Source PRD (success path only)
+
+After Step 5 has marked the task as `done`, check whether the source PRD is now fully implemented and prompt the user to retire it. This step runs **only on the success path** — same gating as Step 5.
+
+**Skip this step entirely if any of the following hold:**
+
+- **Freeform mode**: the loop has no source task file, so there is no `source` field to read and no PRD to mark. Stop.
+- **Source frontmatter has no `source` field, or the field is empty**: the task is not linked to a PRD. Stop.
+- **PRD already lives at `<vault>/prd/done/<name>.md`**: the PRD has already been retired. Skip the prompt — there is nothing to do.
+- All Step 5 skip conditions (max iterations, user-stop, stall, partial-progress) also apply here transitively, since this step only runs after Step 5's success branch.
+
+**Otherwise, scan sibling tasks and decide whether to prompt:**
+
+1. Read the just-completed source task's frontmatter `source` field — it is a wikilink of the form `[[prd/<name>]]`. Extract `<name>`.
+2. Verify the PRD's current location:
+   - If `<vault>/prd/done/<name>.md` exists → PRD is already done. **Skip the prompt.** Stop.
+   - Otherwise the PRD lives at `<vault>/prd/<name>.md` (active). Continue.
+3. Glob **both** `<vault>/tasks/*.md` (active siblings) **and** `<vault>/tasks/done/*.md` (already-done siblings). The just-marked task is among the `done/` set after Step 5.
+4. For each globbed file, read its frontmatter `source` field. Keep only entries whose `source` equals the just-completed task's `source` (i.e., they all point at `[[prd/<name>]]`).
+5. For every matching sibling, classify as **done** or **active**:
+   - The sibling is **done** if it lives in `<vault>/tasks/done/` OR its frontmatter `status` is `done` (or `superseded`).
+   - Otherwise it is **active**.
+6. **Branch on the result:**
+   - **At least one sibling is still active** → do not prompt. The PRD is not yet ready to retire. Stop this step silently.
+   - **Every sibling is done** → prompt via **AskUserQuestion**:
+
+     > All tasks for PRD `<name>` are now done. Mark the PRD?
+
+     Options: `done`, `superseded`, `skip`.
+
+     Dispatch based on the answer:
+
+     - **`done`** → apply the `→ done` transition from `xavier/skills/mark/SKILL.md` to `<vault>/prd/<name>.md`. Do not duplicate the transition logic — the canonical operation lives in the `mark` skill.
+     - **`superseded`** → apply the `→ superseded` transition from `xavier/skills/mark/SKILL.md` to the same PRD.
+     - **`skip`** → leave the PRD untouched. No filesystem or frontmatter change.
+
+**Do not commit here.** The PRD frontmatter edit and `mv` are filesystem operations only; the router commits vault changes after the skill completes (mirroring the policy in `mark/SKILL.md` and Step 5 above).
 
 ## Rules
 

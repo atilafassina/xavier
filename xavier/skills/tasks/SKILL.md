@@ -79,7 +79,25 @@ related:
 
 Then write the task body: architectural decisions, backpressure commands, completion criteria, and phases with acceptance criteria.
 
-## Step 8: STOP — Do not implement
+## Step 8: Offer to Mark Source PRD
+
+After the task file is written, the source PRD has been fully decomposed and is a candidate for retirement. Prompt the user via **AskUserQuestion**:
+
+> Mark PRD `<name>` as done now?
+
+Options: `done`, `superseded`, `skip`.
+
+Dispatch based on the answer:
+
+- **`done`** → apply the `→ done` transition documented in `xavier/skills/mark/SKILL.md` to the source PRD at `~/.xavier/prd/<name>.md`. The transition sets frontmatter `status: done`, bumps `updated:`, and runs `mv <vault>/prd/<name>.md <vault>/prd/done/<name>.md`. Do not duplicate the transition logic here — the canonical operation lives in the `mark` skill.
+- **`superseded`** → apply the `→ superseded` transition from `xavier/skills/mark/SKILL.md`. The transition sets frontmatter `status: superseded`, bumps `updated:`, and routes the file to `<vault>/prd/done/<name>.md` alongside other archived items.
+- **`skip`** → leave the PRD untouched. No filesystem or frontmatter change.
+
+Both `done` and `superseded` route the file to `<vault>/prd/done/<name>.md`; only the `status` value differs. The transitions are idempotent — if the PRD is already at `prd/done/<name>.md` with the matching `status`, the operation is a no-op.
+
+Do not commit here. The router commits vault changes after the skill completes (mirroring the policy in `mark/SKILL.md`).
+
+## Step 9: STOP — Do not implement
 
 <stop-guardrail>
 **You are DONE.** Do not write any code. Do not start implementing any phase.
