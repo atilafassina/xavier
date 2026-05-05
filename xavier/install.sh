@@ -55,17 +55,25 @@ check_existing() {
   if [ -d "$XAVIER_HOME" ] && [ -f "$XAVIER_HOME/config.md" ]; then
     warn "Xavier vault already exists at $XAVIER_HOME"
     while :; do
-      printf "  [u] Update — re-run setup to update preferences (config.md will be re-prompted)\n"
-      printf "  [s] Refresh-only — keep existing config.md; create any missing vault directories,\n"
-      printf "                  refresh skill symlinks, and regenerate command aliases\n"
+      printf "  [u] Update — re-run the rest of install.sh against the existing vault.\n"
+      printf "                  config.md is preserved as-is; rerun /xavier setup separately\n"
+      printf "                  if you want to update preferences interactively\n"
+      printf "  [s] Refresh-only — keep existing config.md; create any missing vault\n"
+      printf "                  directories, re-detect runtimes, refresh skill symlinks,\n"
+      printf "                  and regenerate command aliases. Skips later install steps.\n"
       printf "  [a] Abort — exit without changes\n"
       printf "  Choice [u/s/a]: "
       read -r choice
       case "$choice" in
         u|U) info "Will re-run setup after scaffold check..."
              return 0 ;;
-        s|S) info "Refreshing vault layout, symlinks, and aliases (config.md preserved)..."
+        s|S) info "Refreshing vault layout, symlinks, adapters, and aliases (config.md preserved)..."
              ensure_vault_dirs
+             # Re-detect runtimes and re-wire adapters so adapter contract changes
+             # and newly-installed runtimes (e.g. user installed Cursor since last
+             # run) land on the same `s`-path as a fresh install would produce.
+             detect_runtimes
+             wire_adapters
              install_skill
              install_command_aliases
              link_xavier_skills_and_refs
