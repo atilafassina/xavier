@@ -176,7 +176,14 @@ ALIAS_PREFIX="xavier"
 if [ -f "$XAVIER_HOME/config.md" ]; then
   prefix_val="$(grep -o '\*\*alias-prefix\*\*: *[^ ]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
   if [ -n "$prefix_val" ]; then
-    ALIAS_PREFIX="$prefix_val"
+    # Mirror install.sh's validation regex — reject anything that could let the
+    # alias write escape the alias root (`/`, `..`, leading `.`, whitespace, etc.).
+    # Fall back to the default `xavier` instead of inheriting bad input.
+    if printf '%s' "$prefix_val" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+      ALIAS_PREFIX="$prefix_val"
+    else
+      echo "WARN: Invalid alias-prefix '$prefix_val' in config.md — must be alphanumeric, hyphens, or underscores. Falling back to 'xavier'."
+    fi
   fi
 fi
 
@@ -193,7 +200,7 @@ fi
 
 If `ALIASES_ENABLED` is `"no"`, skip the rest of this step and proceed to Step 9.
 
-Otherwise, write an alias file for each of the following 15 commands:
+Otherwise, write an alias file for each of the following 19 commands. This human-readable list MUST stay in sync with the executable `COMMANDS` block below and with the `COMMANDS` table in `xavier/install.sh` — adding a skill in one place without the others causes upgrade-vs-fresh-install drift:
 
 | Command | Description |
 |---|---|
@@ -201,19 +208,23 @@ Otherwise, write an alias file for each of the following 15 commands:
 | review | Run Shark-pattern code review with concurrent reviewer personas |
 | babysit | Monitor a PR — poll CI status, auto-fix lint failures, surface review comments |
 | grill | Interview about a plan or design until reaching shared understanding |
+| investigate | Investigate a bug or system behavior with structured diagnosis |
 | prd | Create a PRD through user interview, codebase exploration, and module design |
 | tasks | Decompose a PRD into phased implementation tasks |
 | learn | Explore a codebase and produce knowledge notes in the vault |
 | loop | Execute a task file as an autonomous loop using the Shark pattern |
+| mark | Move a PRD or task between active, done, and superseded states |
 | add-dep | Create a dependency-skill for a package with best practices and API patterns |
 | remove-dep | Delete a dependency-skill |
 | research | Research a topic across web, internal docs, and codebase |
 | deps-update | Scan lockfile and regenerate stale dependency-skills |
 | export | Export a vault note to your personal Obsidian vault |
+| bug | File a bug report as a GitHub Issue in the Xavier upstream repo |
+| feedback | Open a GitHub Discussion in the Xavier upstream repository |
 | self-update | Update Xavier skills and references to the latest release |
 | uninstall | Remove the Xavier vault and all symlinks |
 
-For each command, write the alias file at `~/.claude/commands/${ALIAS_PREFIX}-${cmd}.md` with the following content:
+First, define the canonical command list as a shell variable. Keep this list in lockstep with the `COMMANDS` table in `xavier/install.sh` — missing entries cause in-product self-update to skip alias regeneration for new skills, leading to drift between fresh installs and updated installs.
 
 ```bash
 COMMANDS="
@@ -221,23 +232,37 @@ setup|Create and configure the Xavier vault
 review|Run Shark-pattern code review with concurrent reviewer personas
 babysit|Monitor a PR — poll CI status, auto-fix lint failures, surface review comments
 grill|Interview about a plan or design until reaching shared understanding
+investigate|Investigate a bug or system behavior with structured diagnosis
 prd|Create a PRD through user interview, codebase exploration, and module design
 tasks|Decompose a PRD into phased implementation tasks
 learn|Explore a codebase and produce knowledge notes in the vault
 loop|Execute a task file as an autonomous loop using the Shark pattern
+mark|Move a PRD or task between active, done, and superseded states
 add-dep|Create a dependency-skill for a package with best practices and API patterns
 remove-dep|Delete a dependency-skill
 research|Research a topic across web, internal docs, and codebase
 deps-update|Scan lockfile and regenerate stale dependency-skills
 export|Export a vault note to your personal Obsidian vault
+bug|File a bug report as a GitHub Issue in the Xavier upstream repo
+feedback|Open a GitHub Discussion in the Xavier upstream repository
 self-update|Update Xavier skills and references to the latest release
 uninstall|Remove the Xavier vault and all symlinks
 "
+```
 
-mkdir -p "$HOME/.claude/commands"
+Regenerate aliases for **every runtime** that the original install touched, using each runtime's own alias layout. The Claude Code and Cursor formats differ — they are NOT interchangeable — so this step must mirror `install_command_aliases()` in `xavier/install.sh` exactly:
 
+- **Claude Code**: a single Markdown file at `~/.claude/commands/<prefix>-<cmd>.md` containing frontmatter + Skill-tool delegation instructions.
+- **Cursor**: a directory at `~/.cursor/skills/<prefix>-<cmd>/` with `SKILL.md` inside, containing frontmatter + a "When user says /xavier <cmd>" trigger description.
+
+Mirror `install_command_aliases()` exactly: when aliases are enabled, regenerate aliases for **both runtimes unconditionally**, creating the root directories if they don't already exist. The original installer does not gate on directory existence — it `mkdir -p`s and writes — so self-update must too. Otherwise users who deleted an alias root (or whose original install never created one) would silently miss alias regeneration on update.
+
+```bash
 echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
   [ -z "$cmd" ] && continue
+
+  # Claude Code: single-file alias at ~/.claude/commands/<prefix>-<cmd>.md
+  mkdir -p "$HOME/.claude/commands"
   cat > "$HOME/.claude/commands/${ALIAS_PREFIX}-${cmd}.md" << ALIASEOF
 ---
 name: ${ALIAS_PREFIX}-${cmd}
@@ -252,10 +277,24 @@ Use the Skill tool to invoke:
 
 Do NOT execute this skill directly. Do NOT read vault files. Delegate to the xavier router.
 ALIASEOF
+
+  # Cursor: directory alias at ~/.cursor/skills/<prefix>-<cmd>/SKILL.md
+  mkdir -p "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}"
+  cat > "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md" << ALIASEOF
+---
+name: ${ALIAS_PREFIX}-${cmd}
+description: "${desc}. Use when user says /xavier ${cmd}."
+---
+
+Execute /xavier ${cmd}.
+
+1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
+2. Follow the Router Lifecycle with subcommand: ${cmd}
+ALIASEOF
 done
 ```
 
-Once all 15 alias files have been written, proceed to Step 9.
+Once every alias has been regenerated for both runtimes (currently 19 entries × 2 runtimes = 38 alias files), proceed to Step 9. If `install_command_aliases()` in `xavier/install.sh` ever changes its format, paths, or runtime set, this block must be updated to match.
 
 ## Step 9: Update Version in Config
 
@@ -268,18 +307,24 @@ Do NOT modify any other content in `config.md`.
 
 ## Step 10: Ensure Vault Directories
 
-Create any new vault directories that new skills might expect. Run `mkdir -p` for the standard set:
+Create any new vault directories that new skills might expect. The set below MUST mirror `ensure_vault_dirs()` in `xavier/install.sh` line-for-line so in-product self-update produces the exact layout of a fresh install (including lifecycle archive subdirs and any partially-pruned legacy dirs):
 
 ```bash
+mkdir -p "$XAVIER_HOME/personas"
+mkdir -p "$XAVIER_HOME/adapters"
+mkdir -p "$XAVIER_HOME/skills"
+mkdir -p "$XAVIER_HOME/deps"
 mkdir -p "$XAVIER_HOME/knowledge/repos"
 mkdir -p "$XAVIER_HOME/knowledge/teams"
 mkdir -p "$XAVIER_HOME/knowledge/reviews"
 mkdir -p "$XAVIER_HOME/prd"
+mkdir -p "$XAVIER_HOME/prd/done"
 mkdir -p "$XAVIER_HOME/tasks"
+mkdir -p "$XAVIER_HOME/tasks/done"
+mkdir -p "$XAVIER_HOME/research"
+mkdir -p "$XAVIER_HOME/investigations"
 mkdir -p "$XAVIER_HOME/loop-state"
 mkdir -p "$XAVIER_HOME/shark-state"
-mkdir -p "$XAVIER_HOME/deps"
-mkdir -p "$XAVIER_HOME/research"
 mkdir -p "$XAVIER_HOME/babysit-pr"
 ```
 

@@ -54,39 +54,67 @@ check_deps() {
 check_existing() {
   if [ -d "$XAVIER_HOME" ] && [ -f "$XAVIER_HOME/config.md" ]; then
     warn "Xavier vault already exists at $XAVIER_HOME"
-    printf "  [u] Update — re-run setup to update preferences\n"
-    printf "  [s] Skip — exit without changes\n"
-    printf "  Choice [u/s]: "
-    read -r choice
-    case "$choice" in
-      u|U) info "Will re-run setup after scaffold check..." ;;
-      *)   info "Skipping vault setup. Updating symlinks..."
-           install_skill
-           install_command_aliases
-           link_xavier_skills_and_refs
-           exit 0 ;;
-    esac
-    return 0
+    while :; do
+      printf "  [u] Update — re-run the rest of install.sh against the existing vault.\n"
+      printf "                  config.md is preserved as-is; rerun /xavier setup separately\n"
+      printf "                  if you want to update preferences interactively\n"
+      printf "  [s] Refresh-only — keep existing config.md; create any missing vault\n"
+      printf "                  directories, re-detect runtimes, refresh skill symlinks,\n"
+      printf "                  and regenerate command aliases. Skips later install steps.\n"
+      printf "  [a] Abort — exit without changes\n"
+      printf "  Choice [u/s/a]: "
+      read -r choice
+      case "$choice" in
+        u|U) info "Will re-run setup after scaffold check..."
+             return 0 ;;
+        s|S) info "Refreshing vault layout, symlinks, adapters, and aliases (config.md preserved)..."
+             ensure_vault_dirs
+             # Re-detect runtimes and re-wire adapters so adapter contract changes
+             # and newly-installed runtimes (e.g. user installed Cursor since last
+             # run) land on the same `s`-path as a fresh install would produce.
+             detect_runtimes
+             wire_adapters
+             install_skill
+             install_command_aliases
+             link_xavier_skills_and_refs
+             exit 0 ;;
+        a|A) info "Aborted. No changes made."
+             exit 0 ;;
+        *)   warn "Invalid choice '$choice'. Pick u, s, or a." ;;
+      esac
+    done
   fi
   return 1
 }
 
 # --- Scaffold vault directory structure ---
-scaffold_vault() {
-  info "Creating vault at $XAVIER_HOME..."
-
+# Idempotent — creates any missing vault directories. Runs on fresh installs AND
+# upgrades so new layout requirements (e.g. prd/done, tasks/done) materialize for
+# vaults that predate them. This list is the single source of truth for the vault
+# scaffold; xavier/skills/self-update/SKILL.md Step 10 mirrors it line-for-line.
+ensure_vault_dirs() {
   mkdir -p "$XAVIER_HOME/personas"
   mkdir -p "$XAVIER_HOME/adapters"
   mkdir -p "$XAVIER_HOME/skills"
+  mkdir -p "$XAVIER_HOME/deps"
   mkdir -p "$XAVIER_HOME/knowledge/repos"
   mkdir -p "$XAVIER_HOME/knowledge/teams"
   mkdir -p "$XAVIER_HOME/knowledge/reviews"
   mkdir -p "$XAVIER_HOME/prd"
+  mkdir -p "$XAVIER_HOME/prd/done"
   mkdir -p "$XAVIER_HOME/tasks"
+  mkdir -p "$XAVIER_HOME/tasks/done"
   mkdir -p "$XAVIER_HOME/research"
   mkdir -p "$XAVIER_HOME/investigations"
   mkdir -p "$XAVIER_HOME/loop-state"
   mkdir -p "$XAVIER_HOME/shark-state"
+  mkdir -p "$XAVIER_HOME/babysit-pr"
+}
+
+scaffold_vault() {
+  info "Creating vault at $XAVIER_HOME..."
+
+  ensure_vault_dirs
 
   # Write minimal config.md (will be personalized by /xavier setup)
   if [ ! -f "$XAVIER_HOME/config.md" ]; then
@@ -368,11 +396,14 @@ prd|Create a PRD through user interview, codebase exploration, and module design
 tasks|Decompose a PRD into phased implementation tasks
 learn|Explore a codebase and produce knowledge notes in the vault
 loop|Execute a task file as an autonomous loop using the Shark pattern
+mark|Move a PRD or task between active, done, and superseded states
 add-dep|Create a dependency-skill for a package with best practices and API patterns
 remove-dep|Delete a dependency-skill
 research|Research a topic across web, internal docs, and codebase
 deps-update|Scan lockfile and regenerate stale dependency-skills
 export|Export a vault note to your personal Obsidian vault
+bug|File a bug report as a GitHub Issue in the Xavier upstream repo
+feedback|Open a GitHub Discussion in the Xavier upstream repository
 self-update|Update Xavier skills and references to the latest release
 uninstall|Remove the Xavier vault and all symlinks
 "
@@ -399,10 +430,12 @@ Do NOT execute this skill directly. Do NOT read vault files. Delegate to the xav
 ALIASEOF
 
     # Cursor: ~/.cursor/skills/<prefix>-<cmd>/SKILL.md
+    # Always rewrite so refresh-only and self-update flows pick up content/format
+    # changes (e.g. new fields, updated descriptions). Skipping when the file
+    # already exists left existing Cursor users on stale aliases after upgrades.
     cursor_alias="$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md"
-    if [ ! -e "$cursor_alias" ]; then
-      mkdir -p "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}"
-      cat > "$cursor_alias" << ALIASEOF
+    mkdir -p "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}"
+    cat > "$cursor_alias" << ALIASEOF
 ---
 name: ${ALIAS_PREFIX}-${cmd}
 description: "${desc}. Use when user says /xavier ${cmd}."
@@ -413,7 +446,6 @@ Execute /xavier ${cmd}.
 1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
 2. Follow the Router Lifecycle with subcommand: ${cmd}
 ALIASEOF
-    fi
   done
 
   info "Command aliases installed for Claude Code and Cursor."
@@ -592,6 +624,9 @@ main() {
 
   if [ "$EXISTING" = "false" ]; then
     scaffold_vault
+  else
+    # Existing vault: still ensure new dirs from later releases exist.
+    ensure_vault_dirs
   fi
 
   detect_runtimes

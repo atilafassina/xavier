@@ -32,6 +32,24 @@ related:
 | `related` | list   | Wikilinks (`[[path/name]]`) to other vault notes that provide context    |
 
 
+## Optional Fields
+
+### `status`
+
+Lifecycle marker for time-bound notes (PRDs, tasks). Allowed values:
+
+- `done` — work is complete; the note has been moved to the `done/` subdirectory
+- `superseded` — replaced by another note (typically referenced via `related`)
+
+**Canonical states (location-first):**
+
+- A note at **top-level** (`<vault>/<kind>/<name>.md`) MUST NOT have a `status` field. Absence ≡ active.
+- A note in **`<vault>/<kind>/done/`** MUST carry `status: done` or `status: superseded`. Both keys are mandatory in the archived-side state.
+
+**Non-canonical states (top-level + status, or done/ + no status) indicate drift** — likely a transition whose `mv` did not land or a manual edit that escaped the contract. Lifecycle consumers (`xavier/skills/loop/SKILL.md` Step 6, `xavier/skills/mark/SKILL.md` sub-phase 5b) treat the **location** as authoritative when classifying done vs active and surface a warning so the user can reconcile via `/xavier mark`. Never silently coerce non-canonical state into a transition decision.
+
+The router's `prd-index` and `tasks-index` requires keys glob top-level `*.md` only and never recurse into `done/`, so moving a note to `done/` (and setting `status: done`) hides it from active choice lists while preserving full history on disk.
+
 ## Type-Specific Fields
 
 ### Reviews

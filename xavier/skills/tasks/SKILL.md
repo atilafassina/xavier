@@ -1,6 +1,6 @@
 ---
 name: tasks
-requires: [config, tasks-index, prd-index, repo-conventions, team-conventions]
+requires: [config, tasks-index, prd-index, repo-conventions, team-conventions, deps-index:optional, research-index:optional, investigations-index:optional]
 ---
 
 # Tasks
@@ -11,19 +11,55 @@ Decompose a PRD into a phased implementation task list using tracer-bullet verti
 
 ## Step 0: Pre-flight
 
-Check that the PRD list from the resolved `prd-index` context is non-empty (i.e., `~/.xavier/prd/` contains at least one `.md` file). If empty, print: "Error: no PRDs found in ~/.xavier/prd/. Create a PRD first before generating tasks." and stop.
+Branch on whether the user supplied an explicit PRD name argument:
+
+- **Explicit name argument given** → skip the empty-index check and proceed to Step 1's soft-resolve fallback. The name may resolve under `prd/done/` even when no active PRDs exist, and the soft-resolve fallback is what surfaces the revival hint in that case. Bailing here would suppress the hint and leave the user with a misleading "no PRDs found" error.
+- **No name argument (picker flow)** → check that the PRD list from the resolved `prd-index` context is non-empty (i.e., `~/.xavier/prd/` contains at least one active `.md` file). If empty, print: `Error: no active PRDs found in ~/.xavier/prd/. Create a PRD first before generating tasks (or revive an archived one with /xavier mark <name> active).` and stop.
 
 ## Step 1: Select PRD
 
 List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context) showing filename, title, date, and tags from frontmatter. Present as a numbered list using AskUserQuestion. If the user already specified a PRD by name, skip the listing and read it directly.
 
+**Soft-resolve fallback for explicit name argument** — When the user invokes the skill with an explicit name (skipping the picker), first **validate `<name>` as a basename** per the Name Validation rules in `xavier/skills/mark/SKILL.md` (must match `^[a-z0-9][a-z0-9-]{0,63}$`). If validation fails, abort with the same error message before any filesystem check — never let an unvalidated argument reach a path. Then resolve `<name>` in this **strict order**:
+
+1. **PRD lookup first** (the skill operates on PRDs):
+   - **Active-only** (file exists at `<vault>/prd/<name>.md`, NOT at `<vault>/prd/done/<name>.md`) → read it directly and proceed. Whether `tasks/<name>.md` or `tasks/done/<name>.md` also exists is irrelevant here — a same-basename task is a known legacy pattern, not an error.
+   - **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → read the file's frontmatter `status` to recover the actual lifecycle state. Branch:
+     - If `status: done`: emit `PRD <name> is marked done. Revive it before re-running.`
+     - If `status: superseded`: emit `PRD <name> is marked superseded. Revive it before re-running.`
+     - If `status` is missing OR has any other value (drift): emit `PRD <name> lives in prd/done/ but its status field is missing or invalid. The vault is in non-canonical state — run 'bash validate-xavier-frontmatter.sh' against your vault to surface the offending file, then either set status to done/superseded or move the file back to prd/<name>.md before re-running.` Exit cleanly without proceeding to task generation.
+
+     For the done and superseded cases, then suggest the recovery path with cross-kind ambiguity awareness: if `<vault>/tasks/<name>.md` or `<vault>/tasks/done/<name>.md` also exists, `/xavier mark <name> active` would hit `mark`'s cross-kind ambiguity error, so suggest the picker form: `Run /xavier mark (no args), select prd/<name>, and choose 'active'. Then re-run.` Otherwise suggest the arg form: `Run /xavier mark <name> active, then re-run.` Exit cleanly. Do NOT continue with task generation.
+   - **Ambiguous within PRD tree** (file exists at BOTH `<vault>/prd/<name>.md` and `<vault>/prd/done/<name>.md`) → silently prefer the active top-level PRD. Do not emit a revival prompt.
+
+2. **PRD lookup failed (no file in `prd/` or `prd/done/`).** Before reporting "not found", check if the argument matches a task instead. This catches a common mistake: the user typed a task name where a PRD basename was expected.
+   - If `<vault>/tasks/<name>.md` or `<vault>/tasks/done/<name>.md` exists → abort with: `/xavier tasks operates on PRDs, not tasks. The argument '<name>' matches a task file but no PRD. To regenerate the task list for an existing PRD, pass the PRD's basename. To modify an existing task file, edit it directly. Aborting.` This rejection only fires after PRD resolution has failed, so a side-by-side `prd/<name>.md` + `tasks/<name>.md` (legacy layout) does not trigger it.
+   - Otherwise (neither PRD nor task matches) → fall through to the existing "not found" behavior (no revival prompt, no soft-resolve). No behavior change for the truly-missing case.
+
 ## Step 2: Load PRD and Follow Related Links
 
 1. Read the full contents of the selected PRD
 2. Check the PRD's `related` field in frontmatter for wikilinks (e.g., `[[prd/auth-middleware]]`, `[[knowledge/teams/platform]]`)
-3. **Auto-load** all linked notes that exist in `~/.xavier/`
-4. **If 8+ linked notes**: warn the user with a word count estimate and ask whether to load all or pick a subset
-5. The loaded context informs the decomposition — understanding prior PRDs, team conventions, and repo knowledge helps produce better slices
+3. **Validate every wikilink before any filesystem read.** A wikilink target has the form `[[<namespace>/<path>]]`. Validation differs per namespace because note-writing skills (and external systems like npm and GitHub) use different filename conventions. The grammars below are deliberately permissive enough to match what `/xavier add-dep`, `/xavier learn`, and `/xavier investigate` actually write — but always strict on the path-traversal characters (`/`, `..`, leading `.`, whitespace, null bytes):
+   - **Approved namespaces and per-segment grammar:**
+     - `prd`, `prd/done`, `tasks`, `tasks/done`, `research` → single basename segment matching `^[a-z0-9][a-z0-9-]{0,63}$` (kebab-case). These are user-chosen and the existing skills enforce kebab-case at write time.
+     - `deps` → either a single segment matching `^[a-z0-9][a-z0-9._-]{0,63}$` (unscoped npm package — npm allows `.`, `_`, `-` in package names; e.g. `lodash`, `lodash.merge`, `body-parser`), or a two-segment scoped form `^@[a-z0-9][a-z0-9._-]{0,63}$` + `^[a-z0-9][a-z0-9._-]{0,63}$` (e.g. `[[deps/@types/node]]` resolving to `<vault>/deps/@types/node/SKILL.md`). The `@` prefix is only allowed in the first segment.
+     - `knowledge/repos`, `knowledge/teams` → 1 to 3 trailing segments, each matching `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`. GitHub repository and team names can contain mixed case, dots (e.g. `foo.bar`), and underscores; `/xavier learn` writes the literal repo name into the path, so the grammar must accept those.
+     - `investigations` → single trailing segment matching `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,255}$`. Investigation filenames are `<repo>_<date>_<slug>.md` — when the repo segment contains `.` (e.g. `foo.bar_2026-05-05_auth-race.md`), the basename inherits it.
+     - Reject anything whose namespace is not in this list. (`knowledge/reviews` is intentionally **not** allowlisted: PRDs and tasks rarely link past review notes, and accepting that namespace would require declaring `recurring-patterns` in `requires` even though this skill never extracts patterns. Skip review-style wikilinks silently — that is not an error.)
+   - Reject any segment containing `/`, `\`, `..`, leading `.`, whitespace, control characters, or characters outside the per-namespace grammar above. No empty segments. The leading-`.` rule applies even when the rest of the segment is otherwise valid (so `.hidden` is rejected, but `foo.bar` is allowed).
+   - The resolved filesystem path MUST canonicalize (via `realpath` or equivalent) to a child of `$XAVIER_HOME` — never auto-load a path that escapes the vault root, even if it textually appears to.
+   Log a warning naming any wikilink that fails validation; skip it and continue with the remaining links.
+4. **Pre-load count check.** After validation but **before any filesystem read**, count the validated wikilinks. If the count is **8 or more**, warn the user with a word-count estimate (sum the on-disk byte size of every resolvable target without reading their bodies) and prompt via **AskUserQuestion**: load all, pick a subset, or skip the auto-load. Skipping or subsetting at this gate is what makes the safeguard effective — running it after the loads have already happened defeats the purpose. Below 8, proceed without prompting.
+5. **Auto-load** the (possibly subsetted) validated linked notes. The resolved path under `$XAVIER_HOME/<wikilink-target>.md` may point at either a file or a directory:
+   - **File** (`<target>.md` exists and is a regular file) → read its full contents.
+   - **Directory** (`<target>` exists as a directory) → some Xavier note conventions use directory-style links. Pick the right convention based on the namespace:
+     - `[[deps/<package>]]` → load `<target>/SKILL.md` (the dependency-skill convention written by `/xavier add-dep`).
+     - All other directory-style targets (e.g., `[[knowledge/teams/<team>]]` from `/xavier learn`) → look for a single conventional note inside, priority order: `<target>/conventions.md`, `<target>/architecture.md`, `<target>/dependencies.md`, `<target>/decisions.md`. Read the first one that exists.
+     If no matching file is found inside the directory, skip the link with a warning naming the directory.
+   - **Missing** (neither file nor directory) → skip silently. Missing wikilink targets are not an error.
+   Never read more than one note per wikilink — if a directory holds multiple convention files, the priority list above is authoritative.
+6. The loaded context informs the decomposition — understanding prior PRDs, team conventions, and repo knowledge helps produce better slices.
 
 ## Step 3: Explore Codebase & Detect Backpressure
 
@@ -54,32 +90,65 @@ Iterate until the user approves.
 
 ## Step 7: Write Tasks File
 
-**Before writing**, check if `~/.xavier/tasks/<filename>.md` already exists. If it does, use **AskUserQuestion** to confirm:
+**Before writing**, check both `~/.xavier/tasks/<task-filename>.md` and `~/.xavier/tasks/done/<task-filename>.md`:
 
-> Task file `tasks/{filename}.md` already exists. Overwrite it? (yes/no)
+- If `~/.xavier/tasks/<task-filename>.md` exists, use **AskUserQuestion** to confirm:
 
-If the user declines, ask for an alternative filename or abort.
+  > Task file `tasks/{task-filename}.md` already exists. Overwrite it? (yes/no)
 
-Write to `~/.xavier/tasks/<filename>.md` with Zettelkasten frontmatter (see `~/.xavier/references/formats/zettelkasten.md`):
+  If the user declines, ask for an alternative filename or abort.
+
+- If `~/.xavier/tasks/done/<task-filename>.md` exists (the archive side), abort. The recovery hint depends on whether a cross-kind collision also exists:
+  - If `<vault>/prd/<task-filename>.md` or `<vault>/prd/done/<task-filename>.md` also exists → `mark` arg mode would hit cross-kind ambiguity, so suggest picker form: `Cannot create task '<task-filename>': an archived task with the same basename already exists at <vault>/tasks/done/<task-filename>.md. Pick a different basename, or run /xavier mark (no args), select tasks/<task-filename>, choose 'active', and re-run.`
+  - Otherwise: `Cannot create task '<task-filename>': an archived task with the same basename already exists at <vault>/tasks/done/<task-filename>.md. Pick a different basename, or revive the archived one with '/xavier mark <task-filename> active' first.`
+
+  Allowing a write here would create an active+archived basename collision that `/xavier mark` arg mode refuses to resolve.
+
+Write to `~/.xavier/tasks/<task-filename>.md` with Zettelkasten frontmatter (see `~/.xavier/references/formats/zettelkasten.md`).
+
+The `source` and `related` wikilinks must point to the **source PRD's basename** (chosen in Step 1), not the task file's own filename. These can differ — task filenames may add a feature qualifier (`prd-foo` → `prd-foo-tasks`) or the user may pick a different filename in this step. Treat `<prd-basename>` and `<task-filename>` as independent variables; downstream sibling-scan logic in `xavier/skills/loop/SKILL.md` Step 6 and `xavier/skills/mark/SKILL.md` sub-phase 5b parses `<prd-basename>` out of the `source` wikilink to find the PRD.
 
 ```yaml
 ---
 repo: {current repo name}
 type: tasks
-source: "[[prd/<filename>]]"
+source: "[[prd/<prd-basename>]]"
 created: {ISO date}
 updated: {ISO date}
 tags:
   - tasks
   - {feature-related tags}
 related:
-  - "[[prd/<filename>]]"
+  - "[[prd/<prd-basename>]]"
 ---
 ```
 
+Both `<prd-basename>` and `<task-filename>` must satisfy the basename allowlist (`^[a-z0-9][a-z0-9-]{0,63}$`) — validate before writing the file. If the user-suggested filename does not match, ask them to provide one that does.
+
 Then write the task body: architectural decisions, backpressure commands, completion criteria, and phases with acceptance criteria.
 
-## Step 8: STOP — Do not implement
+## Step 8: Offer to Supersede Source PRD
+
+Decomposition is the start of implementation, not the end of it — `done` is **not** offered here. (The source PRD becomes a candidate for `done` only when its derived tasks finish, which happens via `xavier/skills/loop/SKILL.md` Step 6 after the last sibling task is auto-marked done.)
+
+This step exists for one case only: a fresh decomposition that **replaces** an older PRD on the same topic. In that case, the older PRD should be marked `superseded`.
+
+**Pre-flight: skip the prompt entirely if there is no candidate to supersede.** Look at the resolved `prd-index` minus the just-decomposed PRD's basename. If the resulting candidate set is empty, there is nothing the user could pick in the follow-up picker — surface a one-line note (`No other active PRDs to supersede; skipping.`) and proceed to Step 9 without prompting. Asking the user a question whose follow-up has zero options is a dead-end flow.
+
+Otherwise, prompt the user via **AskUserQuestion**:
+
+> Does this decomposition replace an older PRD that should be marked `superseded`?
+
+Options: `superseded`, `skip` (default).
+
+Dispatch:
+
+- **`superseded`** → ask which PRD to supersede via a follow-up **AskUserQuestion** picker drawn from the candidate set computed in pre-flight (every active PRD except the just-decomposed one). Validate the picked basename per the Name Validation rules in `xavier/skills/mark/SKILL.md`. Then apply the `→ superseded` transition from `xavier/skills/mark/SKILL.md` to the chosen PRD. The canonical transition contract — name validation, idempotency, move-precondition, frontmatter-then-mv ordering, and rollback — lives in `mark`; do not duplicate it here.
+- **`skip`** → leave all PRDs untouched. No filesystem or frontmatter change.
+
+Do not commit here. The router commits vault changes after the skill completes (mirroring the policy in `mark/SKILL.md`).
+
+## Step 9: STOP — Do not implement
 
 <stop-guardrail>
 **You are DONE.** Do not write any code. Do not start implementing any phase.

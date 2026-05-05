@@ -79,6 +79,126 @@ for skill_dir in "$SKILLS_DIR"/*/; do
   fi
 done
 
+# Validate `status` field in vault notes (when present, must be `done` or `superseded`).
+# Walks XAVIER_HOME's prd/ and tasks/ trees if it exists (the only directories that own
+# the lifecycle field), plus any vault note fixtures passed via XAVIER_VALIDATE_PATHS
+# (newline-delimited). Notes without a `status` field pass silently.
+echo ""
+echo "=== Checking optional 'status' field in vault notes ==="
+STATUS_ERRORS=0
+
+# Build search roots as a newline-delimited list. XAVIER_HOME contributes its prd/ and
+# tasks/ subtrees only — the rest of the vault is out of scope for this check.
+SEARCH_ROOTS=""
+add_root() {
+  # Reject entries that find(1) could parse as a primary expression.
+  case "$1" in
+    -*|!*|"("*|")"*) echo "FAIL: refusing unsafe path '$1' (must not start with -, !, or parens)" >&2; STATUS_ERRORS=$((STATUS_ERRORS + 1)); return ;;
+  esac
+  [ -e "$1" ] || return
+  if [ -z "$SEARCH_ROOTS" ]; then SEARCH_ROOTS="$1"; else SEARCH_ROOTS="$SEARCH_ROOTS
+$1"; fi
+}
+
+if [ -n "${XAVIER_HOME:-}" ] && [ -d "${XAVIER_HOME}" ]; then
+  [ -d "${XAVIER_HOME}/prd" ] && add_root "${XAVIER_HOME}/prd"
+  [ -d "${XAVIER_HOME}/tasks" ] && add_root "${XAVIER_HOME}/tasks"
+fi
+if [ -n "${XAVIER_VALIDATE_PATHS:-}" ]; then
+  # Newline-delimited only — no whitespace-splitting to dodge argument-injection footguns.
+  while IFS= read -r extra_root; do
+    [ -z "$extra_root" ] && continue
+    add_root "$extra_root"
+  done <<EOF
+${XAVIER_VALIDATE_PATHS}
+EOF
+fi
+
+if [ -n "$SEARCH_ROOTS" ]; then
+  while IFS= read -r root; do
+    [ -e "$root" ] || continue
+
+    # Collect candidate files. For directories we want every .md file (so we can also
+    # detect done/-side notes that are missing the mandatory status field), not just
+    # files that already grep positive for `status:`.
+    if [ -d "$root" ]; then
+      # No `--` separator: BSD find on macOS rejects it (`find -- path` is GNU-only).
+      # add_root already rejects entries starting with -/!/( so $root cannot be misparsed.
+      candidates="$(find "$root" -type f -name '*.md' 2>/dev/null || true)"
+    else
+      candidates="$root"
+    fi
+
+    [ -z "$candidates" ] && continue
+
+    while IFS= read -r note_file; do
+      [ -f "$note_file" ] || continue
+
+      # Determine whether this file lives in a done/ subtree — canonical state rules
+      # in references/formats/zettelkasten.md require:
+      #   * done/ files MUST carry a valid status field
+      #   * top-level (non-done/) files MUST NOT carry a status field
+      # Both directions of drift are validation failures.
+      is_done_side=false
+      case "$note_file" in
+        */prd/done/*|*/tasks/done/*) is_done_side=true ;;
+      esac
+
+      # Extract status field from the first frontmatter block only.
+      status_value="$(awk '/^---$/{c++; if(c==2) exit; next} c==1 && /^status:/{sub(/^status:[[:space:]]*/, ""); gsub(/[[:space:]]*$/, ""); print; exit}' "$note_file")"
+
+      if [ -z "$status_value" ]; then
+        # No status field. Canonical for top-level; drift for done/-side.
+        if [ "$is_done_side" = "true" ]; then
+          printf 'FAIL: %s lives in done/ but is missing the mandatory status field\n' "$note_file"
+          STATUS_ERRORS=$((STATUS_ERRORS + 1))
+        fi
+        continue
+      fi
+
+      # Has a status field. Strip a matched pair of surrounding quotes only —
+      # never strip mismatched pairs ("done' or 'done") which would let broken
+      # YAML pass the value check.
+      case "$status_value" in
+        \"*\")
+          status_value="${status_value#\"}"
+          status_value="${status_value%\"}"
+          ;;
+        \'*\')
+          status_value="${status_value#\'}"
+          status_value="${status_value%\'}"
+          ;;
+      esac
+
+      # First, the value must be in the allowlist regardless of location.
+      # Exact string match — never delegate to grep (would let `.*` bypass the allowlist).
+      # printf instead of echo so leading -e / -n etc. cannot be parsed as options.
+      if [ "$status_value" != "done" ] && [ "$status_value" != "superseded" ]; then
+        printf 'FAIL: %s has invalid status: %s (allowed: done, superseded)\n' "$note_file" "'$status_value'"
+        STATUS_ERRORS=$((STATUS_ERRORS + 1))
+        continue
+      fi
+
+      # Then enforce location ↔ status agreement: a top-level file with a status
+      # field is non-canonical drift (a transition's mv didn't land, or a manual
+      # edit escaped the contract). Surface it so the user can reconcile via
+      # /xavier mark <name> active or by moving the file to done/ manually.
+      if [ "$is_done_side" = "false" ]; then
+        printf 'FAIL: %s lives at top-level but carries status: %s — top-level files must not have a status field (run /xavier mark to reconcile)\n' "$note_file" "$status_value"
+        STATUS_ERRORS=$((STATUS_ERRORS + 1))
+      fi
+    done <<< "$candidates"
+  done <<EOF
+${SEARCH_ROOTS}
+EOF
+fi
+
+if [ $STATUS_ERRORS -eq 0 ]; then
+  echo "PASS: 'status' field validation"
+else
+  ERRORS=$((ERRORS + STATUS_ERRORS))
+fi
+
 # Check that note-writing skills include all 6 base Zettelkasten fields in their templates
 echo ""
 echo "=== Checking base Zettelkasten fields in note-writing skill templates ==="
