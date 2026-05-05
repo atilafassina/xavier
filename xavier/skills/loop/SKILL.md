@@ -97,7 +97,9 @@ When — and only when — the loop reaches the **All phases complete** branch o
 - **User stop / stall**: not a success. Skip.
 - **Partial progress only**: not a success. Skip.
 
-**Otherwise, apply the `→ done` transition documented in `xavier/skills/mark/SKILL.md`** to the source task file (the `~/.xavier/tasks/<name>.md` originally selected in Step 1). Do not duplicate the transition logic here — the canonical operation lives in the `mark` skill.
+**First, write a completion marker to the loop-state file.** Append (or update, if already present) the line `status: complete` at the top of `~/.xavier/loop-state/<name>.md`, immediately after the `# Loop State` heading. This is a stable, machine-readable signal consumed by `/xavier mark --backfill` (sub-phase 5a) so future migrations can detect completed loops without relying on heuristic phase-table parsing. The write is a single short line and must precede the source-task move below — if the move fails and Step 5 rolls back, the loop-state marker can stay, since rolling forward later (e.g., manually marking the task as done) still leaves the vault consistent.
+
+**Then, apply the `→ done` transition documented in `xavier/skills/mark/SKILL.md`** to the source task file (the `~/.xavier/tasks/<name>.md` originally selected in Step 1). Do not duplicate the transition logic here — the canonical operation lives in the `mark` skill.
 
 The transition imposes a strict ordering and rollback contract that this step inherits:
 
