@@ -17,6 +17,20 @@ Check that the PRD list from the resolved `prd-index` context is non-empty (i.e.
 
 List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context) showing filename, title, date, and tags from frontmatter. Present as a numbered list using AskUserQuestion. If the user already specified a PRD by name, skip the listing and read it directly.
 
+**Soft-resolve fallback for explicit PRD name argument** — When the user invokes the skill with an explicit PRD name (skipping the picker), resolve `<name>` against the four lifecycle cases before reading:
+
+- **Active-only** (file exists at `<vault>/prd/<name>.md`, NOT at `<vault>/prd/done/<name>.md`) → read it directly and proceed.
+- **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → output the revival message and exit cleanly: `PRD <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` Do NOT continue with task generation.
+- **Ambiguous** (file exists at BOTH `<vault>/prd/<name>.md` and `<vault>/prd/done/<name>.md`) → silently prefer the active top-level PRD. Do not emit a revival prompt.
+- **Missing** (file exists at NEITHER path) → fall through to the existing "not found" behavior (no revival prompt, no soft-resolve). No behavior change here.
+
+**Soft-resolve fallback for explicit task name argument** — In the rare case that a task name argument is supplied (e.g., when the skill is invoked to operate on or regenerate an existing task file), apply the same four-case resolution against `<vault>/tasks/<name>.md` vs `<vault>/tasks/done/<name>.md`:
+
+- **Active-only** (file exists at `<vault>/tasks/<name>.md`, NOT at `<vault>/tasks/done/<name>.md`) → proceed normally with the active task file.
+- **Done-only** (file exists ONLY at `<vault>/tasks/done/<name>.md`, no top-level counterpart) → output the revival message and exit cleanly: `task <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` Do NOT continue.
+- **Ambiguous** (file exists at BOTH `<vault>/tasks/<name>.md` and `<vault>/tasks/done/<name>.md`) → silently prefer the active top-level task file. Do not emit a revival prompt.
+- **Missing** (file exists at NEITHER path) → fall through to the existing "not found" behavior (no revival prompt, no soft-resolve). No behavior change here.
+
 ## Step 2: Load PRD and Follow Related Links
 
 1. Read the full contents of the selected PRD

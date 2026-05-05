@@ -13,10 +13,15 @@ Create a vault-aware PRD through user interview, codebase exploration, and modul
 
 Before the interview begins, present vault contents for the user to browse and select relevant context:
 
-1. List titles and frontmatter from `~/.xavier/prd/` (from the resolved `prd-index` context), `~/.xavier/knowledge/repos/`, and `~/.xavier/knowledge/teams/`
-2. Present as a numbered list using AskUserQuestion (multiSelect: true) — the user picks which notes provide relevant context for the new PRD
-3. Read the selected notes and keep their content available for informing interview questions and the final PRD
-4. If no notes exist in any of these directories, skip this step silently
+1. **PRD reference resolution (soft-resolve fallback)** — If the user invoked the skill with an explicit PRD name argument (e.g., `/xavier prd <name>`), resolve `<name>` against the four lifecycle cases before proceeding:
+   - **Active-only** (file exists at `<vault>/prd/<name>.md`, NOT at `<vault>/prd/done/<name>.md`) → proceed normally with the active PRD as context.
+   - **Done-only** (file exists ONLY at `<vault>/prd/done/<name>.md`, no top-level counterpart) → output the revival message and exit cleanly: `PRD <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` Do NOT continue with vault context selection or the interview.
+   - **Ambiguous** (file exists at BOTH `<vault>/prd/<name>.md` and `<vault>/prd/done/<name>.md`) → silently prefer the active top-level PRD. Do not emit a revival prompt.
+   - **Missing** (file exists at NEITHER path) → fall through to the existing "not found" behavior (no revival prompt, no soft-resolve). No behavior change here.
+2. List titles and frontmatter from `~/.xavier/prd/` (from the resolved `prd-index` context), `~/.xavier/knowledge/repos/`, and `~/.xavier/knowledge/teams/`
+3. Present as a numbered list using AskUserQuestion (multiSelect: true) — the user picks which notes provide relevant context for the new PRD
+4. Read the selected notes and keep their content available for informing interview questions and the final PRD
+5. If no notes exist in any of these directories, skip this step silently
 
 ## Step 2: Interview
 
