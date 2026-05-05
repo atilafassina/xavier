@@ -35,7 +35,9 @@ Run the interview flow. The selected vault context informs follow-up questions �
 
 ## Step 3: Write PRD
 
-Write the PRD to `~/.xavier/prd/<filename>.md` where `<filename>` is a kebab-case name derived from the feature. Confirm filename with the user before writing.
+Write the PRD to `~/.xavier/prd/<filename>.md` where `<filename>` is a kebab-case name derived from the feature. Confirm `<filename>` with the user before writing.
+
+**Validate `<filename>` as a basename before any filesystem write.** It MUST match `^[a-z0-9][a-z0-9-]{0,63}$` per the Name Validation rules in `xavier/skills/mark/SKILL.md` — lowercase letters, digits, hyphens; 1–64 characters; no `/`, `\`, `..`, leading `.`, whitespace, absolute paths, or characters outside `[a-z0-9-]`. If the user-confirmed filename does not match, ask them to provide one that does. The resolved write path MUST be exactly `$XAVIER_HOME/prd/<filename>.md` — no path components from `<filename>` may escape the `prd/` directory.
 
 The PRD uses Zettelkasten frontmatter (see `~/.xavier/references/formats/zettelkasten.md`):
 

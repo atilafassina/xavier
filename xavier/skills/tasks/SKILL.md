@@ -35,9 +35,15 @@ List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context)
 
 1. Read the full contents of the selected PRD
 2. Check the PRD's `related` field in frontmatter for wikilinks (e.g., `[[prd/auth-middleware]]`, `[[knowledge/teams/platform]]`)
-3. **Auto-load** all linked notes that exist in `~/.xavier/`
-4. **If 8+ linked notes**: warn the user with a word count estimate and ask whether to load all or pick a subset
-5. The loaded context informs the decomposition — understanding prior PRDs, team conventions, and repo knowledge helps produce better slices
+3. **Validate every wikilink before any filesystem read.** A wikilink target is `[[<namespace>/<name>]]` where:
+   - `<namespace>` MUST be exactly one of the approved values: `prd`, `prd/done`, `tasks`, `tasks/done`, `knowledge/repos`, `knowledge/teams`, `knowledge/reviews`, `research`, `investigations`, `deps`. Reject anything else.
+   - `<name>` MUST match the basename allowlist `^[a-z0-9][a-z0-9-]{0,63}$` from `xavier/skills/mark/SKILL.md`. (For deeper-nested namespaces like `knowledge/repos`, accept one additional `/<name>` segment that satisfies the same allowlist.)
+   - Reject any wikilink containing `..`, leading `.`, absolute paths, whitespace, or characters outside the namespace + basename grammar above.
+   - The resolved filesystem path MUST canonicalize to a child of `$XAVIER_HOME` — never auto-load a path that escapes the vault root, even if it textually appears to.
+   Log a warning naming any wikilink that fails validation; skip it and continue with the remaining links.
+4. **Auto-load** the validated linked notes that exist in `~/.xavier/`. Missing files are not an error — skip silently.
+5. **If 8+ linked notes**: warn the user with a word count estimate and ask whether to load all or pick a subset
+6. The loaded context informs the decomposition — understanding prior PRDs, team conventions, and repo knowledge helps produce better slices
 
 ## Step 3: Explore Codebase & Detect Backpressure
 

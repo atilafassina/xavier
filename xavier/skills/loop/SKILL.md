@@ -123,10 +123,11 @@ After Step 5 has marked the task as `done`, check whether the source PRD is now 
 
 **Otherwise, scan sibling tasks and decide whether to prompt:**
 
-1. Read the just-completed source task's frontmatter `source` field — it is a wikilink of the form `[[prd/<name>]]`. Extract `<name>` and **validate it as a basename** (must match `^[a-z0-9][a-z0-9-]*$` per the Name Validation rules in `xavier/skills/mark/SKILL.md`). If validation fails, skip this step entirely — never derive filesystem operations from an unvalidated `source` value. Log a warning that the source field looks malformed.
-2. Verify the PRD's current location:
+1. Read the just-completed source task's frontmatter `source` field — it is a wikilink of the form `[[prd/<name>]]`. Extract `<name>` and **validate it as a basename** (must match `^[a-z0-9][a-z0-9-]{0,63}$` per the Name Validation rules in `xavier/skills/mark/SKILL.md`). If validation fails, skip this step entirely — never derive filesystem operations from an unvalidated `source` value. Log a warning that the source field looks malformed.
+2. **Resolve `<name>` to an actual PRD file** before doing anything else:
    - If `<vault>/prd/done/<name>.md` exists → PRD is already done. **Skip the prompt.** Stop.
-   - Otherwise the PRD lives at `<vault>/prd/<name>.md` (active). Continue.
+   - Else if `<vault>/prd/<name>.md` exists → PRD is active. Continue with the sibling scan below.
+   - Else → the `source` field points at a non-existent PRD (typically legacy task notes that recorded `source` as the task's own filename rather than the PRD basename). **Skip Step 6 entirely** — do not run the sibling scan, do not prompt. Log a warning: `Cannot offer PRD retirement: source [[prd/<name>]] does not resolve to any PRD. Update the task's source field if the PRD lives under a different basename.`
 3. Find sibling tasks in a **single pass** instead of reading every task file. Use `find -exec grep -l` to handle large vaults safely (avoids ARG_MAX) and to short-circuit on the wikilink itself rather than a strict quoting pattern:
 
    ```

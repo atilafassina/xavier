@@ -118,11 +118,13 @@ if [ -n "$SEARCH_ROOTS" ]; then
   while IFS= read -r root; do
     [ -e "$root" ] || continue
 
-    # Collect candidate files: a directory expands to its .md files, a file is checked directly.
+    # Collect candidate files. For directories we want every .md file (so we can also
+    # detect done/-side notes that are missing the mandatory status field), not just
+    # files that already grep positive for `status:`.
     if [ -d "$root" ]; then
-      # `--` ensures find treats $root as a path, not a primary, even with future paranoid input.
-      # Pre-filter to files that contain a status: line so awk runs only on real candidates.
-      candidates="$(find "$root" -type f -name '*.md' -exec grep -l '^status:' {} + 2>/dev/null || true)"
+      # `--` keeps find treating $root as a path even if a future caller sneaks a
+      # leading hyphen past the add_root vetting.
+      candidates="$(find -- "$root" -type f -name '*.md' 2>/dev/null || true)"
     else
       candidates="$root"
     fi
@@ -132,18 +134,34 @@ if [ -n "$SEARCH_ROOTS" ]; then
     while IFS= read -r note_file; do
       [ -f "$note_file" ] || continue
 
+      # Determine whether this file lives in a done/ subtree — done/ files MUST carry
+      # a valid status (per references/formats/zettelkasten.md canonical state rules).
+      is_done_side=false
+      case "$note_file" in
+        */prd/done/*|*/tasks/done/*) is_done_side=true ;;
+      esac
+
       # Extract status field from the first frontmatter block only.
       status_value="$(awk '/^---$/{c++; if(c==2) exit; next} c==1 && /^status:/{sub(/^status:[[:space:]]*/, ""); gsub(/[[:space:]]*$/, ""); print; exit}' "$note_file")"
 
-      # No status field → accept silently.
-      [ -z "$status_value" ] && continue
+      # No status field on a top-level file → accept silently (canonical active).
+      # No status field on a done/-side file → FAIL (canonical state requires it).
+      if [ -z "$status_value" ]; then
+        if [ "$is_done_side" = "true" ]; then
+          printf 'FAIL: %s lives in done/ but is missing the mandatory status field\n' "$note_file"
+          STATUS_ERRORS=$((STATUS_ERRORS + 1))
+        fi
+        continue
+      fi
 
-      # Strip surrounding quotes if present.
-      status_value="$(echo "$status_value" | sed 's/^["'\'']//;s/["'\'']$//')"
+      # Strip surrounding quotes if present (parameter expansion — no subshell, no echo).
+      status_value="${status_value#[\"\']}"
+      status_value="${status_value%[\"\']}"
 
       # Exact string match — never delegate to grep (which would let `.*` bypass the allowlist).
+      # printf instead of echo so leading -e / -n etc. cannot be parsed as options.
       if [ "$status_value" != "done" ] && [ "$status_value" != "superseded" ]; then
-        echo "FAIL: $note_file has invalid status: '$status_value' (allowed: done, superseded)"
+        printf 'FAIL: %s has invalid status: %s (allowed: done, superseded)\n' "$note_file" "'$status_value'"
         STATUS_ERRORS=$((STATUS_ERRORS + 1))
       fi
     done <<< "$candidates"
