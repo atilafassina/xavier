@@ -43,7 +43,9 @@ Run all checks before starting. If any check fails, stop immediately:
 1. **Backpressure commands pass**: run every command now. All must exit 0. Pre-existing failures waste iterations
 2. **Git state is clean**: `git status` must show no uncommitted changes
 3. **Task is written down**: file path exists and is readable, or freeform description is at least 2 sentences
-4. **No stale loop state**: check `~/.xavier/loop-state/` for existing state for this task. If found, ask to resume or start fresh
+4. **No stale loop state**: check `~/.xavier/loop-state/<task-name>.md` for existing state for this task. If found, ask to resume or start fresh.
+
+   **Pre-upgrade compatibility**: legacy loop-state files (written before the lifecycle feature) may not start with the `# Loop State` heading defined in Step 3. When resuming an existing file, inspect its first non-blank line: if it is not exactly `# Loop State`, **prepend** the heading (followed by a blank line) before continuing. This single repair makes Step 5's `status: complete` insertion deterministic on resumed legacy loops, and is idempotent — files that already start with the heading are untouched.
 
 ## Step 3: Initialize State
 

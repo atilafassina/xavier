@@ -40,17 +40,18 @@ List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context)
 
 1. Read the full contents of the selected PRD
 2. Check the PRD's `related` field in frontmatter for wikilinks (e.g., `[[prd/auth-middleware]]`, `[[knowledge/teams/platform]]`)
-3. **Validate every wikilink before any filesystem read.** A wikilink target has the form `[[<namespace>/<path>]]`. Validation differs per namespace because note-writing skills use different filename conventions:
+3. **Validate every wikilink before any filesystem read.** A wikilink target has the form `[[<namespace>/<path>]]`. Validation differs per namespace because note-writing skills (and external systems like npm and GitHub) use different filename conventions. The grammars below are deliberately permissive enough to match what `/xavier add-dep`, `/xavier learn`, and `/xavier investigate` actually write — but always strict on the path-traversal characters (`/`, `..`, leading `.`, whitespace, null bytes):
    - **Approved namespaces and per-segment grammar:**
-     - `prd`, `prd/done`, `tasks`, `tasks/done`, `research` → single basename segment matching `^[a-z0-9][a-z0-9-]{0,63}$` (kebab-case).
-     - `deps` → either a single kebab-case segment matching `^[a-z0-9][a-z0-9-]{0,63}$` (unscoped npm package), or a two-segment scoped npm package matching `^@[a-z0-9][a-z0-9-]{0,63}$` (scope) + `^[a-z0-9][a-z0-9-]{0,63}$` (name). `[[deps/express]]` and `[[deps/@types/node]]` are both legal; the latter resolves to `<vault>/deps/@types/node/SKILL.md`. The `@` prefix is only allowed in the first segment of a `deps/` link.
-     - `knowledge/repos`, `knowledge/teams` → 1 to 3 trailing basename segments, each matching `^[a-z0-9][a-z0-9-]{0,63}$`. Accommodates per-repo / per-package notes written by `/xavier learn` (e.g. `[[knowledge/repos/<repo>/<package>/dependencies]]`). Scoped packages are NOT supported here — `/xavier learn` flattens scoped names to kebab-case before writing.
-     - `knowledge/reviews`, `investigations` → single trailing segment matching `^[a-z0-9][a-z0-9_-]{0,127}$`. Both note types intentionally use underscores in the basename (`<repo>_<date>_<slug>.md`) — the kebab-only allowlist would reject every legitimate review or investigation note.
-     - Reject anything whose namespace is not in this list.
-   - Reject any segment containing `..`, leading `.`, absolute paths, whitespace, or characters outside the per-namespace grammar above. No empty segments.
+     - `prd`, `prd/done`, `tasks`, `tasks/done`, `research` → single basename segment matching `^[a-z0-9][a-z0-9-]{0,63}$` (kebab-case). These are user-chosen and the existing skills enforce kebab-case at write time.
+     - `deps` → either a single segment matching `^[a-z0-9][a-z0-9._-]{0,63}$` (unscoped npm package — npm allows `.`, `_`, `-` in package names; e.g. `lodash`, `lodash.merge`, `body-parser`), or a two-segment scoped form `^@[a-z0-9][a-z0-9._-]{0,63}$` + `^[a-z0-9][a-z0-9._-]{0,63}$` (e.g. `[[deps/@types/node]]` resolving to `<vault>/deps/@types/node/SKILL.md`). The `@` prefix is only allowed in the first segment.
+     - `knowledge/repos`, `knowledge/teams` → 1 to 3 trailing segments, each matching `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`. GitHub repository and team names can contain mixed case, dots (e.g. `foo.bar`), and underscores; `/xavier learn` writes the literal repo name into the path, so the grammar must accept those.
+     - `investigations` → single trailing segment matching `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,255}$`. Investigation filenames are `<repo>_<date>_<slug>.md` — when the repo segment contains `.` (e.g. `foo.bar_2026-05-05_auth-race.md`), the basename inherits it.
+     - Reject anything whose namespace is not in this list. (`knowledge/reviews` is intentionally **not** allowlisted: PRDs and tasks rarely link past review notes, and accepting that namespace would require declaring `recurring-patterns` in `requires` even though this skill never extracts patterns. Skip review-style wikilinks silently — that is not an error.)
+   - Reject any segment containing `/`, `\`, `..`, leading `.`, whitespace, control characters, or characters outside the per-namespace grammar above. No empty segments. The leading-`.` rule applies even when the rest of the segment is otherwise valid (so `.hidden` is rejected, but `foo.bar` is allowed).
    - The resolved filesystem path MUST canonicalize (via `realpath` or equivalent) to a child of `$XAVIER_HOME` — never auto-load a path that escapes the vault root, even if it textually appears to.
    Log a warning naming any wikilink that fails validation; skip it and continue with the remaining links.
-4. **Auto-load** the validated linked notes. The resolved path under `$XAVIER_HOME/<wikilink-target>.md` may point at either a file or a directory:
+4. **Pre-load count check.** After validation but **before any filesystem read**, count the validated wikilinks. If the count is **8 or more**, warn the user with a word-count estimate (sum the on-disk byte size of every resolvable target without reading their bodies) and prompt via **AskUserQuestion**: load all, pick a subset, or skip the auto-load. Skipping or subsetting at this gate is what makes the safeguard effective — running it after the loads have already happened defeats the purpose. Below 8, proceed without prompting.
+5. **Auto-load** the (possibly subsetted) validated linked notes. The resolved path under `$XAVIER_HOME/<wikilink-target>.md` may point at either a file or a directory:
    - **File** (`<target>.md` exists and is a regular file) → read its full contents.
    - **Directory** (`<target>` exists as a directory) → some Xavier note conventions use directory-style links. Pick the right convention based on the namespace:
      - `[[deps/<package>]]` → load `<target>/SKILL.md` (the dependency-skill convention written by `/xavier add-dep`).
@@ -58,8 +59,7 @@ List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context)
      If no matching file is found inside the directory, skip the link with a warning naming the directory.
    - **Missing** (neither file nor directory) → skip silently. Missing wikilink targets are not an error.
    Never read more than one note per wikilink — if a directory holds multiple convention files, the priority list above is authoritative.
-5. **If 8+ linked notes**: warn the user with a word count estimate and ask whether to load all or pick a subset
-6. The loaded context informs the decomposition — understanding prior PRDs, team conventions, and repo knowledge helps produce better slices
+6. The loaded context informs the decomposition — understanding prior PRDs, team conventions, and repo knowledge helps produce better slices.
 
 ## Step 3: Explore Codebase & Detect Backpressure
 

@@ -64,14 +64,14 @@ The contract below is **canonical** — `loop/SKILL.md` and `tasks/SKILL.md` ref
 
 ## Step 1: Parse Arguments
 
-Three invocation modes:
+Match the invocation against the rules below **in this exact order** — earlier rules win. The `--backfill` flag is checked before any other one-arg interpretation so that `/xavier mark --backfill` always dispatches the migration flow, never the picker pre-filter.
 
-- **No args** → picker mode (Step 2)
-- **Two args (`<name> <state>`)** → arg mode (Step 3). `<state>` must be one of `done`, `superseded`, `active`.
-- **One arg** → ambiguous; treat as picker mode but pre-filter the list to entries matching the single argument as a name. If exactly one match, prompt for the new state. If no match, surface an error listing what was searched.
-- **`--backfill` flag (alone)** → backfill mode (Step 5). One-shot migration that walks loop-state evidence, sibling inference, and a manual sweep to retire pre-existing items in a vault that predates the lifecycle feature.
-- **`<state>` not in `{done, superseded, active}`** → error: `Invalid state '<state>'. Allowed: done, superseded, active.` Stop.
-- **`--backfill` combined with any other arg** → error: `--backfill must be the only argument.` Stop.
+1. **`--backfill` (alone)** → backfill mode (Step 5). One-shot migration that walks loop-state evidence, sibling inference, and a manual sweep to retire pre-existing items in a vault that predates the lifecycle feature.
+2. **`--backfill` combined with any other argument** → error: `--backfill must be the only argument.` Stop.
+3. **No arguments** → picker mode (Step 2).
+4. **Two arguments (`<name> <state>`)** → arg mode (Step 3). `<state>` must be one of `done`, `superseded`, `active`. If the second argument is not in that set, error: `Invalid state '<state>'. Allowed: done, superseded, active.` Stop.
+5. **One argument** (and it is **not** `--backfill`) → treat as picker mode (Step 2) but pre-filter the list to entries matching the single argument as a name. Step 2 covers the zero/one/many match branches.
+6. **Three or more arguments**, or any other unrecognized form → error: `Unrecognized arguments. Usage: /xavier mark [<name> <state>] | --backfill.` Stop.
 
 ## Step 2: Picker Mode
 

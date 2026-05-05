@@ -176,7 +176,14 @@ ALIAS_PREFIX="xavier"
 if [ -f "$XAVIER_HOME/config.md" ]; then
   prefix_val="$(grep -o '\*\*alias-prefix\*\*: *[^ ]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
   if [ -n "$prefix_val" ]; then
-    ALIAS_PREFIX="$prefix_val"
+    # Mirror install.sh's validation regex — reject anything that could let the
+    # alias write escape the alias root (`/`, `..`, leading `.`, whitespace, etc.).
+    # Fall back to the default `xavier` instead of inheriting bad input.
+    if printf '%s' "$prefix_val" | grep -qE '^[a-zA-Z0-9_-]+$'; then
+      ALIAS_PREFIX="$prefix_val"
+    else
+      echo "WARN: Invalid alias-prefix '$prefix_val' in config.md — must be alphanumeric, hyphens, or underscores. Falling back to 'xavier'."
+    fi
   fi
 fi
 
