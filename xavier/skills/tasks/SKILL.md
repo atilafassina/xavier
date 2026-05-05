@@ -51,9 +51,12 @@ List all `.md` files in `~/.xavier/prd/` (from the resolved `prd-index` context)
    Log a warning naming any wikilink that fails validation; skip it and continue with the remaining links.
 4. **Auto-load** the validated linked notes. The resolved path under `$XAVIER_HOME/<wikilink-target>.md` may point at either a file or a directory:
    - **File** (`<target>.md` exists and is a regular file) → read its full contents.
-   - **Directory** (`<target>` exists as a directory) → some Xavier note conventions use directory-style links (e.g., `/xavier learn` writes `[[knowledge/teams/<team>]]` even though the actual note lives at `knowledge/teams/<team>/conventions.md`). For each directory-style target, look for a single conventional note file inside, in this priority order: `<target>/conventions.md`, `<target>/architecture.md`, `<target>/dependencies.md`, `<target>/decisions.md`. Read the first one that exists. If none exist, skip the link with a warning naming the directory.
+   - **Directory** (`<target>` exists as a directory) → some Xavier note conventions use directory-style links. Pick the right convention based on the namespace:
+     - `[[deps/<package>]]` → load `<target>/SKILL.md` (the dependency-skill convention written by `/xavier add-dep`).
+     - All other directory-style targets (e.g., `[[knowledge/teams/<team>]]` from `/xavier learn`) → look for a single conventional note inside, priority order: `<target>/conventions.md`, `<target>/architecture.md`, `<target>/dependencies.md`, `<target>/decisions.md`. Read the first one that exists.
+     If no matching file is found inside the directory, skip the link with a warning naming the directory.
    - **Missing** (neither file nor directory) → skip silently. Missing wikilink targets are not an error.
-   Never read more than one note per wikilink — if a directory holds multiple convention files, the priority list is authoritative.
+   Never read more than one note per wikilink — if a directory holds multiple convention files, the priority list above is authoritative.
 5. **If 8+ linked notes**: warn the user with a word count estimate and ask whether to load all or pick a subset
 6. The loaded context informs the decomposition — understanding prior PRDs, team conventions, and repo knowledge helps produce better slices
 
@@ -94,7 +97,11 @@ Iterate until the user approves.
 
   If the user declines, ask for an alternative filename or abort.
 
-- If `~/.xavier/tasks/done/<task-filename>.md` exists (the archive side), abort with: `Cannot create task '<task-filename>': an archived task with the same basename already exists at <vault>/tasks/done/<task-filename>.md. Pick a different basename, or revive the archived one with '/xavier mark <task-filename> active' first.` Allowing a write here would create an active+archived basename collision that `/xavier mark` arg mode refuses to resolve.
+- If `~/.xavier/tasks/done/<task-filename>.md` exists (the archive side), abort. The recovery hint depends on whether a cross-kind collision also exists:
+  - If `<vault>/prd/<task-filename>.md` or `<vault>/prd/done/<task-filename>.md` also exists → `mark` arg mode would hit cross-kind ambiguity, so suggest picker form: `Cannot create task '<task-filename>': an archived task with the same basename already exists at <vault>/tasks/done/<task-filename>.md. Pick a different basename, or run /xavier mark (no args), select tasks/<task-filename>, choose 'active', and re-run.`
+  - Otherwise: `Cannot create task '<task-filename>': an archived task with the same basename already exists at <vault>/tasks/done/<task-filename>.md. Pick a different basename, or revive the archived one with '/xavier mark <task-filename> active' first.`
+
+  Allowing a write here would create an active+archived basename collision that `/xavier mark` arg mode refuses to resolve.
 
 Write to `~/.xavier/tasks/<task-filename>.md` with Zettelkasten frontmatter (see `~/.xavier/references/formats/zettelkasten.md`).
 

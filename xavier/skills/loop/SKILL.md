@@ -19,12 +19,14 @@ Execute a task file (or freeform task) as an autonomous loop using the Shark pat
    After validation, resolve `<name>` against the four lifecycle cases:
 
    - **Active-only** (`~/.xavier/tasks/<name>.md` exists, NOT in `tasks/done/`) → use it directly. Proceed to extraction.
-   - **Done-only** (`~/.xavier/tasks/done/<name>.md` exists, no top-level counterpart) → read the file's frontmatter `status` (`done` or `superseded`) to inform the message. Emit a revival hint and exit cleanly without starting a loop:
-     - `task <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` (status: done)
-     - `task <name> is marked superseded. Revive it with /xavier mark <name> active first, then re-run.` (status: superseded)
-     - If status is missing or invalid, surface the validator-pointer message: `task <name> lives in tasks/done/ but its status field is missing or invalid. Run 'bash validate-xavier-frontmatter.sh' against your vault to surface the offending file.`
+   - **Done-only** (`~/.xavier/tasks/done/<name>.md` exists, no top-level counterpart) → read the file's frontmatter `status` (`done` or `superseded`) to compose the revival message. Then choose the recovery-command form based on whether a cross-kind collision exists. If `<vault>/prd/<name>.md` or `<vault>/prd/done/<name>.md` also exists, `mark` arg mode would hit cross-kind ambiguity — suggest picker mode instead. The full message templates:
+     - `task <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.` (status: done; no cross-kind PRD exists)
+     - `task <name> is marked superseded. Revive it with /xavier mark <name> active first, then re-run.` (status: superseded; no cross-kind PRD exists)
+     - `task <name> is marked done. Revive it by running /xavier mark (no args), selecting tasks/<name>, choosing 'active', then re-run.` (status: done; cross-kind PRD also exists)
+     - `task <name> is marked superseded. Revive it by running /xavier mark (no args), selecting tasks/<name>, choosing 'active', then re-run.` (status: superseded; cross-kind PRD also exists)
+     - If status is missing or invalid, surface the validator-pointer message regardless of cross-kind state: `task <name> lives in tasks/done/ but its status field is missing or invalid. Run 'bash validate-xavier-frontmatter.sh' against your vault to surface the offending file.`
 
-     Never load and execute a `done/`-side task file. Archived tasks are explicitly out of scope — their backpressure commands may be stale, point at moved code, or have been intentionally retired.
+     Exit cleanly. Never load and execute a `done/`-side task file. Archived tasks are explicitly out of scope — their backpressure commands may be stale, point at moved code, or have been intentionally retired.
    - **Ambiguous** (file exists at BOTH `~/.xavier/tasks/<name>.md` and `~/.xavier/tasks/done/<name>.md`) → silently prefer the active top-level task file.
    - **Missing** (file exists at NEITHER path) → fall through to the existing "task not found" error.
 3. **If task file**: extract phases, completion criteria, and backpressure commands from the file (same extraction as ralph-loop)
@@ -136,10 +138,11 @@ After Step 5 has marked the task as `done`, check whether the source PRD is now 
 **Otherwise, scan sibling tasks and decide whether to prompt:**
 
 1. Read the just-completed source task's frontmatter `source` field — it is a wikilink of the form `[[prd/<name>]]`. Extract `<name>` and **validate it as a basename** (must match `^[a-z0-9][a-z0-9-]{0,63}$` per the Name Validation rules in `xavier/skills/mark/SKILL.md`). If validation fails, skip this step entirely — never derive filesystem operations from an unvalidated `source` value. Log a warning that the source field looks malformed.
-2. **Resolve `<name>` to an actual PRD file** before doing anything else:
-   - If `<vault>/prd/done/<name>.md` exists → PRD is already done. **Skip the prompt.** Stop.
-   - Else if `<vault>/prd/<name>.md` exists → PRD is active. Continue with the sibling scan below.
-   - Else → the `source` field points at a non-existent PRD (typically legacy task notes that recorded `source` as the task's own filename rather than the PRD basename). **Skip Step 6 entirely** — do not run the sibling scan, do not prompt. Log a warning: `Cannot offer PRD retirement: source [[prd/<name>]] does not resolve to any PRD. Update the task's source field if the PRD lives under a different basename.`
+2. **Resolve `<name>` to an actual PRD file** before doing anything else. Check both candidate paths and branch on the combination:
+   - `<vault>/prd/<name>.md` exists AND `<vault>/prd/done/<name>.md` exists (drift / ambiguity) → the vault has both an active and an archived copy of the same basename, which is the exact failure mode the lifecycle contract is meant to prevent. **Do not retire the active PRD silently.** Skip the prompt and log a warning: `PRD <name> exists at both <vault>/prd/<name>.md (active) and <vault>/prd/done/<name>.md (archived). Reconcile via /xavier mark (no args) — pick one to keep, then re-run.` Until the user reconciles, the active PRD stays in `prd-index` and the archived copy is left untouched.
+   - Only `<vault>/prd/<name>.md` exists → PRD is active. Continue with the sibling scan below.
+   - Only `<vault>/prd/done/<name>.md` exists → PRD is already done. **Skip the prompt.** Stop.
+   - Neither exists → the `source` field points at a non-existent PRD (typically legacy task notes that recorded `source` as the task's own filename rather than the PRD basename). **Skip Step 6 entirely** — do not run the sibling scan, do not prompt. Log a warning: `Cannot offer PRD retirement: source [[prd/<name>]] does not resolve to any PRD. Update the task's source field if the PRD lives under a different basename.`
 3. Find sibling tasks in a **single pass** instead of reading every task file. The match MUST be anchored to the `source:` frontmatter field — a bare `[[prd/<name>]]` anywhere in a task body or in the `related:` list is **not** evidence the task derives from that PRD, and counting it would let unrelated tasks suppress the prompt or trigger a wrong retirement. Use `find -exec grep -l` to avoid ARG_MAX at scale, and grep against an anchored pattern that accepts all YAML quoting styles for the `source` field:
 
    ```

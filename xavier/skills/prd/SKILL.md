@@ -52,7 +52,11 @@ Write the PRD to `~/.xavier/prd/<filename>.md` where `<filename>` is a kebab-cas
 
   If the user declines, ask for an alternative filename (validated again per the rules above) or abort. Never overwrite silently — losing an existing PRD's content is the worst outcome here.
 
-- **Archive-side collision**: if `$XAVIER_HOME/prd/done/<filename>.md` exists, abort with: `Cannot create PRD '<filename>': an archived PRD with the same basename already exists at <vault>/prd/done/<filename>.md. Pick a different basename, or revive the archived one with '/xavier mark <filename> active' first.` Two files with the same basename across active and `done/` would otherwise leave `/xavier mark` permanently ambiguous on that name.
+- **Archive-side collision**: if `$XAVIER_HOME/prd/done/<filename>.md` exists, abort. The recovery hint depends on whether a cross-kind collision also exists:
+  - If `<vault>/tasks/<filename>.md` or `<vault>/tasks/done/<filename>.md` also exists → `mark` arg mode would error with cross-kind ambiguity, so suggest the picker form: `Cannot create PRD '<filename>': an archived PRD with the same basename already exists at <vault>/prd/done/<filename>.md. Pick a different basename, or run /xavier mark (no args), select prd/<filename>, choose 'active', and re-run.`
+  - Otherwise: `Cannot create PRD '<filename>': an archived PRD with the same basename already exists at <vault>/prd/done/<filename>.md. Pick a different basename, or revive the archived one with '/xavier mark <filename> active' first.`
+
+  Two files with the same basename across active and `done/` would otherwise leave `/xavier mark` permanently ambiguous on that name, which is exactly the failure mode this branch is preventing.
 
 The PRD uses Zettelkasten frontmatter (see `~/.xavier/references/formats/zettelkasten.md`):
 
