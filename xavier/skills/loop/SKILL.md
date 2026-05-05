@@ -97,17 +97,15 @@ When — and only when — the loop reaches the **All phases complete** branch o
 - **User stop / stall**: not a success. Skip.
 - **Partial progress only**: not a success. Skip.
 
-**First, write a completion marker to the loop-state file.** Append (or update, if already present) the line `status: complete` at the top of `~/.xavier/loop-state/<name>.md`, immediately after the `# Loop State` heading. This is a stable, machine-readable signal consumed by `/xavier mark --backfill` (sub-phase 5a) so future migrations can detect completed loops without relying on heuristic phase-table parsing. The write is a single short line and must precede the source-task move below — if the move fails and Step 5 rolls back, the loop-state marker can stay, since rolling forward later (e.g., manually marking the task as done) still leaves the vault consistent.
+**First, validate the task name.** The `<name>` is the basename of the task file selected in Step 1; it must already match the Name Validation rules in `xavier/skills/mark/SKILL.md` (`^[a-z0-9][a-z0-9-]*$`). If validation fails, abort Step 5 — leave the task as-is and let the user run `/xavier mark` manually. Never derive filesystem operations from an unvalidated name.
 
-**Then, apply the `→ done` transition documented in `xavier/skills/mark/SKILL.md`** to the source task file (the `~/.xavier/tasks/<name>.md` originally selected in Step 1). Do not duplicate the transition logic here — the canonical operation lives in the `mark` skill.
+**Second, write a completion marker to the loop-state file.** Append (or update, if already present) the line `status: complete` at the top of `~/.xavier/loop-state/<name>.md`, immediately after the `# Loop State` heading. This is a stable, machine-readable signal consumed by `/xavier mark --backfill` (sub-phase 5a) so future migrations can detect completed loops without relying on heuristic phase-table parsing. The write is a single short line and must precede the source-task move below — if the move fails and the transition rolls back, the loop-state marker can stay, since rolling forward later (e.g., manually marking the task as done) still leaves the vault consistent.
 
-The transition imposes a strict ordering and rollback contract that this step inherits:
+**Third, apply the `→ done` transition** from `xavier/skills/mark/SKILL.md` to the source task file (the `~/.xavier/tasks/<name>.md` originally selected in Step 1). The `mark` skill owns the canonical contract — name validation, idempotency, move-precondition (refuse to overwrite an existing destination), frontmatter-then-`mv` ordering, and rollback on `mv` failure all live there. Do not duplicate any of those rules here.
 
-1. **Frontmatter write first, then move.** Set `status: done` (and bump `updated:`) in the source file at its current path *before* running `mv`. This is the order specified by the `→ done` transition.
-2. **Rollback on move failure.** If the `mv` to `<vault>/tasks/done/<name>.md` fails after the frontmatter write succeeds, revert the frontmatter write (remove the `status: done` field and restore the prior `updated:` value) so the on-disk state remains consistent — the task stays at top-level with no status, exactly as it was before the auto-mark attempt.
-3. **Idempotent.** If the source file is already at `<vault>/tasks/done/<name>.md` and already has `status: done`, the `→ done` transition is a no-op (per the mark skill). Do not re-write frontmatter, do not re-run `mv`.
+If the transition aborts (e.g., because the destination already exists), surface the abort message to the user and stop Step 5 — do not proceed to Step 6. The loop's overall success state is unchanged; only the auto-mark didn't land.
 
-**Loop-state file is unaffected.** The state file at `~/.xavier/loop-state/<name>.md` is keyed by **basename only** — the same `<name>` as the source task file. Moving the source from `<vault>/tasks/<name>.md` to `<vault>/tasks/done/<name>.md` does not touch `~/.xavier/loop-state/<name>.md`. The cleanup of loop-state is a separate action handled by the success branch of Step 4h after this step returns.
+**Loop-state file is unaffected by the source-task move.** The state file at `~/.xavier/loop-state/<name>.md` is keyed by **basename only** — the same `<name>` as the source task file. Moving the source from `<vault>/tasks/<name>.md` to `<vault>/tasks/done/<name>.md` does not touch the loop-state file. Loop-state cleanup is handled by the success branch of Step 4h after this step returns.
 
 **Do not commit here.** The auto-mark frontmatter edit and `mv` are filesystem operations only; the router commits vault changes after the skill completes (mirroring the policy in `mark/SKILL.md`).
 
@@ -124,16 +122,22 @@ After Step 5 has marked the task as `done`, check whether the source PRD is now 
 
 **Otherwise, scan sibling tasks and decide whether to prompt:**
 
-1. Read the just-completed source task's frontmatter `source` field — it is a wikilink of the form `[[prd/<name>]]`. Extract `<name>`.
+1. Read the just-completed source task's frontmatter `source` field — it is a wikilink of the form `[[prd/<name>]]`. Extract `<name>` and **validate it as a basename** (must match `^[a-z0-9][a-z0-9-]*$` per the Name Validation rules in `xavier/skills/mark/SKILL.md`). If validation fails, skip this step entirely — never derive filesystem operations from an unvalidated `source` value. Log a warning that the source field looks malformed.
 2. Verify the PRD's current location:
    - If `<vault>/prd/done/<name>.md` exists → PRD is already done. **Skip the prompt.** Stop.
    - Otherwise the PRD lives at `<vault>/prd/<name>.md` (active). Continue.
-3. Glob **both** `<vault>/tasks/*.md` (active siblings) **and** `<vault>/tasks/done/*.md` (already-done siblings). The just-marked task is among the `done/` set after Step 5.
-4. For each globbed file, read its frontmatter `source` field. Keep only entries whose `source` equals the just-completed task's `source` (i.e., they all point at `[[prd/<name>]]`).
-5. For every matching sibling, classify as **done** or **active**:
-   - The sibling is **done** if it lives in `<vault>/tasks/done/` OR its frontmatter `status` is `done` (or `superseded`).
-   - Otherwise it is **active**.
-6. **Branch on the result:**
+3. Find sibling tasks in a **single pass** instead of reading every task file. Use `grep -l` (or equivalent) to short-circuit on the source pattern:
+
+   ```
+   grep -l 'source:[[:space:]]*"\[\[prd/<name>\]\]"' \
+     <vault>/tasks/*.md <vault>/tasks/done/*.md 2>/dev/null
+   ```
+
+   Since `<name>` is already validated as `[a-z0-9-]+`, no shell-escaping or regex-escaping is required. The grep returns the file paths of all sibling tasks; we never need to parse their frontmatter beyond classifying location/status.
+4. For every matching sibling, classify as **done** or **active**:
+   - The sibling is **done** if it lives in `<vault>/tasks/done/` (cheap path check) OR its frontmatter `status` is `done` (or `superseded`). Check the path first; only read the file's frontmatter if it lives at top-level.
+   - Otherwise it is **active**. Short-circuit as soon as one active sibling is found — there is no need to classify the rest before deciding to suppress the prompt.
+5. **Branch on the result:**
    - **At least one sibling is still active** → do not prompt. The PRD is not yet ready to retire. Stop this step silently.
    - **Every sibling is done** → prompt via **AskUserQuestion**:
 

@@ -80,29 +80,49 @@ for skill_dir in "$SKILLS_DIR"/*/; do
 done
 
 # Validate `status` field in vault notes (when present, must be `done` or `superseded`).
-# This walks every .md file under XAVIER_HOME if it exists, plus any vault note fixtures
-# passed via XAVIER_VALIDATE_PATHS (space-separated). Notes without a `status` field pass.
+# Walks XAVIER_HOME's prd/ and tasks/ trees if it exists (the only directories that own
+# the lifecycle field), plus any vault note fixtures passed via XAVIER_VALIDATE_PATHS
+# (newline-delimited). Notes without a `status` field pass silently.
 echo ""
 echo "=== Checking optional 'status' field in vault notes ==="
 STATUS_ERRORS=0
-VALID_STATUS="done superseded"
 
-# Build search roots: XAVIER_HOME (if it exists) plus any extra paths from env.
+# Build search roots as a newline-delimited list. XAVIER_HOME contributes its prd/ and
+# tasks/ subtrees only — the rest of the vault is out of scope for this check.
 SEARCH_ROOTS=""
+add_root() {
+  # Reject entries that find(1) could parse as a primary expression.
+  case "$1" in
+    -*|!*|"("*|")"*) echo "FAIL: refusing unsafe path '$1' (must not start with -, !, or parens)" >&2; STATUS_ERRORS=$((STATUS_ERRORS + 1)); return ;;
+  esac
+  [ -e "$1" ] || return
+  if [ -z "$SEARCH_ROOTS" ]; then SEARCH_ROOTS="$1"; else SEARCH_ROOTS="$SEARCH_ROOTS
+$1"; fi
+}
+
 if [ -n "${XAVIER_HOME:-}" ] && [ -d "${XAVIER_HOME}" ]; then
-  SEARCH_ROOTS="$SEARCH_ROOTS ${XAVIER_HOME}"
+  [ -d "${XAVIER_HOME}/prd" ] && add_root "${XAVIER_HOME}/prd"
+  [ -d "${XAVIER_HOME}/tasks" ] && add_root "${XAVIER_HOME}/tasks"
 fi
 if [ -n "${XAVIER_VALIDATE_PATHS:-}" ]; then
-  SEARCH_ROOTS="$SEARCH_ROOTS ${XAVIER_VALIDATE_PATHS}"
+  # Newline-delimited only — no whitespace-splitting to dodge argument-injection footguns.
+  while IFS= read -r extra_root; do
+    [ -z "$extra_root" ] && continue
+    add_root "$extra_root"
+  done <<EOF
+${XAVIER_VALIDATE_PATHS}
+EOF
 fi
 
 if [ -n "$SEARCH_ROOTS" ]; then
-  for root in $SEARCH_ROOTS; do
+  while IFS= read -r root; do
     [ -e "$root" ] || continue
 
     # Collect candidate files: a directory expands to its .md files, a file is checked directly.
     if [ -d "$root" ]; then
-      candidates="$(find "$root" -type f -name '*.md' 2>/dev/null || true)"
+      # `--` ensures find treats $root as a path, not a primary, even with future paranoid input.
+      # Pre-filter to files that contain a status: line so awk runs only on real candidates.
+      candidates="$(find "$root" -type f -name '*.md' -exec grep -l '^status:' {} + 2>/dev/null || true)"
     else
       candidates="$root"
     fi
@@ -113,7 +133,7 @@ if [ -n "$SEARCH_ROOTS" ]; then
       [ -f "$note_file" ] || continue
 
       # Extract status field from the first frontmatter block only.
-      status_value="$(awk '/^---$/{c++; next} c==1 && /^status:/{sub(/^status:[[:space:]]*/, ""); gsub(/[[:space:]]*$/, ""); print; exit}' "$note_file")"
+      status_value="$(awk '/^---$/{c++; if(c==2) exit; next} c==1 && /^status:/{sub(/^status:[[:space:]]*/, ""); gsub(/[[:space:]]*$/, ""); print; exit}' "$note_file")"
 
       # No status field → accept silently.
       [ -z "$status_value" ] && continue
@@ -121,12 +141,15 @@ if [ -n "$SEARCH_ROOTS" ]; then
       # Strip surrounding quotes if present.
       status_value="$(echo "$status_value" | sed 's/^["'\'']//;s/["'\'']$//')"
 
-      if ! echo "$VALID_STATUS" | grep -qw "$status_value"; then
+      # Exact string match — never delegate to grep (which would let `.*` bypass the allowlist).
+      if [ "$status_value" != "done" ] && [ "$status_value" != "superseded" ]; then
         echo "FAIL: $note_file has invalid status: '$status_value' (allowed: done, superseded)"
         STATUS_ERRORS=$((STATUS_ERRORS + 1))
       fi
     done <<< "$candidates"
-  done
+  done <<EOF
+${SEARCH_ROOTS}
+EOF
 fi
 
 if [ $STATUS_ERRORS -eq 0 ]; then

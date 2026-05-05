@@ -93,21 +93,20 @@ related:
 
 Then write the task body: architectural decisions, backpressure commands, completion criteria, and phases with acceptance criteria.
 
-## Step 8: Offer to Mark Source PRD
+## Step 8: Offer to Supersede Source PRD
 
-After the task file is written, the source PRD has been fully decomposed and is a candidate for retirement. Prompt the user via **AskUserQuestion**:
+Decomposition is the start of implementation, not the end of it — `done` is **not** offered here. (The source PRD becomes a candidate for `done` only when its derived tasks finish, which happens via `xavier/skills/loop/SKILL.md` Step 6 after the last sibling task is auto-marked done.)
 
-> Mark PRD `<name>` as done now?
+This step exists for one case only: a fresh decomposition that **replaces** an older PRD on the same topic. In that case, the older PRD should be marked `superseded`. Prompt the user via **AskUserQuestion**:
 
-Options: `done`, `superseded`, `skip`.
+> Does this decomposition replace an older PRD that should be marked `superseded`?
 
-Dispatch based on the answer:
+Options: `superseded`, `skip` (default).
 
-- **`done`** → apply the `→ done` transition documented in `xavier/skills/mark/SKILL.md` to the source PRD at `~/.xavier/prd/<name>.md`. The transition sets frontmatter `status: done`, bumps `updated:`, and runs `mv <vault>/prd/<name>.md <vault>/prd/done/<name>.md`. Do not duplicate the transition logic here — the canonical operation lives in the `mark` skill.
-- **`superseded`** → apply the `→ superseded` transition from `xavier/skills/mark/SKILL.md`. The transition sets frontmatter `status: superseded`, bumps `updated:`, and routes the file to `<vault>/prd/done/<name>.md` alongside other archived items.
-- **`skip`** → leave the PRD untouched. No filesystem or frontmatter change.
+Dispatch:
 
-Both `done` and `superseded` route the file to `<vault>/prd/done/<name>.md`; only the `status` value differs. The transitions are idempotent — if the PRD is already at `prd/done/<name>.md` with the matching `status`, the operation is a no-op.
+- **`superseded`** → first ask which PRD to supersede (via a follow-up **AskUserQuestion** picker drawn from the resolved `prd-index`, excluding the just-decomposed PRD). Validate the picked basename per the Name Validation rules in `xavier/skills/mark/SKILL.md`. Then apply the `→ superseded` transition from `xavier/skills/mark/SKILL.md` to the chosen PRD. The canonical transition contract — name validation, idempotency, move-precondition, frontmatter-then-mv ordering, and rollback — lives in `mark`; do not duplicate it here.
+- **`skip`** → leave all PRDs untouched. No filesystem or frontmatter change.
 
 Do not commit here. The router commits vault changes after the skill completes (mirroring the policy in `mark/SKILL.md`).
 

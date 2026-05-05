@@ -19,30 +19,48 @@ There are three states for a PRD or task file:
 
 `<kind>` is `prd` or `tasks`. Knowledge notes, research, investigations, and dependency notes are out of scope for this skill — `mark` only operates on PRDs and tasks.
 
+## Name Validation
+
+Before performing **any** filesystem operation, the `<name>` argument MUST be validated as a basename. Reject anything that is not a basename:
+
+- The name **must** match the regex `^[a-z0-9][a-z0-9-]*$` (lowercase letters, digits, hyphens; must start with letter or digit).
+- Reject names containing `/`, `\`, `..`, leading `.`, whitespace, absolute paths, or any character outside `[a-z0-9-]`.
+- Names sourced from frontmatter wikilinks (e.g., a `source: "[[prd/<name>]]"` field) are **not** trusted — apply the same validation after extracting `<name>` from the wikilink.
+
+If `<name>` fails validation, abort with: `Invalid name '<name>': must match [a-z0-9][a-z0-9-]*. Aborting — no filesystem changes made.` This rule applies in arg mode (Step 3), backfill (Step 5), and any sibling-scan that consumes a `source` field.
+
 ## Transition Operations
 
-When transitioning a file, perform exactly the actions listed for the target state. Each transition must be **idempotent**: running a transition that matches the current state is a no-op (do not re-edit frontmatter, do not run `mv`).
+When transitioning a file, perform exactly the actions listed for the target state, in the order given. Each transition is **idempotent**: running a transition whose end state matches the current state is a no-op (no frontmatter edit, no `mv`). Each transition is **atomic**: if any step fails, prior steps are rolled back so on-disk state remains as it was before the transition started.
+
+The contract below is **canonical** — `loop/SKILL.md` and `tasks/SKILL.md` reference these operations rather than restating them. Do not duplicate transition logic in other skills.
 
 ### `→ done`
 
-1. If the file is already at `<vault>/<kind>/done/<name>.md` AND its frontmatter `status` is already `done`: no-op. Stop.
-2. Set the frontmatter `status` field to `done`. If the field is absent, insert it. If it is `superseded`, overwrite it.
-3. If the file is at the top level, run `mv <vault>/<kind>/<name>.md <vault>/<kind>/done/<name>.md`.
-4. Update the `updated:` ISO date in frontmatter.
+1. **Validate name** per the rules above. Abort on failure.
+2. **Idempotency check.** If the file is already at `<vault>/<kind>/done/<name>.md` AND its frontmatter `status` is already `done`: no-op. Stop.
+3. **Move precondition.** If the file currently lives at `<vault>/<kind>/<name>.md` (top-level), verify that `<vault>/<kind>/done/<name>.md` does **not** already exist. If it does, abort with: `Cannot transition <kind>/<name> → done: destination <vault>/<kind>/done/<name>.md already exists. Resolve the conflict manually and re-run.` Do **not** overwrite — `mv` would silently destroy the existing done-side file.
+4. **Frontmatter write (first).** At the file's current path, set the frontmatter `status` field to `done` (insert if absent; overwrite if `superseded`). Bump `updated:` to today's ISO date. Save the prior frontmatter state in memory in case rollback is needed.
+5. **Move (second).** If the file was at the top level, run `mv <vault>/<kind>/<name>.md <vault>/<kind>/done/<name>.md`.
+6. **Rollback on move failure.** If `mv` returns non-zero, revert the frontmatter changes from step 4 (remove `status`, restore the prior `updated:`) so the file remains at top-level with no status — exactly as it was before the transition started. Surface the original `mv` error to the user.
 
 ### `→ superseded`
 
-1. If the file is already at `<vault>/<kind>/done/<name>.md` AND its frontmatter `status` is already `superseded`: no-op. Stop.
-2. Set the frontmatter `status` field to `superseded`. If absent, insert it. If `done`, overwrite it.
-3. If the file is at the top level, run `mv <vault>/<kind>/<name>.md <vault>/<kind>/done/<name>.md`.
-4. Update the `updated:` ISO date in frontmatter.
+1. **Validate name** per the rules above. Abort on failure.
+2. **Idempotency check.** If the file is already at `<vault>/<kind>/done/<name>.md` AND its frontmatter `status` is already `superseded`: no-op. Stop.
+3. **Move precondition.** If the file lives at `<vault>/<kind>/<name>.md` (top-level), verify `<vault>/<kind>/done/<name>.md` does not exist. If it does, abort with the equivalent error from `→ done` step 3. Do not overwrite.
+4. **Frontmatter write.** Set `status: superseded` (insert if absent; overwrite if `done`). Bump `updated:`. Save prior state.
+5. **Move.** If at top-level, `mv` to `<vault>/<kind>/done/<name>.md`.
+6. **Rollback on move failure.** Same contract as `→ done` step 6.
 
 ### `→ active`
 
-1. If the file is already at the top level (`<vault>/<kind>/<name>.md`) AND has no `status` field: no-op. Stop.
-2. Remove the `status` field from frontmatter entirely (do not leave an empty value).
-3. If the file is in `done/`, run `mv <vault>/<kind>/done/<name>.md <vault>/<kind>/<name>.md`.
-4. Update the `updated:` ISO date in frontmatter.
+1. **Validate name** per the rules above. Abort on failure.
+2. **Idempotency check.** If the file is already at `<vault>/<kind>/<name>.md` (top-level) AND has no `status` field: no-op. Stop.
+3. **Move precondition.** If the file lives in `<vault>/<kind>/done/<name>.md`, verify `<vault>/<kind>/<name>.md` (top-level) does not already exist. If it does, abort with: `Cannot transition <kind>/<name> → active: destination <vault>/<kind>/<name>.md already exists. Resolve the conflict manually and re-run.` Do not overwrite.
+4. **Frontmatter write.** Remove the `status` field entirely (do not leave an empty value). Bump `updated:`. Save prior state.
+5. **Move.** If in `done/`, `mv` to `<vault>/<kind>/<name>.md`.
+6. **Rollback on move failure.** Re-insert the prior `status` value and restore the prior `updated:` so the file remains in `done/` with its original status.
 
 ## Step 1: Parse Arguments
 
@@ -79,23 +97,24 @@ Three invocation modes:
 
 ## Step 3: Arg Mode
 
-1. Resolve `<name>` against all four candidate paths:
+1. **Validate `<name>`** per the Name Validation rules above. Abort if it fails.
+2. Resolve `<name>` against all four candidate paths:
    - `<vault>/prd/<name>.md`
    - `<vault>/prd/done/<name>.md`
    - `<vault>/tasks/<name>.md`
    - `<vault>/tasks/done/<name>.md`
-2. **Zero matches** → error: `No PRD or task named '<name>' found.` List the closest matches by basename if any. Stop.
-3. **Multiple matches across `<kind>/` and `<kind>/done/`** (i.e., the same `<name>.md` exists at both top level and in `done/` for the same kind, OR exists in both `prd/` and `tasks/` trees) → error:
+3. **Zero matches** → error: `No PRD or task named '<name>' found.` List the closest matches by basename if any. Stop.
+4. **Multiple matches across `<kind>/` and `<kind>/done/`** (i.e., the same `<name>.md` exists at both top level and in `done/` for the same kind, OR exists in both `prd/` and `tasks/` trees) → error:
 
    ```
    Ambiguous: '<name>' matches multiple files:
      - <vault>/prd/<name>.md
      - <vault>/prd/done/<name>.md
-   Disambiguate by re-running with the explicit path or use the picker mode (no args).
+   Use picker mode (no args) to pick one explicitly.
    ```
 
-   Stop. Do not perform any transition.
-4. **Exactly one match** → dispatch the transition operation for `<state>`.
+   Stop. Do not perform any transition. **Never accept a path-style argument as a workaround** — `<name>` is always a basename. If the user truly has duplicates, they must resolve via the picker.
+5. **Exactly one match** → dispatch the transition operation for `<state>`.
 
 ## Step 4: Report
 
@@ -142,15 +161,22 @@ Show the list in full (one per line). Do not paginate.
 
 **Runs after sub-phase 5a regardless of its outcome.**
 
-**What it scans.** Glob `<vault>/prd/*.md` (top-level, active PRDs only). For each PRD, find all sibling tasks by:
+**What it scans.** First, build a `source → {total, done}` map in a **single pass** over `<vault>/tasks/*.md` and `<vault>/tasks/done/*.md` so the eligibility check below runs in O(P) instead of O(P × T):
 
-1. Globbing `<vault>/tasks/*.md` and `<vault>/tasks/done/*.md`.
-2. Reading each task's frontmatter `source` field — a wikilink of the form `"[[prd/<prd-name>]]"`.
-3. Keeping tasks whose extracted `<prd-name>` matches the PRD under inspection.
+1. For each task file, read its frontmatter `source` field — a wikilink of the form `"[[prd/<prd-name>]]"`.
+2. Extract `<prd-name>` and **validate it** as a basename (must match `^[a-z0-9][a-z0-9-]*$` per the Name Validation rules). Skip the task and log a warning if validation fails — never derive filesystem operations from an unvalidated `source` value.
+3. Increment `map[<prd-name>].total`. If the task lives in `<vault>/tasks/done/` OR has frontmatter `status: done` or `status: superseded`, also increment `map[<prd-name>].done`.
 
-A PRD is **eligible** when it has **at least one sibling task** AND **every** sibling is `done` (lives in `<vault>/tasks/done/` OR has frontmatter `status: done` or `status: superseded`). Note: sub-phase 5a will have just moved tasks into `tasks/done/`, so re-glob — do not rely on a snapshot taken before sub-phase 5a ran.
+Note: sub-phase 5a will have just moved tasks into `tasks/done/`, so re-glob — do not rely on a snapshot taken before sub-phase 5a ran.
 
-PRDs with no derived tasks are **not** eligible here — they are surfaced in sub-phase 5c instead. Skip PRDs already at `<vault>/prd/done/<name>.md` (idempotent).
+Then, evaluate eligibility for each PRD via a single map lookup:
+
+- Glob `<vault>/prd/*.md` (top-level, active PRDs only). For each PRD basename `<name>`, look up `map[<name>]`.
+- A PRD is **eligible** when `map[<name>].total >= 1` AND `map[<name>].total == map[<name>].done`.
+- PRDs with no derived tasks (`map[<name>]` is missing or `total == 0`) are **not** eligible here — they are surfaced in sub-phase 5c instead.
+- Skip PRDs already at `<vault>/prd/done/<name>.md` (idempotent).
+
+Cache the map for sub-phase 5c if it needs to know which active items lack derived tasks — do not re-scan.
 
 **What prompt it shows.** Bulk-confirm via **AskUserQuestion**:
 

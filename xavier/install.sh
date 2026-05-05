@@ -61,6 +61,7 @@ check_existing() {
     case "$choice" in
       u|U) info "Will re-run setup after scaffold check..." ;;
       *)   info "Skipping vault setup. Updating symlinks..."
+           ensure_vault_dirs
            install_skill
            install_command_aliases
            link_xavier_skills_and_refs
@@ -72,9 +73,10 @@ check_existing() {
 }
 
 # --- Scaffold vault directory structure ---
-scaffold_vault() {
-  info "Creating vault at $XAVIER_HOME..."
-
+# Idempotent — creates any missing vault directories. Runs on fresh installs AND
+# upgrades so new layout requirements (e.g. prd/done, tasks/done) materialize for
+# vaults that predate them.
+ensure_vault_dirs() {
   mkdir -p "$XAVIER_HOME/personas"
   mkdir -p "$XAVIER_HOME/adapters"
   mkdir -p "$XAVIER_HOME/skills"
@@ -89,6 +91,12 @@ scaffold_vault() {
   mkdir -p "$XAVIER_HOME/investigations"
   mkdir -p "$XAVIER_HOME/loop-state"
   mkdir -p "$XAVIER_HOME/shark-state"
+}
+
+scaffold_vault() {
+  info "Creating vault at $XAVIER_HOME..."
+
+  ensure_vault_dirs
 
   # Write minimal config.md (will be personalized by /xavier setup)
   if [ ! -f "$XAVIER_HOME/config.md" ]; then
@@ -595,6 +603,9 @@ main() {
 
   if [ "$EXISTING" = "false" ]; then
     scaffold_vault
+  else
+    # Existing vault: still ensure new dirs from later releases exist.
+    ensure_vault_dirs
   fi
 
   detect_runtimes
