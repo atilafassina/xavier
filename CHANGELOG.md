@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/xavier mark --backfill` — one-shot migration for vaults that predate the lifecycle feature. Runs three independently abortable sub-phases: (5a) auto-batch tasks with completed loop-state evidence, (5b) PRD inference for PRDs whose every derived task is now done, (5c) manual sweep with a metadata-rich multi-select picker. Idempotent — re-running yields no additional moves
 - Auto-mark hook in `/xavier loop` Step 5 — when every phase passes, the loop silently transitions the source task to `done` via the canonical `→ done` transition in the mark skill. Loop-state files now also gain a stable `status: complete` marker line for backfill detection
 - Sibling-scan PRD prompt in `/xavier loop` Step 6 — after a successful loop auto-marks its task, the loop checks whether every sibling task pointing at the same source PRD is now done; if so, prompts the user to mark the PRD as `done`, `superseded`, or `skip`
-- Post-decompose PRD prompt in `/xavier tasks` — when task decomposition completes, optionally offer to mark the source PRD if appropriate
-- Soft-resolve fallback in `/xavier prd` and `/xavier tasks` — accept retired (`done/`) PRD or task names as starting points, with a confirmation prompt before reviving
+- Post-decompose PRD prompt in `/xavier tasks` — immediately after writing the new task file, prompts the user to mark the source PRD as `done`, `superseded`, or `skip`
+- Soft-resolve fallback in `/xavier prd` and `/xavier tasks` — when a name argument resolves only inside `done/`, the skill emits a revival hint (`<noun> <name> is marked done. Revive it with /xavier mark <name> active first, then re-run.`) and exits cleanly, instead of failing with "not found"
 
 ### Changed
 
