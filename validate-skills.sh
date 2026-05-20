@@ -317,6 +317,36 @@ else
   ERRORS=$((ERRORS + MARKER_ERRORS))
 fi
 
+# 8. Cursor prose-trigger skill template drift — install.sh and self-update
+#    must carry the same anchor strings for the Cursor skill writer.
+echo ""
+echo "=== Checking Cursor prose-trigger skill template consistency ==="
+CURSOR_PROSE_ERRORS=0
+EXPECTED_SKILL_NAME='name: prose-trigger'
+EXPECTED_ROUTER_LINE='Follow the Router Lifecycle with subcommand'
+EXPECTED_VOCATIVE_FRAGMENT='Mid-sentence "${TRIGGER_WORD}" or lowercase variants do NOT'
+
+for anchor in "$EXPECTED_SKILL_NAME" "$EXPECTED_ROUTER_LINE" "$EXPECTED_VOCATIVE_FRAGMENT"; do
+  for target in "$INSTALL_SH" "$SELF_UPDATE_MD"; do
+    rel="${target#$REPO_ROOT/}"
+    if [ ! -f "$target" ]; then
+      echo "FAIL: CURSOR PROSE DRIFT — expected file not found: $rel"
+      CURSOR_PROSE_ERRORS=$((CURSOR_PROSE_ERRORS + 1))
+      continue
+    fi
+    if ! grep -qF "$anchor" "$target"; then
+      echo "FAIL: CURSOR PROSE DRIFT — $rel missing anchor '$anchor'"
+      CURSOR_PROSE_ERRORS=$((CURSOR_PROSE_ERRORS + 1))
+    fi
+  done
+done
+
+if [ $CURSOR_PROSE_ERRORS -eq 0 ]; then
+  echo "PASS: Cursor prose-trigger skill template anchors consistent across install.sh and self-update SKILL.md"
+else
+  ERRORS=$((ERRORS + CURSOR_PROSE_ERRORS))
+fi
+
 echo ""
 if [ $ERRORS -gt 0 ]; then
   echo "FAILED: $ERRORS error(s) found"

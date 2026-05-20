@@ -73,6 +73,15 @@ Otherwise, write the stripped content back to `CLAUDE_MD`.
 
 Track whether the block was removed, whether the file was deleted, or whether the step was a silent no-op. Surface this in the Step 5 summary.
 
+## Step 3b: Remove Cursor Prose-Trigger Skill
+
+Remove the Xavier-managed Cursor prose-trigger skill at `~/.cursor/skills/prose-trigger/`. This is the inverse of `install_cursor_prose_trigger_skill()` in `xavier/install.sh` and self-update Step 8c.
+
+- **Directory does not exist** → silent no-op, proceed to Step 4.
+- **Directory exists** → remove it recursively (`rm -rf`). Report "Removed Cursor prose-trigger skill at ~/.cursor/skills/prose-trigger/".
+
+This path is **outside** the `${ALIAS_PREFIX}-*/` alias glob by design — it must be removed explicitly here.
+
 ## Step 4: Vault Deletion
 
 Check if `~/.xavier/` exists.
@@ -92,4 +101,5 @@ Uninstall complete:
   ~/.agents/skills/xavier/      — removed | not found
   ~/.claude/commands/xavier.md  — removed | not found
   ~/.claude/CLAUDE.md block     — stripped | host file deleted | not found
+  ~/.cursor/skills/prose-trigger/ — removed | not found
 ```

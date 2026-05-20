@@ -66,6 +66,10 @@ self-update|Update Xavier skills and references to the latest release
 uninstall|Remove the Xavier vault and all symlinks
 "
 
+# Fixed Cursor skill name/path for prose-trigger — intentionally outside the
+# ${ALIAS_PREFIX}-* alias namespace so /x- autocomplete stays clean.
+CURSOR_PROSE_TRIGGER_SKILL="prose-trigger"
+
 # --- Pre-flight checks ---
 check_deps() {
   for cmd in git; do
@@ -510,29 +514,11 @@ strip_prose_trigger_block() {
   fi
 }
 
-# --- Install prose-trigger managed block into Claude Code's ~/.claude/CLAUDE.md ---
-# Writes (or refreshes) a single managed block, wrapped between
-#   <!-- BEGIN xavier-prose-trigger --> / <!-- END xavier-prose-trigger -->
-# teaching the LLM to detect a vocative trigger word ("Xavier" by default) and
-# route through the `xavier` Skill tool. Behaviour follows the contract in
-# [[prd/xavier-prose-trigger]] — vocative-only, hybrid keyword/intent routing,
-# meta questions to the bare router, off-topic prose answered normally.
-#
-# Lifecycle:
-# - prose-trigger: yes (in $XAVIER_HOME/config.md) → write/refresh the block,
-#   creating ~/.claude/CLAUDE.md from empty if needed. Idempotent: if the markers
-#   already exist, replace only the content between them; surrounding user content
-#   is preserved byte-for-byte.
-# - prose-trigger: no → strip any managed block via strip_prose_trigger_block().
-#   Silent no-op when no block is present. If stripping leaves the host file
-#   empty (Xavier was the sole writer), the file is removed.
-#
-# The subcommand list embedded in the block is derived from the canonical
-# $COMMANDS variable (the same source feeds install_command_aliases), so the
-# two surfaces never drift.
-install_prose_trigger() {
-  # Default: feature disabled. Existing users running self-update don't get
-  # surprising new behaviour until they opt in via setup or config edit.
+# --- Install prose-trigger (Claude Code block + Cursor skill) ---
+# Claude: managed block in ~/.claude/CLAUDE.md (Skill tool delegation).
+# Cursor: global skill at ~/.cursor/skills/prose-trigger/SKILL.md (router lifecycle).
+# Behaviour follows [[prd/xavier-prose-trigger]] — vocative-only, hybrid routing.
+read_prose_trigger_config() {
   PROSE_TRIGGER_ENABLED="no"
   TRIGGER_WORD="Xavier"
 
@@ -543,9 +529,6 @@ install_prose_trigger() {
       PROSE_TRIGGER_ENABLED="yes"
     fi
 
-    # Trigger word: ASCII letter start, then letters/digits/hyphens, ≤32 chars total.
-    # Same shape as alias-prefix but with stricter leading-character rules and a
-    # length cap to keep the embedded block readable.
     tw_val="$(grep -o '\*\*trigger-word\*\*: *[^ ]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
     if [ -n "$tw_val" ]; then
       if printf '%s' "$tw_val" | grep -qE '^[a-zA-Z][a-zA-Z0-9-]{0,31}$'; then
@@ -555,29 +538,63 @@ install_prose_trigger() {
       fi
     fi
   fi
+}
 
-  if [ "$PROSE_TRIGGER_ENABLED" = "no" ]; then
-    # Disable path: strip any existing managed block. Silent no-op when the
-    # file or markers are absent. See strip_prose_trigger_block() above for
-    # the byte-level contract this branch enforces.
-    strip_prose_trigger_block
-    return 0
-  fi
-
-  info "Installing prose trigger (trigger-word: $TRIGGER_WORD)..."
-
-  # Build a comma-separated subcommand list from the canonical $COMMANDS array.
-  # Single source of truth — see the comment on the top-level $COMMANDS variable.
-  # awk joins with ", " by tracking the first row; cannot use `paste -sd ', '`
-  # because BSD paste cycles characters in the delimiter string (would produce
-  # "setup,review babysit,grill ...").
-  SUBCOMMAND_LIST="$(echo "$COMMANDS" | awk -F'|' '
+build_prose_trigger_subcommand_list() {
+  echo "$COMMANDS" | awk -F'|' '
     NF > 0 && $1 != "" {
       if (out == "") { out = $1 } else { out = out ", " $1 }
     }
     END { print out }
-  ')"
+  '
+}
 
+strip_cursor_prose_trigger_skill() {
+  cursor_skill_dir="$HOME/.cursor/skills/$CURSOR_PROSE_TRIGGER_SKILL"
+  if [ -d "$cursor_skill_dir" ]; then
+    rm -rf "$cursor_skill_dir"
+    info "Removed Cursor prose-trigger skill at $cursor_skill_dir."
+  fi
+}
+
+install_cursor_prose_trigger_skill() {
+  cursor_skill_dir="$HOME/.cursor/skills/$CURSOR_PROSE_TRIGGER_SKILL"
+  mkdir -p "$cursor_skill_dir"
+  cat > "$cursor_skill_dir/SKILL.md" <<CURSORPROSEEOF
+---
+name: prose-trigger
+description: "Route Xavier prose invocations when user addresses ${TRIGGER_WORD} in vocative position (${TRIGGER_WORD}, … / ${TRIGGER_WORD}: … / Hey ${TRIGGER_WORD} …). Takes precedence over slash-command aliases when the trigger word appears in natural prose. Do NOT suggest /prose-trigger — this skill is for natural-language vocative routing only."
+---
+
+# Xavier prose trigger
+
+When the user addresses you as "${TRIGGER_WORD}" in vocative position — sentence-initial
+"${TRIGGER_WORD}, …", "${TRIGGER_WORD}: …", "Hey ${TRIGGER_WORD} …", "OK ${TRIGGER_WORD} …" —
+treat it as a Xavier invocation. Mid-sentence "${TRIGGER_WORD}" or lowercase variants do NOT
+trigger.
+
+When the trigger word appears in vocative form, this skill takes precedence over slash-command
+aliases (e.g. /x-grill) — route through the Xavier router below, not an alias skill.
+
+Routing:
+- Subcommand keyword present (${SUBCOMMAND_LIST}):
+  1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
+  2. Follow the Router Lifecycle with subcommand: <cmd>
+  Do NOT execute vault skills directly. Delegate to the xavier router.
+- No keyword, intent clear: confirm with one line — "Sounds like a grill.
+  Run /xavier grill? (Y/n)" — then on assent:
+  1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
+  2. Follow the Router Lifecycle with subcommand: <inferred-cmd>
+- Meta question about Xavier ("what can you do?", "help", "list commands"):
+  1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
+  2. Follow the Router Lifecycle with no subcommand (router lists subcommands)
+- Off-topic or no confident subcommand match: drop the trigger and answer
+  normally without invoking the router.
+CURSORPROSEEOF
+  info "Installed Cursor prose-trigger skill at $cursor_skill_dir/SKILL.md."
+}
+
+install_claude_prose_trigger_block() {
   CLAUDE_MD="$HOME/.claude/CLAUDE.md"
   BEGIN_MARKER="<!-- BEGIN xavier-prose-trigger -->"
   END_MARKER="<!-- END xavier-prose-trigger -->"
@@ -662,6 +679,21 @@ MANAGEDEOF
     rm -f "$block_file"
     info "Appended prose-trigger block to $CLAUDE_MD."
   fi
+}
+
+install_prose_trigger() {
+  read_prose_trigger_config
+
+  if [ "$PROSE_TRIGGER_ENABLED" = "no" ]; then
+    strip_prose_trigger_block
+    strip_cursor_prose_trigger_skill
+    return 0
+  fi
+
+  info "Installing prose trigger (trigger-word: $TRIGGER_WORD)..."
+  SUBCOMMAND_LIST="$(build_prose_trigger_subcommand_list)"
+  install_claude_prose_trigger_block
+  install_cursor_prose_trigger_skill
 }
 
 # --- Symlink or copy skills & references into ~/.xavier/ ---
