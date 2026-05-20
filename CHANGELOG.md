@@ -9,7 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `prose-trigger` — opt-in feature that teaches Claude Code to recognise a vocative invocation of a configurable trigger word ("Xavier" by default) in natural prose and route it through `/xavier <subcommand>` via the Skill tool. Disabled by default; enabled through the setup interview or by setting `prose-trigger: yes` in `~/.xavier/config.md`. Supports four routing modes: explicit subcommand keyword → direct invoke; clear-but-implicit intent → one-line confirm before invoke; meta question about Xavier → `/xavier` (router lists subcommands); off-topic prose → drop the trigger and answer normally. Shipped for Claude Code; Cursor support deferred pending an installer-addressable user-global rules surface from Cursor
+- Two new keys in `~/.xavier/config.md` under `## Runtime`: `prose-trigger: yes|no` (default `no`) and `trigger-word: <word>` (default `Xavier`, validated against `^[a-zA-Z][a-zA-Z0-9-]{0,31}$`)
+- Two new questions in the `/xavier setup` interview, adjacent to the existing alias prompts — enable prose-trigger (default `no`), and follow-up trigger word (conditional on enable, default `Xavier`)
+- `install.sh` gains `install_prose_trigger()` — writes a managed instruction block between `<!-- BEGIN xavier-prose-trigger -->` / `<!-- END xavier-prose-trigger -->` markers in `~/.claude/CLAUDE.md` when enabled. Idempotent across three host-file states: create-from-empty, replace-between-existing-markers, and append-with-new-markers. The block content is generated from a template with the configured trigger word substituted; the embedded subcommand list pulls from the canonical `COMMANDS` source shared with alias generation. The block uses explicit Skill-tool delegation framing (per the `fix-alias-skills` lesson) so the LLM treats the routing instructions as executable rather than freeform suggestion
+- `install.sh` gains `strip_prose_trigger_block()` — removes the managed block (markers included) while preserving surrounding user content byte-for-byte; deletes the host file if Xavier was the sole writer. Wired into `install_prose_trigger()` for the disable path and into the uninstall flow
+- `/xavier self-update` Step 8b ("Refresh Prose-Trigger Managed Block") — mirrors `install_prose_trigger()` byte-for-byte so existing installs pick up the feature via `/xavier self-update` without re-running `install.sh`
+- `/xavier uninstall` Step 3 ("Strip Prose-Trigger Managed Block") — removes the block from `~/.claude/CLAUDE.md` with surrounding-content preservation and empty-host-file removal
+- `validate-skills.sh` marker-drift check — verifies the canonical BEGIN / END marker strings appear byte-identical in `install.sh` and `skills/self-update/SKILL.md`. Drift between the two writers would let install write a block that self-update can no longer find; the check catches it before silent idempotency failures land
+
 ### Changed
+
+- The canonical `COMMANDS` list in `install.sh` is now a top-level constant rather than defined inside `install_command_aliases()`; both that function and the new `install_prose_trigger()` consume it
 
 ### Deprecated
 
