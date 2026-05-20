@@ -10,7 +10,7 @@ requires: [shark, adapter, repo-conventions:optional, team-conventions:optional,
 
 Answer a focused question about the current repository by synthesizing captured team knowledge from the Xavier vault. Reads decisions, architecture, dependencies, team conventions, recurring review patterns, and (on relevance match) prior research and investigation notes. Presents a TL;DR + Evidence + Sources answer inline.
 
-When the vault is thin on the topic, the skill prompts before spawning research remoras (1 narrow / 3 design / 5 exploratory) and auto-saves the resulting answer to `<vault>/knowledge/qa/` so future asks can reuse it. The vault-only save UX, `--repo` flag, and bare-invocation prompt land in later phases.
+When the vault is thin on the topic, the skill prompts before spawning research remoras (1 narrow / 3 design / 5 exploratory) and auto-saves the resulting answer to `<vault>/knowledge/qa/` so future asks can reuse it. Bare invocation (`/xavier ask` with no question) prompts once for the question; `--repo <name>` overrides the cwd-derived repo scope.
 
 ## Step 1: Detect-and-Defer
 
@@ -25,17 +25,51 @@ echo "$SHARK_TASK_HASH"
 
 ## Step 2: Parse Input
 
-1. Treat the first positional argument as the question string. Trim surrounding whitespace and quotes.
-2. If no positional argument is provided, error out with: "Error: `/xavier ask` requires a question. Usage: `/xavier ask \"<question>\"`. Bare invocation will be supported in a later phase." Then stop.
+Inputs come in two shapes: an optional `--repo <name>` override and an optional positional question. Both are independent — either, both, or neither may be present. Process flags first, then the question.
 
-(The `--repo <name>` flag and bare-invocation prompt are deferred to Phase 4 — do not implement them here.)
+### 2.1 — Extract `--repo <name>` flag (if present)
 
-## Step 3: Auto-Detect Repo from cwd
+Scan the args (in any order) for a `--repo <name>` flag. The flag can appear before or after the question — both `/xavier ask --repo appkit "<q>"` and `/xavier ask "<q>" --repo appkit` are valid.
 
-Resolve the current repository name:
+1. If `--repo` appears with no value following it, abort with: `Error: --repo flag requires a value. Usage: /xavier ask --repo <name> "<question>".` Then stop.
+2. If `--repo` appears more than once, abort with: `Error: --repo flag specified more than once. Usage: /xavier ask --repo <name> "<question>".` Then stop.
+3. Validate the captured `<name>` against the `knowledge/repos` segment grammar from the router's wikilink validation rules:
 
-1. Try `git remote get-url origin 2>/dev/null`. If it succeeds, take the trailing path segment of the URL and strip a trailing `.git` suffix. Use that as `REPO_NAME`.
-2. If the git remote lookup fails or returns nothing, fall back to `basename "$(pwd)"`.
+   ```
+   ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$
+   ```
+
+   Reject any value that contains `/`, `\`, `..`, leading `.`, whitespace, control characters, an absolute path, or any character outside the grammar. On invalid name, abort BEFORE any filesystem read with: `Error: --repo value "<name>" is not a valid repo segment. Expected pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$ (no slashes, no '..', no leading '.', no whitespace).` Then stop. Quote the bad input verbatim in the error so the user can see what was rejected.
+4. If valid, store the value as the `REPO_NAME` override. Step 3's cwd-derivation logic is skipped — use the override directly.
+
+Remove the `--repo <name>` tokens from the arg list before continuing to 2.2.
+
+### 2.2 — Extract positional question
+
+After flag extraction, treat the first remaining positional argument as the question string. Trim surrounding whitespace and matching surrounding quotes (a single matched pair of `"` or `'`).
+
+### 2.3 — Bare invocation (no positional question)
+
+If no positional question remains after 2.1 and 2.2:
+
+- **Detect-and-defer**: if Step 1 found `SHARK_TASK_HASH` set (non-empty), print this short error and exit cleanly: `Error: ask remora was invoked without a question; cannot continue.` Do NOT call `AskUserQuestion` — remoras cannot drive interactive prompts.
+- **Interactive (no `SHARK_TASK_HASH`)**: fire a single `AskUserQuestion` with the body `What's your question?` (free-text answer expected). After the user supplies the question, trim whitespace and matching surrounding quotes the same way as 2.2 and treat the result as the question string. Single-turn — no follow-up loop. If the user returns an empty string, abort with: `Error: no question provided. Aborting.` Then stop.
+
+Proceed to Step 3 once a non-empty question string is in hand.
+
+## Step 3: Resolve Repo Scope
+
+Resolve the current repository name. There are two derivation paths — flag override and cwd auto-detect — but the existence check that follows applies to both.
+
+**3a. Derive `REPO_NAME`:**
+
+- **If Step 2.1 set a `REPO_NAME` override via `--repo`**: use that value directly. Skip the cwd-derivation logic below.
+- **Otherwise (no `--repo` flag)**, auto-detect from cwd:
+  1. Try `git remote get-url origin 2>/dev/null`. If it succeeds, take the trailing path segment of the URL and strip a trailing `.git` suffix. Use that as `REPO_NAME`.
+  2. If the git remote lookup fails or returns nothing, fall back to `basename "$(pwd)"`.
+
+**3b. Existence check (applies to both derivation paths):**
+
 3. Check whether `<vault>/knowledge/repos/<REPO_NAME>/` exists as a directory. If it does, proceed to Step 4 with the vault-scoped flow.
 4. **Empty-vault edge case**: if `<vault>/knowledge/repos/<REPO_NAME>/` does NOT exist (no captured knowledge for this repo), skip Steps 4–6 entirely. The vault read and team-convention resolution have nothing to surface and the sufficiency assessment would always trip the floor rule. Jump straight to Step 8 (Research Fallback) with the following adjustments:
    - The `AskUserQuestion` prompt body MUST append this tip on a new line:
