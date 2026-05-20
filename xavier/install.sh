@@ -39,6 +39,33 @@ warn()  { printf "${YELLOW}[xavier]${RESET} %s\n" "$1"; }
 error() { printf "${RED}[xavier]${RESET} %s\n" "$1" >&2; }
 bold()  { printf "${BOLD}%s${RESET}\n" "$1"; }
 
+# --- Canonical command list (single source of truth) ---
+# Used by install_command_aliases() to generate per-command aliases AND by
+# install_prose_trigger() to embed the subcommand list in the managed block.
+# Both consumers MUST read from this variable; never hardcode a parallel list.
+# Format: command|description
+COMMANDS="
+setup|Create and configure the Xavier vault
+review|Run Shark-pattern code review with concurrent reviewer personas
+babysit|Monitor a PR — poll CI status, auto-fix lint failures, surface review comments
+grill|Interview about a plan or design until reaching shared understanding
+investigate|Investigate a bug or system behavior with structured diagnosis
+prd|Create a PRD through user interview, codebase exploration, and module design
+tasks|Decompose a PRD into phased implementation tasks
+learn|Explore a codebase and produce knowledge notes in the vault
+loop|Execute a task file as an autonomous loop using the Shark pattern
+mark|Move a PRD or task between active, done, and superseded states
+add-dep|Create a dependency-skill for a package with best practices and API patterns
+remove-dep|Delete a dependency-skill
+research|Research a topic across web, internal docs, and codebase
+deps-update|Scan lockfile and regenerate stale dependency-skills
+export|Export a vault note to your personal Obsidian vault
+bug|File a bug report as a GitHub Issue in the Xavier upstream repo
+feedback|Open a GitHub Discussion in the Xavier upstream repository
+self-update|Update Xavier skills and references to the latest release
+uninstall|Remove the Xavier vault and all symlinks
+"
+
 # --- Pre-flight checks ---
 check_deps() {
   for cmd in git; do
@@ -76,6 +103,7 @@ check_existing() {
              wire_adapters
              install_skill
              install_command_aliases
+             install_prose_trigger
              link_xavier_skills_and_refs
              exit 0 ;;
         a|A) info "Aborted. No changes made."
@@ -141,6 +169,8 @@ version: 1
 - **adapter**: (not yet detected)
 - **command-aliases**: yes
 - **alias-prefix**: xavier
+- **prose-trigger**: no
+- **trigger-word**: Xavier
 CONFIGEOF
   fi
 
@@ -384,30 +414,7 @@ install_command_aliases() {
 
   info "Generating per-command aliases (prefix: $ALIAS_PREFIX)..."
 
-  # Command descriptions for alias files
-  # Format: command|description
-  COMMANDS="
-setup|Create and configure the Xavier vault
-review|Run Shark-pattern code review with concurrent reviewer personas
-babysit|Monitor a PR — poll CI status, auto-fix lint failures, surface review comments
-grill|Interview about a plan or design until reaching shared understanding
-investigate|Investigate a bug or system behavior with structured diagnosis
-prd|Create a PRD through user interview, codebase exploration, and module design
-tasks|Decompose a PRD into phased implementation tasks
-learn|Explore a codebase and produce knowledge notes in the vault
-loop|Execute a task file as an autonomous loop using the Shark pattern
-mark|Move a PRD or task between active, done, and superseded states
-add-dep|Create a dependency-skill for a package with best practices and API patterns
-remove-dep|Delete a dependency-skill
-research|Research a topic across web, internal docs, and codebase
-deps-update|Scan lockfile and regenerate stale dependency-skills
-export|Export a vault note to your personal Obsidian vault
-bug|File a bug report as a GitHub Issue in the Xavier upstream repo
-feedback|Open a GitHub Discussion in the Xavier upstream repository
-self-update|Update Xavier skills and references to the latest release
-uninstall|Remove the Xavier vault and all symlinks
-"
-
+  # Read commands from the canonical $COMMANDS variable defined at script top.
   echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
     [ -z "$cmd" ] && continue
 
@@ -449,6 +456,155 @@ ALIASEOF
   done
 
   info "Command aliases installed for Claude Code and Cursor."
+}
+
+# --- Install prose-trigger managed block into Claude Code's ~/.claude/CLAUDE.md ---
+# Writes (or refreshes) a single managed block, wrapped between
+#   <!-- BEGIN xavier-prose-trigger --> / <!-- END xavier-prose-trigger -->
+# teaching the LLM to detect a vocative trigger word ("Xavier" by default) and
+# route through the `xavier` Skill tool. Behaviour follows the contract in
+# [[prd/xavier-prose-trigger]] — vocative-only, hybrid keyword/intent routing,
+# meta questions to the bare router, off-topic prose answered normally.
+#
+# Lifecycle:
+# - prose-trigger: yes (in $XAVIER_HOME/config.md) → write/refresh the block,
+#   creating ~/.claude/CLAUDE.md from empty if needed. Idempotent: if the markers
+#   already exist, replace only the content between them; surrounding user content
+#   is preserved byte-for-byte.
+# - prose-trigger: no → no-op for now. Phase 3 owns the disable/strip path.
+#
+# The subcommand list embedded in the block is derived from the canonical
+# $COMMANDS variable (the same source feeds install_command_aliases), so the
+# two surfaces never drift.
+install_prose_trigger() {
+  # Default: feature disabled. Existing users running self-update don't get
+  # surprising new behaviour until they opt in via setup or config edit.
+  PROSE_TRIGGER_ENABLED="no"
+  TRIGGER_WORD="Xavier"
+
+  if [ -f "$XAVIER_HOME/config.md" ]; then
+    pt_val="$(grep -o '\*\*prose-trigger\*\*: *[a-zA-Z]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
+    pt_val="$(echo "$pt_val" | tr '[:upper:]' '[:lower:]')"
+    if [ "$pt_val" = "yes" ] || [ "$pt_val" = "true" ]; then
+      PROSE_TRIGGER_ENABLED="yes"
+    fi
+
+    # Trigger word: ASCII letter start, then letters/digits/hyphens, ≤32 chars total.
+    # Same shape as alias-prefix but with stricter leading-character rules and a
+    # length cap to keep the embedded block readable.
+    tw_val="$(grep -o '\*\*trigger-word\*\*: *[^ ]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
+    if [ -n "$tw_val" ]; then
+      if printf '%s' "$tw_val" | grep -qE '^[a-zA-Z][a-zA-Z0-9-]{0,31}$'; then
+        TRIGGER_WORD="$tw_val"
+      else
+        warn "Invalid trigger-word '$tw_val' — must match ^[a-zA-Z][a-zA-Z0-9-]{0,31}$. Falling back to 'Xavier'."
+      fi
+    fi
+  fi
+
+  if [ "$PROSE_TRIGGER_ENABLED" = "no" ]; then
+    info "Prose trigger disabled in config — skipping ~/.claude/CLAUDE.md write."
+    return 0
+  fi
+
+  info "Installing prose trigger (trigger-word: $TRIGGER_WORD)..."
+
+  # Build a comma-separated subcommand list from the canonical $COMMANDS array.
+  # Single source of truth — see the comment on the top-level $COMMANDS variable.
+  # awk joins with ", " by tracking the first row; cannot use `paste -sd ', '`
+  # because BSD paste cycles characters in the delimiter string (would produce
+  # "setup,review babysit,grill ...").
+  SUBCOMMAND_LIST="$(echo "$COMMANDS" | awk -F'|' '
+    NF > 0 && $1 != "" {
+      if (out == "") { out = $1 } else { out = out ", " $1 }
+    }
+    END { print out }
+  ')"
+
+  CLAUDE_MD="$HOME/.claude/CLAUDE.md"
+  BEGIN_MARKER="<!-- BEGIN xavier-prose-trigger -->"
+  END_MARKER="<!-- END xavier-prose-trigger -->"
+
+  # Build the managed block content with $TRIGGER_WORD and $SUBCOMMAND_LIST
+  # substituted. Skill-tool-delegation framing is taken directly from the
+  # [[prd/fix-alias-skills]] lesson — explicit Skill-tool invocation, never
+  # "run /xavier <cmd>" freeform language.
+  #
+  # We write the block to a temp file so the marker-replacement awk pass can
+  # `getline` it cleanly. Passing multi-line values through `awk -v` is not
+  # portable on BSD awk (macOS), which rejects embedded newlines.
+  block_file="$(mktemp "${TMPDIR:-/tmp}/xavier-prose-block.XXXXXX")"
+  cat > "$block_file" <<MANAGEDEOF
+${BEGIN_MARKER}
+## Xavier prose trigger
+
+When the user addresses you as "${TRIGGER_WORD}" in vocative position — sentence-initial
+"${TRIGGER_WORD}, …", "${TRIGGER_WORD}: …", "Hey ${TRIGGER_WORD} …", "OK ${TRIGGER_WORD} …" —
+treat it as a Xavier invocation. Mid-sentence "${TRIGGER_WORD}" or lowercase variants do NOT
+trigger.
+
+Routing:
+- Subcommand keyword present (${SUBCOMMAND_LIST}): Use the Skill tool to invoke:
+  - skill: "xavier"
+  - args: "<cmd> <remaining-prose>"
+  Do NOT execute the skill directly. Do NOT read vault files. Delegate to the xavier router.
+- No keyword, intent clear: confirm with one line — "Sounds like a grill.
+  Run /xavier grill? (Y/n)" — then on assent, Use the Skill tool to invoke:
+  - skill: "xavier"
+  - args: "<inferred-cmd> <remaining-prose>"
+- Meta question about Xavier ("what can you do?", "help", "list commands"):
+  Use the Skill tool to invoke:
+  - skill: "xavier"
+  - args: ""
+  The router lists subcommands.
+- Off-topic or no confident subcommand match: drop the trigger and answer
+  normally without invoking a skill.
+${END_MARKER}
+MANAGEDEOF
+
+  # Create-from-empty: if ~/.claude/CLAUDE.md doesn't exist yet, write a new
+  # file containing just the managed block (cat preserves the trailing newline
+  # that the heredoc emitted).
+  if [ ! -f "$CLAUDE_MD" ]; then
+    mkdir -p "$(dirname "$CLAUDE_MD")"
+    cat "$block_file" > "$CLAUDE_MD"
+    rm -f "$block_file"
+    info "Created $CLAUDE_MD with prose-trigger block."
+    return 0
+  fi
+
+  # Idempotent refresh: if markers already exist, replace only the content
+  # between them. Preserves surrounding user content byte-for-byte. If the
+  # markers are missing, append the block to the existing file.
+  if grep -qF "$BEGIN_MARKER" "$CLAUDE_MD" && grep -qF "$END_MARKER" "$CLAUDE_MD"; then
+    tmp_file="$(mktemp "${TMPDIR:-/tmp}/xavier-claude-md.XXXXXX")"
+    # awk replaces the marker-delimited region in one pass. We load the new
+    # block from $block_file with getline (avoids the BSD-awk multi-line -v
+    # limitation). Pre-marker lines pass through; once BEGIN is seen, emit the
+    # new block once and suppress lines until END; post-END lines pass through.
+    awk -v begin="$BEGIN_MARKER" -v end="$END_MARKER" -v blockfile="$block_file" '
+      BEGIN {
+        block = ""
+        while ((getline line < blockfile) > 0) {
+          block = (block == "" ? line : block "\n" line)
+        }
+        close(blockfile)
+      }
+      $0 == begin { print block; skipping = 1; next }
+      skipping && $0 == end { skipping = 0; next }
+      !skipping { print }
+    ' "$CLAUDE_MD" > "$tmp_file"
+    mv "$tmp_file" "$CLAUDE_MD"
+    rm -f "$block_file"
+    info "Refreshed prose-trigger block in $CLAUDE_MD."
+  else
+    # File exists but no markers — append the block with a leading blank line
+    # so the boundary between user content and managed block is readable.
+    printf '\n' >> "$CLAUDE_MD"
+    cat "$block_file" >> "$CLAUDE_MD"
+    rm -f "$block_file"
+    info "Appended prose-trigger block to $CLAUDE_MD."
+  fi
 }
 
 # --- Symlink or copy skills & references into ~/.xavier/ ---
@@ -638,6 +794,7 @@ main() {
 
   install_skill
   install_command_aliases
+  install_prose_trigger
   link_xavier_skills_and_refs
   print_summary
 }

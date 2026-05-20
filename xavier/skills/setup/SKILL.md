@@ -45,7 +45,9 @@ Run this interview whether this is a fresh setup or a preference update. Use Ask
    - `yes` (Recommended) — install aliases for all 14 commands
    - `no` — skip aliases, use `/xavier <command>` only
    If `yes`, ask a follow-up: **Alias prefix** — "What prefix should aliases use? (e.g. 'xavier' for xavier-review, 'x' for x-review, or any short name you prefer. Default: xavier)". Store as `alias-prefix` in config. If skipped or blank, default to `xavier`.
-7. **Export vault path** — "Where is your personal Obsidian vault? (optional — used by /xavier export to sync notes)" This question is **skippable** — if the user skips or leaves it blank, no `## Export` section is written and `/xavier export` will ask for the path later. If provided, store as `export-vault-path` under a `## Export` section in `config.md` (see Step 3a).
+7. **Prose trigger** — "Enable prose trigger? [y/N]" — when enabled, Xavier installs a managed instruction block into `~/.claude/CLAUDE.md` that teaches the LLM to detect a vocative trigger word (e.g. "Xavier, grill me on this plan") and route through the `xavier` Skill tool. Default: `no`. Store as `prose-trigger` in config (`yes` or `no`).
+   If `yes`, ask a follow-up: **Trigger word** — "Trigger word? [Xavier]". Validate against `^[a-zA-Z][a-zA-Z0-9-]{0,31}$` — must start with an ASCII letter, contain only letters/digits/hyphens, and be at most 32 characters. If the input fails validation, warn the user and re-prompt; never accept invalid input. If skipped or blank, default to `Xavier`. Store as `trigger-word` in config.
+8. **Export vault path** — "Where is your personal Obsidian vault? (optional — used by /xavier export to sync notes)" This question is **skippable** — if the user skips or leaves it blank, no `## Export` section is written and `/xavier export` will ask for the path later. If provided, store as `export-vault-path` under a `## Export` section in `config.md` (see Step 3a).
 
 ## Step 2c: Detect Existing Global Skills
 
@@ -106,6 +108,8 @@ version: 1
 - **adapter**: {detected adapter name, e.g. "claude-code" — see Step 3e}
 - **command-aliases**: {yes or no — from interview question 6}
 - **alias-prefix**: {prefix string — from follow-up to question 6, e.g. "xavier", "x", or custom. Omit if command-aliases is no}
+- **prose-trigger**: {yes or no — from interview question 7. Default no}
+- **trigger-word**: {trigger word string — from follow-up to question 7. Default Xavier. Omit if prose-trigger is no}
 
 ## Export
 
@@ -113,7 +117,7 @@ version: 1
 - **export-show-diff**: false
 ```
 
-> **Note**: The `## Export` section is only written if the user provided an export vault path in question 6. If they skipped the question, omit the entire section.
+> **Note**: The `## Export` section is only written if the user provided an export vault path in question 8. If they skipped the question, omit the entire section.
 
 ### Step 3b: MEMORY.md
 
