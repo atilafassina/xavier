@@ -331,9 +331,26 @@ if [ -f "$XAVIER_HOME/config.md" ]; then
 fi
 ```
 
-### Disabled-config short-circuit
+### Disabled-config strip path
 
-If `PROSE_TRIGGER_ENABLED` is `"no"` (the default), skip the rest of this step and proceed to Step 9. The disable/strip path is owned by Phase 3 of the source PRD `[[prd/xavier-prose-trigger]]`; until then, self-update never removes an existing block — it only refreshes when enabled.
+If `PROSE_TRIGGER_ENABLED` is `"no"` (the default), strip any managed block already present in `~/.claude/CLAUDE.md` rather than refresh one. The strip behaviour mirrors `strip_prose_trigger_block()` in `xavier/install.sh` byte-for-byte so that running `install.sh` with `prose-trigger: no` and running `/xavier self-update` with `prose-trigger: no` produce identical post-states for the same `CLAUDE.md` input.
+
+Let `CLAUDE_MD = $HOME/.claude/CLAUDE.md`.
+
+1. **`CLAUDE_MD` does not exist** → silent no-op. Proceed to Step 9. Do not create the file.
+2. **`CLAUDE_MD` exists but does not contain BOTH the BEGIN and END markers** → silent no-op. Proceed to Step 9. Never touch a host file that does not carry a Xavier-managed block.
+3. **`CLAUDE_MD` exists and contains both markers** → strip the marker-delimited region (markers inclusive), then:
+   - If the resulting bytes are empty or whitespace-only (Xavier was the sole writer) → **delete** `CLAUDE_MD`. Report "Removed empty ~/.claude/CLAUDE.md after stripping prose-trigger block."
+   - Otherwise → write the stripped content back. Report "Stripped prose-trigger block from ~/.claude/CLAUDE.md."
+
+Byte contract for the strip operation — must match `strip_prose_trigger_block()` exactly:
+
+- Remove the BEGIN marker line (and its terminating newline).
+- Remove every line between BEGIN and END.
+- Remove the END marker line (and its terminating newline — this is the "single trailing newline directly following the END marker").
+- Preserve every other byte of `CLAUDE_MD`: leading content, trailing content, blank lines, anything outside the marker region.
+
+Use the LLM's Read/Write tools rather than awk — the install.sh shell script needs awk for portability, but the resulting bytes here must match. After writing (or deleting), proceed to Step 9. Do NOT execute the enabled-path subcommand-list/marker/template logic below.
 
 ### Build the subcommand list
 

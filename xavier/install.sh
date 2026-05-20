@@ -458,6 +458,58 @@ ALIASEOF
   info "Command aliases installed for Claude Code and Cursor."
 }
 
+# --- Strip the prose-trigger managed block from ~/.claude/CLAUDE.md ---
+# Removes the BEGIN/END-marker-delimited region (markers inclusive) plus the
+# single newline directly terminating the END marker line. Preserves all other
+# bytes of $CLAUDE_MD. If the resulting file is empty or whitespace-only
+# (Xavier was the sole writer), the file is deleted. Silent no-op when the
+# file does not exist or contains no markers.
+#
+# This is the inverse of the write path in install_prose_trigger() and is
+# shared by the disable path (prose-trigger: no) and `/xavier uninstall`'s
+# managed-block-strip step. Step 8b of xavier/skills/self-update/SKILL.md
+# mirrors this logic in LLM-tool form — the resulting file bytes must match.
+strip_prose_trigger_block() {
+  CLAUDE_MD="$HOME/.claude/CLAUDE.md"
+  BEGIN_MARKER="<!-- BEGIN xavier-prose-trigger -->"
+  END_MARKER="<!-- END xavier-prose-trigger -->"
+
+  # No-op when file is absent.
+  if [ ! -f "$CLAUDE_MD" ]; then
+    return 0
+  fi
+
+  # No-op when either marker is missing — never touch a file that does not
+  # carry a Xavier-managed block, even if a user added an unbalanced marker.
+  if ! grep -qF "$BEGIN_MARKER" "$CLAUDE_MD" || ! grep -qF "$END_MARKER" "$CLAUDE_MD"; then
+    return 0
+  fi
+
+  tmp_file="$(mktemp "${TMPDIR:-/tmp}/xavier-claude-md.XXXXXX")"
+  # Skip every line from BEGIN through END inclusive. awk's line-skip with
+  # `next` naturally absorbs the `\n` terminating each skipped line — the
+  # single trailing newline after the END marker is consumed for free.
+  # Surrounding user content (above BEGIN and below END) prints untouched,
+  # byte-for-byte.
+  awk -v begin="$BEGIN_MARKER" -v end="$END_MARKER" '
+    $0 == begin { skipping = 1; next }
+    skipping && $0 == end { skipping = 0; next }
+    !skipping { print }
+  ' "$CLAUDE_MD" > "$tmp_file"
+
+  # If only whitespace (or nothing) remains, Xavier was the sole writer —
+  # remove the file rather than leave a stub. `tr -d '[:space:]'` strips all
+  # whitespace including newlines; if the residue is empty, delete the host.
+  residue="$(tr -d '[:space:]' < "$tmp_file")"
+  if [ -z "$residue" ]; then
+    rm -f "$CLAUDE_MD" "$tmp_file"
+    info "Removed empty $CLAUDE_MD after stripping prose-trigger block."
+  else
+    mv "$tmp_file" "$CLAUDE_MD"
+    info "Stripped prose-trigger block from $CLAUDE_MD."
+  fi
+}
+
 # --- Install prose-trigger managed block into Claude Code's ~/.claude/CLAUDE.md ---
 # Writes (or refreshes) a single managed block, wrapped between
 #   <!-- BEGIN xavier-prose-trigger --> / <!-- END xavier-prose-trigger -->
@@ -471,7 +523,9 @@ ALIASEOF
 #   creating ~/.claude/CLAUDE.md from empty if needed. Idempotent: if the markers
 #   already exist, replace only the content between them; surrounding user content
 #   is preserved byte-for-byte.
-# - prose-trigger: no → no-op for now. Phase 3 owns the disable/strip path.
+# - prose-trigger: no → strip any managed block via strip_prose_trigger_block().
+#   Silent no-op when no block is present. If stripping leaves the host file
+#   empty (Xavier was the sole writer), the file is removed.
 #
 # The subcommand list embedded in the block is derived from the canonical
 # $COMMANDS variable (the same source feeds install_command_aliases), so the
@@ -503,7 +557,10 @@ install_prose_trigger() {
   fi
 
   if [ "$PROSE_TRIGGER_ENABLED" = "no" ]; then
-    info "Prose trigger disabled in config — skipping ~/.claude/CLAUDE.md write."
+    # Disable path: strip any existing managed block. Silent no-op when the
+    # file or markers are absent. See strip_prose_trigger_block() above for
+    # the byte-level contract this branch enforces.
+    strip_prose_trigger_block
     return 0
   fi
 
