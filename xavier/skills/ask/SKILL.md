@@ -1,7 +1,7 @@
 ---
 name: ask
 description: Answer focused questions about a repo using captured team knowledge; spawn research only when the vault is thin.
-requires: [shark, adapter, repo-conventions:optional, team-conventions:optional, recurring-patterns:optional, research-index:optional, investigations-index:optional]
+requires: [shark, adapter, repo-conventions:optional, team-conventions:optional, recurring-patterns:optional, research-index:optional, investigations-index:optional, qa-index:optional]
 ---
 
 # Ask
@@ -73,10 +73,10 @@ Load context with a two-tier strategy: full read for repo-scoped notes, index-on
 
 **Index-only read + relevance match (full read on hit):**
 
-- The `research-index` and `investigations-index` requires keys are pre-resolved by the router. They surface titles and frontmatter from `<vault>/research/` and `<vault>/investigations/` respectively — no body content.
+- The `research-index`, `investigations-index`, and `qa-index` requires keys are pre-resolved by the router. They surface titles and frontmatter from `<vault>/research/`, `<vault>/investigations/`, and `<vault>/knowledge/qa/` respectively — no body content.
 - Extract salient nouns from the question (lowercase content words, stop-words filtered).
-- For each index entry, check whether any salient noun overlaps the entry's title, `topic`/`symptom` frontmatter, `tags`, or filename.
-- For each entry that matches, full-read that note's body. Cite it in Step 7 (or Step 9, on the research-fallback path) like any other source.
+- For each index entry, check whether any salient noun overlaps the entry's title, `topic` / `symptom` / `question` frontmatter, `tags`, or filename slug. The `question` field is the primary identifier for prior Q&A notes — match against it the same way `topic` is matched for research and `symptom` is matched for investigations.
+- For each entry that matches, full-read that note's body. Cite it in Step 7 (or Step 9, on the research-fallback path) like any other source — prior Q&A notes are cited via `[[knowledge/qa/<filename>]]` wikilinks.
 - Entries with no overlap stay index-only — their bodies are never loaded. Token cost stays bounded.
 
 ## Step 6: Assess Vault Sufficiency
@@ -112,7 +112,7 @@ The floor rule is the deterministic gate that catches the obvious thin-vault cas
 
 ## Step 7: Synthesize and Present (Vault-Sufficient)
 
-Synthesize the answer in TL;DR + Evidence + Sources format using the loaded context. Print inline. **Do not save** — vault-only save UX lands in Phase 3.
+Synthesize the answer in TL;DR + Evidence + Sources format using the loaded context. Print inline. The vault-only save UX in Step 10 runs after this step for the sufficient branch only.
 
 **Output template:**
 
@@ -151,7 +151,7 @@ If the flow reached this step from a thin-vault verdict (detect-and-defer in eff
 
   > *Vault context is thin for this question and research was declined — partial answer only.*
 
-After printing the synthesis, the skill is done. No save, no follow-up, no remora spawn. (Vault-only save UX lands in Phase 3.)
+After printing the synthesis on the partial-answer branch, the skill is done. No save, no follow-up, no remora spawn. The vault-only save prompt in Step 10 is skipped for partial answers — only the fully sufficient synthesis path flows into Step 10.
 
 ## Step 8: Research Fallback (User-Confirmed)
 
@@ -355,3 +355,36 @@ After writing, print one line below the synthesized answer:
 > Saved to `knowledge/qa/{REPO_NAME}_{YYYY-MM-DD}_{slug}.md`.
 
 (Use the post-collision filename if a suffix was applied.) The skill is now done. No follow-up, no further prompts.
+
+## Step 10: Vault-Only Save Prompt (Sufficient Path)
+
+This step runs only on the fully sufficient synthesis branch of Step 7 — Step 6 routed there, Step 7 produced an answer that was NOT the partial-answer branch (no thin-vault gap-note footer), and the research-fallback path of Steps 8–9 did not execute. Vault-only answers are asymmetric with research-fallback answers: research-fallback output is auto-saved (Step 9) because it carries net-new external info, while vault-only output is redundant with its source notes and the save is therefore opt-in with a default of No.
+
+**Detect-and-defer**: when Step 1 found `SHARK_TASK_HASH` set, this step MUST NOT run. Skip the prompt entirely — no `AskUserQuestion`, no save. The remora exits cleanly after Step 7's print. This applies regardless of how the sufficient branch was reached.
+
+### 10.1 — Prompt the user
+
+Fire a single `AskUserQuestion` with the following body and two response options:
+
+> Save this answer to vault? (yes/no)
+
+- **Option `no`** (default): do nothing. The skill exits cleanly. No file is written.
+- **Option `yes`**: proceed to 10.2 (save).
+
+The default is No because vault-only synthesis is redundant with its source notes — saving would duplicate information already captured under `knowledge/repos/<repo>/`, `knowledge/teams/<team>/`, `research/`, or prior `knowledge/qa/` entries. The opt-in exists for the case where the user wants to capture the synthesis itself (e.g., the cross-note framing is novel and worth caching).
+
+### 10.2 — Save (yes branch)
+
+Reuse Step 9's slug derivation, filename collision handling, directory bootstrap, frontmatter schema, and announce-the-save logic exactly. The vault-only save path is identical to the research-fallback save path with one difference: there is no remora-surfaced external content, so the `sources` frontmatter field is omitted (no URLs or file paths from remoras to record) and the `related` list contains only the vault wikilinks cited in Evidence.
+
+Specifically, follow these sub-steps from Step 9 in order, with no modification:
+
+- **9.2 — Slug derivation**: derive the slug from the original question text using the stop-word filter and 5-token cap.
+- **9.3 — Filename and collision handling**: target `<vault>/knowledge/qa/{REPO_NAME}_{YYYY-MM-DD}_{slug}.md`, append `-2`, `-3`, … on collision.
+- **9.4 — Directory bootstrap**: `mkdir -p "<vault>/knowledge/qa"` before writing.
+- **9.5 — Write the note**: emit the Zettelkasten frontmatter exactly as defined in 9.5 (with the field-omission note above — drop `sources` when empty), followed by the Step 7 synthesis body (TL;DR + Evidence + Sources) unmodified.
+- **9.6 — Announce the save**: print the `Saved to knowledge/qa/{...}.md.` line below the already-printed answer.
+
+Do not duplicate the schema or slug logic inline — point at Step 9. The single-source-of-truth keeps the two save paths from drifting.
+
+After 9.6 prints (or the user declined in 10.1), the skill is done. No follow-up, no further prompts.

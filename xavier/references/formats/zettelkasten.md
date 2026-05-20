@@ -7,7 +7,7 @@ Base frontmatter schema for all knowledge notes in the Xavier vault. Every note 
 ```yaml
 ---
 repo: {repository name where the note originated}
-type: {note type — one of: review, prd, tasks, knowledge, dependency, research, investigation}
+type: {note type — one of: review, prd, tasks, knowledge, dependency, research, investigation, qa}
 created: {ISO date, e.g. 2026-04-05}
 updated: {ISO date, e.g. 2026-04-05}
 tags:
@@ -25,7 +25,7 @@ related:
 | `repo`    | string | Name of the git repository this note relates to (optional for `type: research`) |
 | `team`    | string | Team name (from config) — optional, include when the note is team-scoped |
 | `module`  | string | Most-changed directory or module — optional, include for reviews         |
-| `type`    | string | Note type: `review`, `prd`, `tasks`, `knowledge`, `dependency`, `research`, `investigation` |
+| `type`    | string | Note type: `review`, `prd`, `tasks`, `knowledge`, `dependency`, `research`, `investigation`, `qa` |
 | `created` | date   | ISO date when the note was first created                                 |
 | `updated` | date   | ISO date when the note was last modified                                 |
 | `tags`    | list   | Freeform tags for categorization and search                              |
@@ -80,6 +80,10 @@ The router's `prd-index` and `tasks-index` requires keys glob top-level `*.md` o
 
 - `symptom`: normalized one-line summary of what's broken — primary identifier for investigation notes
 - `verdict`: one-line summary of the top-ranked hypothesis — enables scanning investigation notes without reading the full body
+
+### Q&A
+
+- `question`: original question text passed to `/xavier ask` — primary identifier for Q&A notes. Used by `qa-index` cache lookups to surface related prior answers.
 
 ## Wikilink Conventions
 
