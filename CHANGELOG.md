@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- `validate-xavier-frontmatter.sh` now recognizes `ask` as a note-writing skill and `qa` as a valid Zettelkasten type
+- `validate-xavier-frontmatter.sh` now recognizes `ask` as a note-writing skill and `qa-index` in the allowed `requires:` vocabulary
 - `validate-skills.sh` enforces that any skill reading `<vault>/knowledge/qa/` must declare `qa-index` in its `requires:` list (mirrors the existing rule for `research/`)
 
 ### Deprecated
