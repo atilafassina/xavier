@@ -21,12 +21,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/xavier uninstall` Step 3b — removes `~/.cursor/skills/prose-trigger/`; `uninstall.sh` removes the same path explicitly
 - `validate-skills.sh` marker-drift check — Claude BEGIN/END markers byte-identical in `install.sh` and `self-update/SKILL.md`
 - `validate-skills.sh` Cursor prose-trigger template drift check — anchor strings byte-identical in `install.sh` and `self-update/SKILL.md`
+- `/xavier ask "<question>"` skill — read-first Q&A grounded in the user's captured vault knowledge (`knowledge/repos/{repo}/decisions.md`, `architecture.md`, team conventions via `related:` wikilinks, `recurring-patterns` from recent reviews) with relevance-matched reads of `research/`, `investigations/`, and `knowledge/qa/`. Synthesizes an answer in TL;DR + Evidence + Sources format with inline `[[wikilinks]]` to source notes
+- User-confirmed research fallback in `/xavier ask` — when the vault is thin on the topic (floor rule: no salient noun from the question is mentioned in any loaded note; otherwise model judgment), the skill prompts before spawning an adaptive count of remoras (1 narrow / 3 design / 5 exploratory) via `adapter.collect()`. Research remoras are scoped to the current repo (grep, git history, vault deep-scan) — narrower than `/xavier research`'s broad-topic axes
+- Asymmetric persistence in `/xavier ask`: research-fallback answers auto-save to `knowledge/qa/{repo}_{YYYY-MM-DD}_{slug}.md` (net-new info); vault-only answers prompt `save? (y/n)` with default No (redundant with source notes). Slug derivation tokenizes the question, filters stop-words, takes the first 5 content words; collisions resolved with deterministic numeric suffix (`-2`, `-3`, …)
+- Empty-vault graceful degrade in `/xavier ask`: if `knowledge/repos/{repo}/` doesn't exist, skips vault read and routes straight to the research-fallback prompt with a `💡 Run /xavier learn to cache repo knowledge` tip appended
+- `--repo <name>` flag for `/xavier ask` to override cwd-derived repo scope, validated against the `knowledge/repos` segment grammar (`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`) before any filesystem read; rejects `/`, `\`, `..`, leading `.`, whitespace, and absolute paths
+- Bare invocation `/xavier ask` prompts once via `AskUserQuestion` for the question — single-turn, no follow-up loop. Detect-and-defer: when invoked inside an outer Shark loop (`SHARK_TASK_HASH` set), bare invocation and the save / research prompts are all suppressed so the skill behaves as a non-interactive executor
+- `qa-index` vocabulary key in the router — lists `.md` files in `<vault>/knowledge/qa/` with titles and frontmatter (no body), mirroring `research-index` and `investigations-index`. Brings the requires vocabulary to 15 keys
+- `type: qa` in the Zettelkasten schema with `question` as the type-specific field — original question text passed to `/xavier ask`, used by `qa-index` cache lookups to surface related prior answers
+- Prior Q&A as a cache source — `/xavier ask` reads `qa-index` alongside research/investigations indexes and full-reads matching notes on relevance, citing them via `[[knowledge/qa/<filename>]]` in Evidence / Sources
 
 ### Changed
 
 - The canonical `COMMANDS` list in `install.sh` is now a top-level constant rather than defined inside `install_command_aliases()`; both that function and the new `install_prose_trigger()` consume it
 - README documents prose-trigger per-runtime delivery (Claude always-on block vs Cursor selection-based skill), alias-prefix slash-menu isolation, and optional User Rules paste for always-on Cursor behaviour
 - `/xavier setup` interview copy updated to describe both Claude Code and Cursor surfaces when prose-trigger is enabled
+- `validate-xavier-frontmatter.sh` now recognizes `ask` as a note-writing skill and `qa-index` in the allowed `requires:` vocabulary
+- `validate-skills.sh` enforces that any skill reading `<vault>/knowledge/qa/` must declare `qa-index` in its `requires:` list (mirrors the existing rule for `research/`)
 
 ### Deprecated
 

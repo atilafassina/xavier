@@ -58,6 +58,7 @@ mark|Move a PRD or task between active, done, and superseded states
 add-dep|Create a dependency-skill for a package with best practices and API patterns
 remove-dep|Delete a dependency-skill
 research|Research a topic across web, internal docs, and codebase
+ask|Answer focused questions about a repo using captured team knowledge
 deps-update|Scan lockfile and regenerate stale dependency-skills
 export|Export a vault note to your personal Obsidian vault
 bug|File a bug report as a GitHub Issue in the Xavier upstream repo

@@ -69,7 +69,7 @@ The Cursor skill uses a **fixed name** (`prose-trigger`), outside the command-al
  Xavier follows the **Shark pattern**: a central orchestrator that delegates work to concurrent background agents (remoras), never implementing
  anything itself. Results are verified through backpressure — only test, lint, and typecheck output counts as truth.
 
- A runtime **adapter** layer abstracts the differences between AI agent runtimes. Skills use generic operations (`spawn`, `collect`, `poll`) that the adapter maps to the correct tool for the active runtime — `Agent` for Claude Code, `Task` for Cursor. This means all 18 skills work identically regardless of which runtime you use.
+ A runtime **adapter** layer abstracts the differences between AI agent runtimes. Skills use generic operations (`spawn`, `collect`, `poll`) that the adapter maps to the correct tool for the active runtime — `Agent` for Claude Code, `Task` for Cursor. This means all 20 skills work identically regardless of which runtime you use.
 
  Three pillars drive every Xavier workflow:
 
@@ -131,6 +131,7 @@ The Cursor skill uses a **fixed name** (`prose-trigger`), outside the command-al
 | `/xavier learn [path]`          | Explore a codebase (or scope to a specific monorepo package) and produce knowledge notes        |
 | `/xavier research <topic>`      | Research a topic across web, internal docs, and codebase; produce a structured digest           |
 | `/xavier investigate <symptom>` | Hypothesis-driven bug investigation across multiple axes; produce a ranked diagnosis            |
+| `/xavier ask <question>`        | Answer a question strictly from your vault; falls back to research remoras and auto-saves to `knowledge/qa/` |
 
 
 ### Dependency Management
