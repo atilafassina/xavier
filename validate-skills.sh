@@ -157,6 +157,14 @@ check_vault_path() {
       VAULT_PATH_ERRORS=$((VAULT_PATH_ERRORS + 1))
     fi
   fi
+
+  # Check knowledge/qa/ reads -> needs qa-index
+  if echo "$body" | grep -qiE '(list|read|select|browse|from|in|show|present|scan|check|load|glob).*[~/.<].*knowledge/qa/' 2>/dev/null; then
+    if ! echo "$requires_clean" | grep -qw "qa-index" 2>/dev/null; then
+      echo "FAIL: $skill_name reads from knowledge/qa/ but does not declare 'qa-index' in requires"
+      VAULT_PATH_ERRORS=$((VAULT_PATH_ERRORS + 1))
+    fi
+  fi
 }
 
 for skill_dir in "$REPO_ROOT"/xavier/skills/*/; do
