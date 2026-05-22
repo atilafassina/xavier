@@ -232,6 +232,129 @@ else
   ERRORS=$((ERRORS + ADAPTER_ERRORS))
 fi
 
+# 7. Marker-drift check: prose-trigger BEGIN/END markers must be byte-identical
+#    between xavier/install.sh and xavier/skills/self-update/SKILL.md.
+#    Both files write the same managed block to ~/.claude/CLAUDE.md; if either
+#    drifts, install would write a block that self-update can no longer find
+#    and replace (leading to duplicate blocks on the next self-update run).
+echo ""
+echo "=== Checking prose-trigger marker consistency ==="
+MARKER_ERRORS=0
+EXPECTED_BEGIN='<!-- BEGIN xavier-prose-trigger -->'
+EXPECTED_END='<!-- END xavier-prose-trigger -->'
+INSTALL_SH="$REPO_ROOT/xavier/install.sh"
+SELF_UPDATE_MD="$REPO_ROOT/xavier/skills/self-update/SKILL.md"
+
+for target in "$INSTALL_SH" "$SELF_UPDATE_MD"; do
+  rel="${target#$REPO_ROOT/}"
+  if [ ! -f "$target" ]; then
+    echo "FAIL: MARKER DRIFT — expected file not found: $rel"
+    MARKER_ERRORS=$((MARKER_ERRORS + 1))
+    continue
+  fi
+  if ! grep -qF "$EXPECTED_BEGIN" "$target"; then
+    echo "FAIL: MARKER DRIFT — $rel missing BEGIN marker '$EXPECTED_BEGIN'"
+    MARKER_ERRORS=$((MARKER_ERRORS + 1))
+  fi
+  if ! grep -qF "$EXPECTED_END" "$target"; then
+    echo "FAIL: MARKER DRIFT — $rel missing END marker '$EXPECTED_END'"
+    MARKER_ERRORS=$((MARKER_ERRORS + 1))
+  fi
+done
+
+# Cross-file equality: every distinct `BEGIN xavier-prose-trigger` /
+# `END xavier-prose-trigger` literal in either file must match the canonical
+# form. We grep case-insensitively to surface lowercase or whitespace variants
+# (e.g. `<!--BEGIN ...-->`, `<!-- begin ... -->`) that would slip past a strict
+# uppercase grep but still break runtime marker-matching between the two writers.
+if [ -f "$INSTALL_SH" ] && [ -f "$SELF_UPDATE_MD" ]; then
+  install_begin_variants="$(grep -oiE '<!--[[:space:]]*BEGIN[[:space:]]+xavier-prose-trigger[[:space:]]*-->' "$INSTALL_SH" | sort -u)"
+  selfupd_begin_variants="$(grep -oiE '<!--[[:space:]]*BEGIN[[:space:]]+xavier-prose-trigger[[:space:]]*-->' "$SELF_UPDATE_MD" | sort -u)"
+  install_end_variants="$(grep -oiE '<!--[[:space:]]*END[[:space:]]+xavier-prose-trigger[[:space:]]*-->' "$INSTALL_SH" | sort -u)"
+  selfupd_end_variants="$(grep -oiE '<!--[[:space:]]*END[[:space:]]+xavier-prose-trigger[[:space:]]*-->' "$SELF_UPDATE_MD" | sort -u)"
+
+  # Each file must contain ONLY the canonical marker literal — no variants.
+  # A file carrying multiple distinct forms means a partial edit drifted the
+  # writer-time string away from the comment/doc-time string.
+  for pair in "install.sh|$install_begin_variants|$EXPECTED_BEGIN|BEGIN" \
+              "self-update SKILL.md|$selfupd_begin_variants|$EXPECTED_BEGIN|BEGIN" \
+              "install.sh|$install_end_variants|$EXPECTED_END|END" \
+              "self-update SKILL.md|$selfupd_end_variants|$EXPECTED_END|END"; do
+    label="${pair%%|*}"
+    rest="${pair#*|}"
+    variants="${rest%%|*}"
+    rest="${rest#*|}"
+    expected="${rest%%|*}"
+    kind="${rest#*|}"
+    # Strip surrounding whitespace and check every distinct variant matches the canonical.
+    if [ -n "$variants" ]; then
+      printf '%s\n' "$variants" | while IFS= read -r v; do
+        [ -z "$v" ] && continue
+        if [ "$v" != "$expected" ]; then
+          echo "FAIL: MARKER DRIFT — $label has non-canonical $kind marker '$v' (expected '$expected')"
+          # Bubble up via a sentinel file since this is inside a subshell.
+          touch /tmp/.xavier-marker-drift-$$
+        fi
+      done
+    fi
+  done
+  if [ -f "/tmp/.xavier-marker-drift-$$" ]; then
+    MARKER_ERRORS=$((MARKER_ERRORS + 1))
+    rm -f "/tmp/.xavier-marker-drift-$$"
+  fi
+
+  # Cross-file equality: the canonical-set of marker literals in each file
+  # must be identical between install.sh and self-update SKILL.md.
+  if [ "$install_begin_variants" != "$selfupd_begin_variants" ]; then
+    echo "FAIL: MARKER DRIFT — BEGIN marker text differs between install.sh and self-update SKILL.md"
+    echo "  install.sh: $install_begin_variants"
+    echo "  self-update SKILL.md: $selfupd_begin_variants"
+    MARKER_ERRORS=$((MARKER_ERRORS + 1))
+  fi
+  if [ "$install_end_variants" != "$selfupd_end_variants" ]; then
+    echo "FAIL: MARKER DRIFT — END marker text differs between install.sh and self-update SKILL.md"
+    echo "  install.sh: $install_end_variants"
+    echo "  self-update SKILL.md: $selfupd_end_variants"
+    MARKER_ERRORS=$((MARKER_ERRORS + 1))
+  fi
+fi
+
+if [ $MARKER_ERRORS -eq 0 ]; then
+  echo "PASS: prose-trigger markers consistent across install.sh and self-update SKILL.md"
+else
+  ERRORS=$((ERRORS + MARKER_ERRORS))
+fi
+
+# 8. Cursor prose-trigger skill template drift — install.sh and self-update
+#    must carry the same anchor strings for the Cursor skill writer.
+echo ""
+echo "=== Checking Cursor prose-trigger skill template consistency ==="
+CURSOR_PROSE_ERRORS=0
+EXPECTED_SKILL_NAME='name: prose-trigger'
+EXPECTED_ROUTER_LINE='Follow the Router Lifecycle with subcommand'
+EXPECTED_VOCATIVE_FRAGMENT='Mid-sentence "${TRIGGER_WORD}" or lowercase variants do NOT'
+
+for anchor in "$EXPECTED_SKILL_NAME" "$EXPECTED_ROUTER_LINE" "$EXPECTED_VOCATIVE_FRAGMENT"; do
+  for target in "$INSTALL_SH" "$SELF_UPDATE_MD"; do
+    rel="${target#$REPO_ROOT/}"
+    if [ ! -f "$target" ]; then
+      echo "FAIL: CURSOR PROSE DRIFT — expected file not found: $rel"
+      CURSOR_PROSE_ERRORS=$((CURSOR_PROSE_ERRORS + 1))
+      continue
+    fi
+    if ! grep -qF "$anchor" "$target"; then
+      echo "FAIL: CURSOR PROSE DRIFT — $rel missing anchor '$anchor'"
+      CURSOR_PROSE_ERRORS=$((CURSOR_PROSE_ERRORS + 1))
+    fi
+  done
+done
+
+if [ $CURSOR_PROSE_ERRORS -eq 0 ]; then
+  echo "PASS: Cursor prose-trigger skill template anchors consistent across install.sh and self-update SKILL.md"
+else
+  ERRORS=$((ERRORS + CURSOR_PROSE_ERRORS))
+fi
+
 echo ""
 if [ $ERRORS -gt 0 ]; then
   echo "FAILED: $ERRORS error(s) found"

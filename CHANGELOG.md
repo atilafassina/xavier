@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `prose-trigger` — opt-in feature that teaches supported runtimes to recognise a vocative invocation of a configurable trigger word ("Xavier" by default) in natural prose and route it through `/xavier <subcommand>`. Disabled by default; enabled through the setup interview or by setting `prose-trigger: yes` in `~/.xavier/config.md`. Supports four routing modes: explicit subcommand keyword → direct invoke; clear-but-implicit intent → one-line confirm before invoke; meta question about Xavier → `/xavier` (router lists subcommands); off-topic prose → drop the trigger and answer normally. **Claude Code:** managed instruction block in `~/.claude/CLAUDE.md` (always loaded). **Cursor:** global skill at `~/.cursor/skills/prose-trigger/SKILL.md` (selection-based; fixed name outside the alias prefix so `/x-` autocomplete stays clean)
+- Two new keys in `~/.xavier/config.md` under `## Runtime`: `prose-trigger: yes|no` (default `no`) and `trigger-word: <word>` (default `Xavier`, validated against `^[a-zA-Z][a-zA-Z0-9-]{0,31}$`)
+- Two new questions in the `/xavier setup` interview, adjacent to the existing alias prompts — enable prose-trigger (default `no`), and follow-up trigger word (conditional on enable, default `Xavier`)
+- `install.sh` gains `install_prose_trigger()` — writes Claude Code managed block to `~/.claude/CLAUDE.md` and Cursor global skill to `~/.cursor/skills/prose-trigger/SKILL.md` when enabled. Idempotent refresh on both surfaces; disable/uninstall strips both
+- `install.sh` gains `install_cursor_prose_trigger_skill()` and `strip_cursor_prose_trigger_skill()` — Cursor fallback using router lifecycle delegation (not the Skill tool). Skill name is fixed as `prose-trigger`, decoupled from `alias-prefix`
+- `install.sh` gains `strip_prose_trigger_block()` — removes the managed block (markers included) while preserving surrounding user content byte-for-byte; deletes the host file if Xavier was the sole writer. Wired into `install_prose_trigger()` for the disable path and into the uninstall flow
+- `/xavier self-update` Step 8b ("Refresh Prose-Trigger Managed Block") — mirrors Claude `~/.claude/CLAUDE.md` write/strip byte-for-byte
+- `/xavier self-update` Step 8c ("Refresh Cursor Prose-Trigger Skill") — mirrors `install_cursor_prose_trigger_skill()` byte-for-byte
+- `/xavier uninstall` Step 3 ("Strip Prose-Trigger Managed Block") — removes the Claude block from `~/.claude/CLAUDE.md`
+- `/xavier uninstall` Step 3b — removes `~/.cursor/skills/prose-trigger/`; `uninstall.sh` removes the same path explicitly
+- `validate-skills.sh` marker-drift check — Claude BEGIN/END markers byte-identical in `install.sh` and `self-update/SKILL.md`
+- `validate-skills.sh` Cursor prose-trigger template drift check — anchor strings byte-identical in `install.sh` and `self-update/SKILL.md`
 - `/xavier ask "<question>"` skill — read-first Q&A grounded in the user's captured vault knowledge (`knowledge/repos/{repo}/decisions.md`, `architecture.md`, team conventions via `related:` wikilinks, `recurring-patterns` from recent reviews) with relevance-matched reads of `research/`, `investigations/`, and `knowledge/qa/`. Synthesizes an answer in TL;DR + Evidence + Sources format with inline `[[wikilinks]]` to source notes
 - User-confirmed research fallback in `/xavier ask` — when the vault is thin on the topic (floor rule: no salient noun from the question is mentioned in any loaded note; otherwise model judgment), the skill prompts before spawning an adaptive count of remoras (1 narrow / 3 design / 5 exploratory) via `adapter.collect()`. Research remoras are scoped to the current repo (grep, git history, vault deep-scan) — narrower than `/xavier research`'s broad-topic axes
 - Asymmetric persistence in `/xavier ask`: research-fallback answers auto-save to `knowledge/qa/{repo}_{YYYY-MM-DD}_{slug}.md` (net-new info); vault-only answers prompt `save? (y/n)` with default No (redundant with source notes). Slug derivation tokenizes the question, filters stop-words, takes the first 5 content words; collisions resolved with deterministic numeric suffix (`-2`, `-3`, …)
@@ -21,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The canonical `COMMANDS` list in `install.sh` is now a top-level constant rather than defined inside `install_command_aliases()`; both that function and the new `install_prose_trigger()` consume it
+- README documents prose-trigger per-runtime delivery (Claude always-on block vs Cursor selection-based skill), alias-prefix slash-menu isolation, and optional User Rules paste for always-on Cursor behaviour
+- `/xavier setup` interview copy updated to describe both Claude Code and Cursor surfaces when prose-trigger is enabled
 - `validate-xavier-frontmatter.sh` now recognizes `ask` as a note-writing skill and `qa-index` in the allowed `requires:` vocabulary
 - `validate-skills.sh` enforces that any skill reading `<vault>/knowledge/qa/` must declare `qa-index` in its `requires:` list (mirrors the existing rule for `research/`)
 

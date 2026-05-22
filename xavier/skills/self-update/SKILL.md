@@ -294,7 +294,205 @@ ALIASEOF
 done
 ```
 
-Once every alias has been regenerated for both runtimes (currently 19 entries × 2 runtimes = 38 alias files), proceed to Step 9. If `install_command_aliases()` in `xavier/install.sh` ever changes its format, paths, or runtime set, this block must be updated to match.
+Once every alias has been regenerated for both runtimes (currently 19 entries × 2 runtimes = 38 alias files), proceed to Step 8b. If `install_command_aliases()` in `xavier/install.sh` ever changes its format, paths, or runtime set, this block must be updated to match.
+
+## Step 8b: Refresh Prose-Trigger Managed Block
+
+After regenerating command aliases, refresh the prose-trigger managed block in `~/.claude/CLAUDE.md` so existing users running `/xavier self-update` pick up the prose-trigger feature without re-running `install.sh`. This step mirrors `install_prose_trigger()` in `xavier/install.sh` (around line 479) — the BEGIN/END marker strings, the block template, and the substitution rules MUST stay byte-identical to what `install_prose_trigger()` writes for the same config inputs. Drift between this step and `install_prose_trigger()` is caught by the marker-drift check in `validate-skills.sh`.
+
+### Read config values
+
+Read `prose-trigger` and `trigger-word` from `$XAVIER_HOME/config.md`:
+
+- **prose-trigger**: default `no`. Lowercase the value before comparing; treat both `yes` and `true` as enabled. Any other value (including missing) means disabled.
+- **trigger-word**: default `Xavier`. Must match `^[a-zA-Z][a-zA-Z0-9-]{0,31}$`. If the configured value fails this regex, warn and fall back to `Xavier` — do not inherit invalid input.
+
+Mirror the parsing exactly as `install_prose_trigger()` does:
+
+```bash
+PROSE_TRIGGER_ENABLED="no"
+TRIGGER_WORD="Xavier"
+
+if [ -f "$XAVIER_HOME/config.md" ]; then
+  pt_val="$(grep -o '\*\*prose-trigger\*\*: *[a-zA-Z]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
+  pt_val="$(echo "$pt_val" | tr '[:upper:]' '[:lower:]')"
+  if [ "$pt_val" = "yes" ] || [ "$pt_val" = "true" ]; then
+    PROSE_TRIGGER_ENABLED="yes"
+  fi
+
+  tw_val="$(grep -o '\*\*trigger-word\*\*: *[^ ]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
+  if [ -n "$tw_val" ]; then
+    if printf '%s' "$tw_val" | grep -qE '^[a-zA-Z][a-zA-Z0-9-]{0,31}$'; then
+      TRIGGER_WORD="$tw_val"
+    else
+      echo "WARN: Invalid trigger-word '$tw_val' — must match ^[a-zA-Z][a-zA-Z0-9-]{0,31}$. Falling back to 'Xavier'."
+    fi
+  fi
+fi
+```
+
+### Disabled-config strip path
+
+If `PROSE_TRIGGER_ENABLED` is `"no"` (the default), strip any managed block already present in `~/.claude/CLAUDE.md` rather than refresh one. The strip behaviour mirrors `strip_prose_trigger_block()` in `xavier/install.sh` byte-for-byte so that running `install.sh` with `prose-trigger: no` and running `/xavier self-update` with `prose-trigger: no` produce identical post-states for the same `CLAUDE.md` input.
+
+Let `CLAUDE_MD = $HOME/.claude/CLAUDE.md`.
+
+1. **`CLAUDE_MD` does not exist** → silent no-op. Proceed to Step 8c. Do not create the file.
+2. **`CLAUDE_MD` exists but does not contain BOTH the BEGIN and END markers** → silent no-op. Proceed to Step 8c. Never touch a host file that does not carry a Xavier-managed block.
+3. **`CLAUDE_MD` exists and contains both markers** → strip the marker-delimited region (markers inclusive), then:
+   - If the resulting bytes are empty or whitespace-only (Xavier was the sole writer) → **delete** `CLAUDE_MD`. Report "Removed empty ~/.claude/CLAUDE.md after stripping prose-trigger block."
+   - Otherwise → write the stripped content back. Report "Stripped prose-trigger block from ~/.claude/CLAUDE.md."
+
+Byte contract for the strip operation — must match `strip_prose_trigger_block()` exactly:
+
+- Remove the BEGIN marker line (and its terminating newline).
+- Remove every line between BEGIN and END.
+- Remove the END marker line (and its terminating newline — this is the "single trailing newline directly following the END marker").
+- Preserve every other byte of `CLAUDE_MD`: leading content, trailing content, blank lines, anything outside the marker region.
+
+Use the LLM's Read/Write tools rather than awk — the install.sh shell script needs awk for portability, but the resulting bytes here must match. After writing (or deleting), proceed to Step 8c. Do NOT execute the enabled-path subcommand-list/marker/template logic below.
+
+### Build the subcommand list
+
+Mirror `install_prose_trigger()`'s comma-join: read the canonical `COMMANDS` variable defined in Step 8a above (the single source of truth shared with `install_command_aliases()` in `xavier/install.sh`) and join the first column with `", "`. Do not introduce a parallel list — the marker-drift check assumes both writers consume the same canonical source.
+
+```bash
+SUBCOMMAND_LIST="$(echo "$COMMANDS" | awk -F'|' '
+  NF > 0 && $1 != "" {
+    if (out == "") { out = $1 } else { out = out ", " $1 }
+  }
+  END { print out }
+')"
+```
+
+### Marker strings
+
+These two strings MUST be byte-identical to the ones in `install_prose_trigger()`. `validate-skills.sh` runs a marker-drift check between this SKILL.md and `xavier/install.sh` — changing either one without updating the other causes a build break.
+
+- BEGIN marker: `<!-- BEGIN xavier-prose-trigger -->`
+- END marker:   `<!-- END xavier-prose-trigger -->`
+
+### Managed block template
+
+Construct the managed block content with `${TRIGGER_WORD}` and `${SUBCOMMAND_LIST}` substituted. The body below MUST stay byte-identical to the `MANAGEDEOF` heredoc of `install_prose_trigger()` — same line breaks, same Skill-tool-delegation framing.
+
+Source-of-truth lesson: `[[prd/fix-alias-skills]]`.
+
+```
+<!-- BEGIN xavier-prose-trigger -->
+## Xavier prose trigger
+
+When the user addresses you as "${TRIGGER_WORD}" in vocative position — sentence-initial
+"${TRIGGER_WORD}, …", "${TRIGGER_WORD}: …", "Hey ${TRIGGER_WORD} …", "OK ${TRIGGER_WORD} …" —
+treat it as a Xavier invocation. Mid-sentence "${TRIGGER_WORD}" or lowercase variants do NOT
+trigger.
+
+Routing:
+- Subcommand keyword present (${SUBCOMMAND_LIST}): Use the Skill tool to invoke:
+  - skill: "xavier"
+  - args: "<cmd> <remaining-prose>"
+  Do NOT execute the skill directly. Do NOT read vault files. Delegate to the xavier router.
+- No keyword, intent clear: confirm with one line — "Sounds like a grill.
+  Run /xavier grill? (Y/n)" — then on assent, Use the Skill tool to invoke:
+  - skill: "xavier"
+  - args: "<inferred-cmd> <remaining-prose>"
+- Meta question about Xavier ("what can you do?", "help", "list commands"):
+  Use the Skill tool to invoke:
+  - skill: "xavier"
+  - args: ""
+  The router lists subcommands.
+- Off-topic or no confident subcommand match: drop the trigger and answer
+  normally without invoking a skill.
+<!-- END xavier-prose-trigger -->
+```
+
+### Write logic — three idempotent cases
+
+Mirror the three branches of `install_prose_trigger()`'s file write. Use the LLM's Read/Write/Edit tools rather than awk+getline — the install.sh shell script needs awk for portability, but here we have direct file tools. The resulting file content MUST be byte-identical to what `install_prose_trigger()` produces for the same config inputs.
+
+Let `CLAUDE_MD = $HOME/.claude/CLAUDE.md`.
+
+1. **Create-from-empty** — `CLAUDE_MD` does not exist:
+   - Ensure `$HOME/.claude/` exists (`mkdir -p`).
+   - Write `CLAUDE_MD` with the managed block as its entire contents. Include the trailing newline after the END marker that the install heredoc emits (the block ends with `<!-- END xavier-prose-trigger -->\n`).
+   - Report "Created ~/.claude/CLAUDE.md with prose-trigger block."
+
+2. **Replace-between-markers** — `CLAUDE_MD` exists AND both BEGIN and END markers are present:
+   - Read `CLAUDE_MD`.
+   - Replace the region from the BEGIN marker line through the END marker line (inclusive on both sides) with the freshly substituted managed block (the same `<!-- BEGIN ... -->` line, body, and `<!-- END ... -->` line).
+   - Preserve every byte of the file outside that region — leading content, trailing content, blank lines, anything. The user's own notes in `CLAUDE.md` must survive untouched.
+   - Write `CLAUDE_MD` back.
+   - Report "Refreshed prose-trigger block in ~/.claude/CLAUDE.md."
+
+3. **Append-with-markers** — `CLAUDE_MD` exists BUT either marker is absent:
+   - Read `CLAUDE_MD`.
+   - Append a single blank line, then the managed block (BEGIN marker, body, END marker, trailing newline). The blank-line separator matches what `install_prose_trigger()`'s `printf '\n' >> "$CLAUDE_MD"` produces.
+   - Write `CLAUDE_MD` back.
+   - Report "Appended prose-trigger block to ~/.claude/CLAUDE.md."
+
+The three cases are mutually exclusive and exhaustive — do not skip the detection step. Running `/xavier self-update` twice in succession MUST produce exactly one managed block (case 2 on the second run replaces in place). This is PRD smoke scenario 6.
+
+Then proceed to Step 8c.
+
+## Step 8c: Refresh Cursor Prose-Trigger Skill
+
+After Step 8b (Claude `CLAUDE.md` block), refresh the Cursor prose-trigger skill at `~/.cursor/skills/prose-trigger/SKILL.md`. This step mirrors `install_cursor_prose_trigger_skill()` in `xavier/install.sh` — the skill template and substitution rules MUST stay byte-identical to what `install.sh` writes for the same config inputs. Drift between this step and `install.sh` is caught by the Cursor template-drift check in `validate-skills.sh`.
+
+The skill name is **fixed** as `prose-trigger` (not `${ALIAS_PREFIX}-prose-trigger`) so it does not appear in prefix-filtered slash autocomplete (`/x-`, `/xavier-`).
+
+### Reuse config from Step 8b
+
+Use the same `PROSE_TRIGGER_ENABLED`, `TRIGGER_WORD`, and `SUBCOMMAND_LIST` values already parsed in Step 8b. Do not re-read config unless Step 8b was skipped.
+
+### Disabled-config strip path
+
+If `PROSE_TRIGGER_ENABLED` is `"no"`, remove `~/.cursor/skills/prose-trigger/` if it exists (`rm -rf`). Silent no-op when absent. Report "Removed Cursor prose-trigger skill" or silent no-op. Then proceed to Step 9.
+
+### Enabled path — skill template
+
+Write (overwrite) `~/.cursor/skills/prose-trigger/SKILL.md` with the content below, substituting `${TRIGGER_WORD}` and `${SUBCOMMAND_LIST}`. The body MUST stay byte-identical to the `CURSORPROSEEOF` heredoc in `install_cursor_prose_trigger_skill()` inside `xavier/install.sh`.
+
+```
+---
+name: prose-trigger
+description: "Route Xavier prose invocations when user addresses ${TRIGGER_WORD} in vocative position (${TRIGGER_WORD}, … / ${TRIGGER_WORD}: … / Hey ${TRIGGER_WORD} …). Takes precedence over slash-command aliases when the trigger word appears in natural prose. Do NOT suggest /prose-trigger — this skill is for natural-language vocative routing only."
+---
+
+# Xavier prose trigger
+
+When the user addresses you as "${TRIGGER_WORD}" in vocative position — sentence-initial
+"${TRIGGER_WORD}, …", "${TRIGGER_WORD}: …", "Hey ${TRIGGER_WORD} …", "OK ${TRIGGER_WORD} …" —
+treat it as a Xavier invocation. Mid-sentence "${TRIGGER_WORD}" or lowercase variants do NOT
+trigger.
+
+When the trigger word appears in vocative form, this skill takes precedence over slash-command
+aliases (e.g. /x-grill) — route through the Xavier router below, not an alias skill.
+
+Routing:
+- Subcommand keyword present (${SUBCOMMAND_LIST}):
+  1. Read the Xavier router from ${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
+  2. Follow the Router Lifecycle with subcommand: <cmd>
+  Do NOT execute vault skills directly. Delegate to the xavier router.
+- No keyword, intent clear: confirm with one line — "Sounds like a grill.
+  Run /xavier grill? (Y/n)" — then on assent:
+  1. Read the Xavier router from ${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
+  2. Follow the Router Lifecycle with subcommand: <inferred-cmd>
+- Meta question about Xavier ("what can you do?", "help", "list commands"):
+  1. Read the Xavier router from ${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
+  2. Follow the Router Lifecycle with no subcommand (router lists subcommands)
+- Off-topic or no confident subcommand match: drop the trigger and answer
+  normally without invoking the router.
+```
+
+**Do not set `disable-model-invocation: true`.** Omit the field so the agent can attach this skill on vocative prose.
+
+### Write logic
+
+1. Ensure `~/.cursor/skills/prose-trigger/` exists (`mkdir -p`).
+2. Write `SKILL.md` with the substituted template above (full overwrite — idempotent).
+3. Report "Installed Cursor prose-trigger skill at ~/.cursor/skills/prose-trigger/SKILL.md."
+
+Running `/xavier self-update` twice MUST leave exactly one skill directory with one `SKILL.md`.
 
 ## Step 9: Update Version in Config
 

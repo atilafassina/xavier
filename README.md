@@ -53,6 +53,17 @@ The installer auto-detects all available runtimes and wires adapters for each. I
 
 Both Claude Code and Cursor can be installed simultaneously — Xavier registers skills in the appropriate paths for each runtime (`~/.claude/commands/` for Claude Code, `~/.cursor/skills/` for Cursor).
 
+#### Prose trigger (opt-in)
+
+With `prose-trigger: yes` in `~/.xavier/config.md`, you can invoke Xavier by name in natural prose — e.g. `Xavier, grill me on this plan` — instead of typing `/xavier grill`. The trigger word is configurable (`trigger-word`, default `Xavier`).
+
+| Runtime | Delivery | Reliability |
+| ------- | -------- | ------------- |
+| Claude Code | Managed block in `~/.claude/CLAUDE.md` | Always loaded |
+| Cursor | Global skill at `~/.cursor/skills/prose-trigger/SKILL.md` | Selection-based (agent attaches skill when it detects vocative prose) |
+
+The Cursor skill uses a **fixed name** (`prose-trigger`), outside the command-alias prefix, so it does not appear when you type `/x-` or `/xavier-` in the slash menu. For always-on Cursor behaviour, you can manually paste the routing block into **Cursor Settings → Rules → User Rules**.
+
 ## How It Works
 
  Xavier follows the **Shark pattern**: a central orchestrator that delegates work to concurrent background agents (remoras), never implementing

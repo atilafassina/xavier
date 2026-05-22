@@ -91,6 +91,13 @@ for alias_dir in "$HOME/.cursor/skills"/${ALIAS_PREFIX}-*/; do
   track_removed "$alias_dir"
 done
 
+# 4b. Remove Cursor prose-trigger skill (outside alias-prefix namespace)
+if [ -d "$HOME/.cursor/skills/prose-trigger" ]; then
+  rm -rf "$HOME/.cursor/skills/prose-trigger"
+  info "Removed Cursor prose-trigger skill: $HOME/.cursor/skills/prose-trigger"
+  track_removed "$HOME/.cursor/skills/prose-trigger/"
+fi
+
 # Clean up aliases from other known prefixes (previous installs)
 for old_prefix in xavier x; do
   [ "$old_prefix" = "$ALIAS_PREFIX" ] && continue
