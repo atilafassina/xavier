@@ -1,5 +1,6 @@
 ---
 name: add-dep
+description: Create a dependency-skill for a Node package — a self-contained knowledge note with best practices, API patterns, and doc links.
 requires: [config, deps-index]
 ---
 

@@ -1,5 +1,6 @@
 ---
 name: loop
+description: Execute a task file (or freeform task) as an autonomous loop using the Shark pattern.
 requires: [config, shark, tasks-index, prd-index:optional]
 ---
 

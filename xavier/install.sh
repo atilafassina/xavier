@@ -175,7 +175,7 @@ detect_runtimes() {
 
   if command -v codex >/dev/null 2>&1; then
     DETECTED_RUNTIMES="${DETECTED_RUNTIMES} codex"
-    warn "Detected: Codex (adapter not yet available — will use stub)"
+    info "Detected: Codex"
   fi
 
   # Trim leading space
@@ -187,7 +187,7 @@ detect_runtimes() {
   else
     # Use the first runtime that has an adapter implementation as primary
     for rt in $DETECTED_RUNTIMES; do
-      if [ "$rt" = "claude-code" ] || [ "$rt" = "cursor" ]; then
+      if [ "$rt" = "claude-code" ] || [ "$rt" = "cursor" ] || [ "$rt" = "codex" ]; then
         DETECTED_RUNTIME="$rt"
         break
       fi
@@ -224,7 +224,7 @@ wire_adapters() {
 wire_single_adapter() {
   runtime="$1"
 
-  if [ "$runtime" != "claude-code" ] && [ "$runtime" != "cursor" ]; then
+  if [ "$runtime" != "claude-code" ] && [ "$runtime" != "cursor" ] && [ "$runtime" != "codex" ]; then
     warn "No adapter implementation for $runtime — skipping"
     return 0
   fi
@@ -274,6 +274,43 @@ Spawn all tasks in a single message (parallel Task tool calls) with run_in_backg
 ADAPTEREOF
   fi
 
+  if [ "$runtime" = "codex" ]; then
+    cat > "$XAVIER_HOME/adapters/codex/adapter.md" << 'ADAPTEREOF'
+---
+name: codex
+type: adapter
+runtime: codex
+---
+
+# Codex Runtime Adapter
+
+## spawn(task, options) -> handle
+Use the spawn_agent tool. Prefer agent_type: "explorer" for research and codebase discovery, "worker" for implementation and test-fixing tasks, and "default" for general tasks. Do not set model unless the user explicitly asks or the task clearly requires it.
+
+If spawn_agent is unavailable in the current Codex session, warn once: "Codex subagents unavailable; running inline, so Shark parallelism is disabled." Then run the task inline.
+
+## collect(tasks[]) -> results[]
+Spawn independent tasks concurrently in a single parallel tool-call batch. Use explorer agents for read-only research tasks and worker agents for implementation tasks. Collect results with wait_agent.
+
+If subagents are unavailable, run tasks inline one at a time and preserve the same warning behavior as spawn().
+
+## poll(handle) -> status
+Use wait_agent(handle). Codex also sends completion notifications, but wait_agent is the explicit backpressure point when the next step depends on a remora result.
+
+## Tool Dispatch
+
+| Operation | Tool |
+|-----------|------|
+| run-command | exec_command |
+| read-file | exec_command with sed/nl or shell file reads |
+| write-file | apply_patch |
+| spawn-agent | spawn_agent |
+| poll-agent | wait_agent |
+| search-text | exec_command with rg |
+| search-files | exec_command with rg --files |
+ADAPTEREOF
+  fi
+
   info "Adapter wired: $runtime"
 }
 
@@ -305,7 +342,7 @@ install_skill() {
 
   info "Registering Xavier skill ($INSTALL_MODE mode)..."
 
-  # Symlink 1: ~/.agents/skills/xavier/ -> $SCRIPT_DIR (the xavier/ directory)
+  # Symlink 1: ~/.agents/skills/xavier/ -> $SCRIPT_DIR (Codex local skill)
   create_symlink "$HOME/.agents/skills/xavier" "$SCRIPT_DIR" "$HOME/.agents/skills"
 
   # Determine SKILL.md source based on install mode
@@ -326,7 +363,7 @@ install_skill() {
   # Symlink 3: ~/.claude/commands/x.md -> SKILL.md (Claude Code short alias)
   create_symlink "$HOME/.claude/commands/x.md" "$SKILL_SOURCE" "$HOME/.claude/commands"
 
-  # Cursor: per-command aliases handle discoverability (installed by install_command_aliases)
+  # Cursor and Codex: per-command aliases handle discoverability (installed by install_command_aliases)
 }
 
 # --- Helper: create a symlink with broken-link cleanup ---
@@ -348,7 +385,7 @@ create_symlink() {
   fi
 }
 
-# --- Generate per-command aliases for Claude Code and Cursor ---
+# --- Generate per-command aliases for Claude Code, Cursor, and Codex ---
 install_command_aliases() {
   if [ -z "$SCRIPT_DIR" ]; then
     return 0
@@ -447,9 +484,25 @@ Execute /xavier ${cmd}.
 1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
 2. Follow the Router Lifecycle with subcommand: ${cmd}
 ALIASEOF
+
+    # Codex: ~/.agents/skills/<prefix>-<cmd>/SKILL.md
+    codex_alias="$HOME/.agents/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md"
+    mkdir -p "$HOME/.agents/skills/${ALIAS_PREFIX}-${cmd}"
+    cat > "$codex_alias" << ALIASEOF
+---
+name: ${ALIAS_PREFIX}-${cmd}
+description: ${desc}. Use when user says /xavier ${cmd}.
+---
+
+Route this request through the Xavier router.
+
+1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset).
+2. Follow the Router Lifecycle with subcommand: ${cmd}.
+3. Pass through any remaining user arguments unchanged.
+ALIASEOF
   done
 
-  info "Command aliases installed for Claude Code and Cursor."
+  info "Command aliases installed for Claude Code, Cursor, and Codex."
 }
 
 # --- Symlink or copy skills & references into ~/.xavier/ ---

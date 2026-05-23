@@ -1,5 +1,6 @@
 ---
 name: prd
+description: Create a vault-aware PRD through user interview, codebase exploration, and module design.
 requires: [config, prd-index, repo-conventions, team-conventions, tasks-index:optional]
 ---
 

@@ -1,5 +1,6 @@
 ---
 name: learn
+description: Explore a codebase and produce Zettelkasten knowledge notes — architecture, decisions, and dependencies — in the Xavier vault.
 requires: [config, shark, adapter, repo-conventions, team-conventions]
 ---
 

@@ -1,5 +1,6 @@
 ---
 name: uninstall
+description: Remove the Xavier vault and all registered symlinks. Destructive operation.
 requires: []
 ---
 

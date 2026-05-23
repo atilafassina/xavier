@@ -48,17 +48,17 @@ The installer auto-detects all available runtimes and wires adapters for each. I
 | ----------------------------------------------------------------- | ------------ | ---------------- | ---------------------- |
 | **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** | Full support | `claude` on PATH | `Agent` + `Bash` tools |
 | **[Cursor](https://www.cursor.com/)**                             | Full support | `cursor` on PATH | `Task` + `Shell` tools |
-| **Codex**                                                         | Stub         | `codex` on PATH  | Not yet available      |
+| **Codex**                                                         | Full support | `codex` on PATH  | `spawn_agent` + `exec_command` tools |
 
 
-Both Claude Code and Cursor can be installed simultaneously — Xavier registers skills in the appropriate paths for each runtime (`~/.claude/commands/` for Claude Code, `~/.cursor/skills/` for Cursor).
+Claude Code, Cursor, and Codex can be installed simultaneously — Xavier registers skills in the appropriate paths for each runtime (`~/.claude/commands/` for Claude Code, `~/.cursor/skills/` for Cursor, `~/.agents/skills/` for Codex).
 
 ## How It Works
 
  Xavier follows the **Shark pattern**: a central orchestrator that delegates work to concurrent background agents (remoras), never implementing
  anything itself. Results are verified through backpressure — only test, lint, and typecheck output counts as truth.
 
- A runtime **adapter** layer abstracts the differences between AI agent runtimes. Skills use generic operations (`spawn`, `collect`, `poll`) that the adapter maps to the correct tool for the active runtime — `Agent` for Claude Code, `Task` for Cursor. This means all 20 skills work identically regardless of which runtime you use.
+ A runtime **adapter** layer abstracts the differences between AI agent runtimes. Skills use generic operations (`spawn`, `collect`, `poll`) that the adapter maps to the correct tool for the active runtime — `Agent` for Claude Code, `Task` for Cursor, `spawn_agent` for Codex. This means all 20 skills work identically regardless of which runtime you use.
 
  Three pillars drive every Xavier workflow:
 

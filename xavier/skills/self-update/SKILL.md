@@ -1,5 +1,6 @@
 ---
 name: self-update
+description: Update Xavier's skills, references, and router to the latest release (or a specific version) from GitHub.
 requires: [config, deps-index:optional]
 ---
 
@@ -166,7 +167,7 @@ Report the failure to the user, clean up `$TMPDIR`, and **stop** — do not proc
 
 ## Step 8a: Regenerate Command Aliases
 
-After replacing distributable files, regenerate the Claude Code command alias files so they stay in sync with the updated skill set. These alias files live at `~/.claude/commands/<prefix>-<cmd>.md` and allow users to invoke Xavier subcommands directly (e.g., `/xavier-review`).
+After replacing distributable files, regenerate the Claude Code, Cursor, and Codex command aliases so they stay in sync with the updated skill set. These aliases allow users to invoke Xavier subcommands directly through each runtime's native discovery surface.
 
 First, read the alias prefix and check whether aliases are enabled:
 
@@ -200,7 +201,7 @@ fi
 
 If `ALIASES_ENABLED` is `"no"`, skip the rest of this step and proceed to Step 9.
 
-Otherwise, write an alias file for each of the following 19 commands. This human-readable list MUST stay in sync with the executable `COMMANDS` block below and with the `COMMANDS` table in `xavier/install.sh` — adding a skill in one place without the others causes upgrade-vs-fresh-install drift:
+Otherwise, write an alias file for each of the following 20 commands. This human-readable list MUST stay in sync with the executable `COMMANDS` block below and with the `COMMANDS` table in `xavier/install.sh` — adding a skill in one place without the others causes upgrade-vs-fresh-install drift:
 
 | Command | Description |
 |---|---|
@@ -217,6 +218,7 @@ Otherwise, write an alias file for each of the following 19 commands. This human
 | add-dep | Create a dependency-skill for a package with best practices and API patterns |
 | remove-dep | Delete a dependency-skill |
 | research | Research a topic across web, internal docs, and codebase |
+| ask | Answer focused questions about a repo using captured team knowledge |
 | deps-update | Scan lockfile and regenerate stale dependency-skills |
 | export | Export a vault note to your personal Obsidian vault |
 | bug | File a bug report as a GitHub Issue in the Xavier upstream repo |
@@ -241,6 +243,7 @@ mark|Move a PRD or task between active, done, and superseded states
 add-dep|Create a dependency-skill for a package with best practices and API patterns
 remove-dep|Delete a dependency-skill
 research|Research a topic across web, internal docs, and codebase
+ask|Answer focused questions about a repo using captured team knowledge
 deps-update|Scan lockfile and regenerate stale dependency-skills
 export|Export a vault note to your personal Obsidian vault
 bug|File a bug report as a GitHub Issue in the Xavier upstream repo
@@ -250,12 +253,13 @@ uninstall|Remove the Xavier vault and all symlinks
 "
 ```
 
-Regenerate aliases for **every runtime** that the original install touched, using each runtime's own alias layout. The Claude Code and Cursor formats differ — they are NOT interchangeable — so this step must mirror `install_command_aliases()` in `xavier/install.sh` exactly:
+Regenerate aliases for **every runtime** that the original install touched, using each runtime's own alias layout. The Claude Code, Cursor, and Codex formats differ — they are NOT interchangeable — so this step must mirror `install_command_aliases()` in `xavier/install.sh` exactly:
 
 - **Claude Code**: a single Markdown file at `~/.claude/commands/<prefix>-<cmd>.md` containing frontmatter + Skill-tool delegation instructions.
 - **Cursor**: a directory at `~/.cursor/skills/<prefix>-<cmd>/` with `SKILL.md` inside, containing frontmatter + a "When user says /xavier <cmd>" trigger description.
+- **Codex**: a directory at `~/.agents/skills/<prefix>-<cmd>/` with `SKILL.md` inside, containing frontmatter + a thin Xavier router delegation.
 
-Mirror `install_command_aliases()` exactly: when aliases are enabled, regenerate aliases for **both runtimes unconditionally**, creating the root directories if they don't already exist. The original installer does not gate on directory existence — it `mkdir -p`s and writes — so self-update must too. Otherwise users who deleted an alias root (or whose original install never created one) would silently miss alias regeneration on update.
+Mirror `install_command_aliases()` exactly: when aliases are enabled, regenerate aliases for **all supported runtimes unconditionally**, creating the root directories if they don't already exist. The original installer does not gate on directory existence — it `mkdir -p`s and writes — so self-update must too. Otherwise users who deleted an alias root (or whose original install never created one) would silently miss alias regeneration on update.
 
 ```bash
 echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
@@ -291,10 +295,25 @@ Execute /xavier ${cmd}.
 1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
 2. Follow the Router Lifecycle with subcommand: ${cmd}
 ALIASEOF
+
+  # Codex: directory alias at ~/.agents/skills/<prefix>-<cmd>/SKILL.md
+  mkdir -p "$HOME/.agents/skills/${ALIAS_PREFIX}-${cmd}"
+  cat > "$HOME/.agents/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md" << ALIASEOF
+---
+name: ${ALIAS_PREFIX}-${cmd}
+description: ${desc}. Use when user says /xavier ${cmd}.
+---
+
+Route this request through the Xavier router.
+
+1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset).
+2. Follow the Router Lifecycle with subcommand: ${cmd}.
+3. Pass through any remaining user arguments unchanged.
+ALIASEOF
 done
 ```
 
-Once every alias has been regenerated for both runtimes (currently 19 entries × 2 runtimes = 38 alias files), proceed to Step 9. If `install_command_aliases()` in `xavier/install.sh` ever changes its format, paths, or runtime set, this block must be updated to match.
+Once every alias has been regenerated for all supported runtimes (currently 20 entries × 3 runtimes = 60 alias files), proceed to Step 9. If `install_command_aliases()` in `xavier/install.sh` ever changes its format, paths, or runtime set, this block must be updated to match.
 
 ## Step 9: Update Version in Config
 

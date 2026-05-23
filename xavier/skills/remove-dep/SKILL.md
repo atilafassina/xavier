@@ -1,5 +1,6 @@
 ---
 name: remove-dep
+description: Delete a dependency-skill from the Xavier vault. Destructive operation.
 requires: [config, deps-index]
 ---
 

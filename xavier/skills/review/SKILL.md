@@ -1,5 +1,6 @@
 ---
 name: review
+description: Run a Shark-pattern code review on the current diff with concurrent reviewer personas.
 requires: [shark, personas, adapter, recurring-patterns, repo-conventions, team-conventions]
 ---
 

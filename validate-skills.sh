@@ -232,6 +232,32 @@ else
   ERRORS=$((ERRORS + ADAPTER_ERRORS))
 fi
 
+# 7. Check runtime alias generation stays in sync for Codex
+echo ""
+echo "=== Checking Codex alias wiring ==="
+CODEX_ALIAS_ERRORS=0
+
+if ! grep -q '\.agents/skills.*\${ALIAS_PREFIX}-\${cmd}' "$REPO_ROOT/xavier/install.sh"; then
+  echo "FAIL: xavier/install.sh does not generate Codex per-command aliases"
+  CODEX_ALIAS_ERRORS=$((CODEX_ALIAS_ERRORS + 1))
+fi
+
+if ! grep -q '\.agents/skills.*\${ALIAS_PREFIX}-\${cmd}' "$REPO_ROOT/xavier/skills/self-update/SKILL.md"; then
+  echo "FAIL: self-update does not regenerate Codex per-command aliases"
+  CODEX_ALIAS_ERRORS=$((CODEX_ALIAS_ERRORS + 1))
+fi
+
+if ! grep -q '\.agents/skills"/\${ALIAS_PREFIX}-\*/' "$REPO_ROOT/uninstall.sh"; then
+  echo "FAIL: uninstall.sh does not remove Codex per-command aliases"
+  CODEX_ALIAS_ERRORS=$((CODEX_ALIAS_ERRORS + 1))
+fi
+
+if [ $CODEX_ALIAS_ERRORS -eq 0 ]; then
+  echo "PASS: Codex alias wiring present"
+else
+  ERRORS=$((ERRORS + CODEX_ALIAS_ERRORS))
+fi
+
 echo ""
 if [ $ERRORS -gt 0 ]; then
   echo "FAILED: $ERRORS error(s) found"

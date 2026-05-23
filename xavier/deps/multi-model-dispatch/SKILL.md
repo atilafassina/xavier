@@ -1,5 +1,6 @@
 ---
 name: multi-model-dispatch
+description: Dispatch prompts to external LLM models via the Cursor `agent` CLI and parse stream-json output into structured findings for multi-model review.
 type: dependency
 version: 0.1.0
 source: "forked from ace plugin dispatch mechanics"

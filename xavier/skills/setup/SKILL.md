@@ -1,5 +1,6 @@
 ---
 name: setup
+description: Create and configure the Xavier vault at `~/.xavier/`, detect runtimes, and wire adapters.
 requires: []
 ---
 
@@ -138,13 +139,15 @@ Detect the active AI agent runtime and install the appropriate adapter. Xavier s
 1. **Detection**: Check which tools are available in the current session:
    - If `Agent` tool AND `Bash` tool are available → runtime is **claude-code**
    - If `Task` tool AND `Shell` tool are available → runtime is **cursor**
+   - If `spawn_agent` tool AND `exec_command` tool are available → runtime is **codex**
+   - If `exec_command` is available but `spawn_agent` is unavailable → runtime is **codex-inline** (warn that Shark parallelism is disabled, then use the `codex` adapter inline fallback)
    - If neither set of tools is detected → runtime is **unknown** (warn the user, skip adapter wiring)
 
    A session may match only one runtime. Use the first match as the primary adapter.
 
 2. **Wire adapters**: For each detected runtime, copy the adapter files from `~/.xavier/references/adapters/<runtime>/` to `~/.xavier/adapters/<runtime>/`
 
-3. **Update config**: Set the `adapter` field in `~/.xavier/config.md` to the primary runtime name (e.g., `claude-code` or `cursor`). If multiple runtimes were detected, also set `available-adapters` to the full list.
+3. **Update config**: Set the `adapter` field in `~/.xavier/config.md` to the primary runtime name (e.g., `claude-code`, `cursor`, or `codex`). If multiple runtimes were detected, also set `available-adapters` to the full list. For `codex-inline`, set `adapter: codex` and warn that subagent support was unavailable in this session.
 
 4. **Smoke test**: Spawn a trivial agent through the detected adapter to verify it works.
 
@@ -164,13 +167,21 @@ Detect the active AI agent runtime and install the appropriate adapter. Xavier s
    )
    ```
 
+   For **codex**:
+   ```
+   spawn(
+     task: "Reply with exactly: 'Xavier adapter smoke test passed'",
+     options: { name: "xavier smoke test", background: false, subagent_type: "default" }
+   )
+   ```
+
    If the agent returns the expected output, the adapter is working. Report success. If it fails, warn the user but don't block setup.
 
 ### Step 3e: Register Skill Symlinks
 
 Create symlinks so Xavier is registered as a global skill across all supported runtimes. Derive the repo path from the skill's own base directory (go up from this skill file through `skills/setup/` to reach the `xavier/` directory, and up one more for the repo root).
 
-1. **Symlink 1**: `~/.agents/skills/xavier/` → the `xavier/` directory in the repo
+1. **Symlink 1** (Codex local skill): `~/.agents/skills/xavier/` → the `xavier/` directory in the repo
    - Create parent directory `~/.agents/skills/` if it doesn't exist
    - If the symlink already exists, warn the user and skip — do NOT overwrite
    - If it doesn't exist, create it: `ln -s <repo>/xavier ~/.agents/skills/xavier`
@@ -185,7 +196,12 @@ Create symlinks so Xavier is registered as a global skill across all supported r
    - If the symlink already exists, warn the user and skip — do NOT overwrite
    - If it doesn't exist, create it: `ln -s <repo>/xavier/SKILL.md ~/.cursor/skills/xavier/SKILL.md`
 
-4. **Report**: Tell the user what was created and what was skipped.
+4. **Per-command aliases**: If `command-aliases: yes`, create runtime-native aliases for each Xavier command:
+   - Claude Code: `~/.claude/commands/<prefix>-<cmd>.md`
+   - Cursor: `~/.cursor/skills/<prefix>-<cmd>/SKILL.md`
+   - Codex: `~/.agents/skills/<prefix>-<cmd>/SKILL.md`
+
+5. **Report**: Tell the user what was created and what was skipped.
 
 ### Step 3f: Initialize Git
 

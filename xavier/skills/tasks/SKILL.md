@@ -1,5 +1,6 @@
 ---
 name: tasks
+description: Decompose a PRD into a phased implementation task list using tracer-bullet vertical slices.
 requires: [config, tasks-index, prd-index, repo-conventions, team-conventions, deps-index:optional, research-index:optional, investigations-index:optional]
 ---
 

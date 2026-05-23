@@ -1,5 +1,6 @@
 ---
 name: mark
+description: Move PRDs and task files between lifecycle states (active, done, superseded) — retire active items or revive archived ones.
 requires: [config, prd-index:optional, tasks-index:optional]
 ---
 
