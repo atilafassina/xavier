@@ -73,7 +73,9 @@ check_existing() {
              # and newly-installed runtimes (e.g. user installed Cursor since last
              # run) land on the same `s`-path as a fresh install would produce.
              detect_runtimes
+             PRESERVE_CONFIG=true
              wire_adapters
+             PRESERVE_CONFIG=false
              install_skill
              install_command_aliases
              link_xavier_skills_and_refs
@@ -205,6 +207,11 @@ wire_adapters() {
   for runtime in $DETECTED_RUNTIMES; do
     wire_single_adapter "$runtime"
   done
+
+  if [ "${PRESERVE_CONFIG:-false}" = "true" ]; then
+    info "Preserving config.md runtime adapter settings."
+    return 0
+  fi
 
   # Update config with primary runtime and list available adapters
   if command -v sed >/dev/null 2>&1; then

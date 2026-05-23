@@ -247,6 +247,11 @@ if ! grep -q 'XAVIER_HOME/SKILL.md' "$REPO_ROOT/xavier/install.sh" || ! grep -q 
   CODEX_ALIAS_ERRORS=$((CODEX_ALIAS_ERRORS + 1))
 fi
 
+if ! grep -q 'PRESERVE_CONFIG=true' "$REPO_ROOT/xavier/install.sh" || ! grep -q 'Preserving config.md runtime adapter settings' "$REPO_ROOT/xavier/install.sh"; then
+  echo "FAIL: xavier/install.sh refresh-only path does not preserve config.md adapter settings"
+  CODEX_ALIAS_ERRORS=$((CODEX_ALIAS_ERRORS + 1))
+fi
+
 if ! grep -q '\.agents/skills.*\${ALIAS_PREFIX}-\${cmd}' "$REPO_ROOT/xavier/skills/self-update/SKILL.md"; then
   echo "FAIL: self-update does not regenerate Codex per-command aliases"
   CODEX_ALIAS_ERRORS=$((CODEX_ALIAS_ERRORS + 1))
