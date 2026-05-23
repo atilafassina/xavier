@@ -242,6 +242,11 @@ if ! grep -q '\.agents/skills.*\${ALIAS_PREFIX}-\${cmd}' "$REPO_ROOT/xavier/inst
   CODEX_ALIAS_ERRORS=$((CODEX_ALIAS_ERRORS + 1))
 fi
 
+if ! grep -q 'XAVIER_HOME/SKILL.md' "$REPO_ROOT/xavier/install.sh" || ! grep -q 'ln -sfn "$SKILL_SOURCE" "$XAVIER_HOME/SKILL.md"' "$REPO_ROOT/xavier/install.sh"; then
+  echo "FAIL: xavier/install.sh clone mode does not refresh the vault router used by Codex aliases"
+  CODEX_ALIAS_ERRORS=$((CODEX_ALIAS_ERRORS + 1))
+fi
+
 if ! grep -q '\.agents/skills.*\${ALIAS_PREFIX}-\${cmd}' "$REPO_ROOT/xavier/skills/self-update/SKILL.md"; then
   echo "FAIL: self-update does not regenerate Codex per-command aliases"
   CODEX_ALIAS_ERRORS=$((CODEX_ALIAS_ERRORS + 1))
@@ -352,7 +357,7 @@ for file in "$CODEX_ADAPTER" "$INSTALLER"; do
 done
 
 for file in "$INSTALLER" "$SELF_UPDATE"; do
-  if ! grep -q 'Stop when the routed `${cmd}` command reaches an AskUserQuestion/confirm/wait gate or terminal handoff' "$file"; then
+  if ! grep -q 'Stop when the routed ${cmd} command reaches an AskUserQuestion/confirm/wait gate or terminal handoff' "$file"; then
     echo "FAIL: $(basename "$file") Codex alias template does not stop at routed command gates"
     COMMAND_GATE_ERRORS=$((COMMAND_GATE_ERRORS + 1))
   fi

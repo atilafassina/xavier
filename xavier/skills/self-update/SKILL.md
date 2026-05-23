@@ -309,7 +309,7 @@ Route this request through the Xavier router.
 1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset).
 2. Follow the Router Lifecycle with subcommand: ${cmd}.
 3. Pass through any remaining user arguments unchanged.
-4. Stop when the routed `${cmd}` command reaches an AskUserQuestion/confirm/wait gate or terminal handoff. Do not infer answers, choose filenames, invoke another Xavier command, or continue into follow-up work unless the user's newest message explicitly asks for it.
+4. Stop when the routed ${cmd} command reaches an AskUserQuestion/confirm/wait gate or terminal handoff. Do not infer answers, choose filenames, invoke another Xavier command, or continue into follow-up work unless the user's newest message explicitly asks for it.
 ALIASEOF
 done
 ```

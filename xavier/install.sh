@@ -357,6 +357,10 @@ install_skill() {
   # Determine SKILL.md source based on install mode
   if [ "$INSTALL_MODE" = "clone" ]; then
     SKILL_SOURCE="$SCRIPT_DIR/SKILL.md"
+    # Codex aliases route through $XAVIER_HOME/SKILL.md. Keep that router
+    # live-linked in clone mode so refresh installs pick up router changes.
+    ln -sfn "$SKILL_SOURCE" "$XAVIER_HOME/SKILL.md"
+    info "Linked SKILL.md to $XAVIER_HOME/SKILL.md"
   else
     # Tarball mode: copy SKILL.md into XAVIER_HOME so it persists
     if [ -f "$SCRIPT_DIR/SKILL.md" ]; then
@@ -508,7 +512,7 @@ Route this request through the Xavier router.
 1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset).
 2. Follow the Router Lifecycle with subcommand: ${cmd}.
 3. Pass through any remaining user arguments unchanged.
-4. Stop when the routed `${cmd}` command reaches an AskUserQuestion/confirm/wait gate or terminal handoff. Do not infer answers, choose filenames, invoke another Xavier command, or continue into follow-up work unless the user's newest message explicitly asks for it.
+4. Stop when the routed ${cmd} command reaches an AskUserQuestion/confirm/wait gate or terminal handoff. Do not infer answers, choose filenames, invoke another Xavier command, or continue into follow-up work unless the user's newest message explicitly asks for it.
 ALIASEOF
   done
 
