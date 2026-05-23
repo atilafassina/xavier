@@ -16,7 +16,7 @@ Spawn a single background agent when subagents are available.
 
 ```
 spawn_agent(
-  message: task,
+  message: "Xavier remora: {options.name or derived task label}\n\n" + task,
   agent_type: map_agent_type(options.subagent_type, task),
   fork_context: options.fork_context ?? false
 )
@@ -38,7 +38,13 @@ Do not set `model` unless the user explicitly asks for a different model or the 
 
 - Sets `SHARK_TASK_HASH` in the agent's prompt preamble: `"Export SHARK_TASK_HASH={hash} before starting work."` where `{hash}` is a unique identifier for the current shark flow. This prevents nested shark flows from starting their own orchestration.
 
-The **handle** is the agent ID returned by `spawn_agent`.
+The **handle** is the agent ID returned by `spawn_agent`, but raw handles are internal bookkeeping only. Every Codex remora must also have a user-visible label:
+
+1. Prefer `options.name` when provided by the Xavier task.
+2. Otherwise derive a short label from the task purpose, such as `correctness review`, `security review`, `foundations research`, or `local context`.
+3. Record the returned Codex nickname alongside the label and handle: `{ label, nickname, handle }`.
+
+When reporting spawned or waiting agents to the user, use the label first. If a raw handle must be shown for debugging, show it only after the label, for example `security review (James, 019e...)`.
 
 **Fallback:**
 
@@ -54,22 +60,49 @@ Then run the task inline in the current agent.
 
 Spawn multiple agents concurrently in a single message with parallel tool calls. Each task in the array is spawned via `spawn()` using the mapped Codex `agent_type`.
 
+Before spawning, ensure every task has a user-visible label using `task.name` or a derived label. After spawning, maintain an agent map:
+
+```
+[
+  { label: "Foundations of vibecoded decks", nickname: "Ada", handle: "019e..." },
+  { label: "AI deck tools head-to-head", nickname: "Grace", handle: "019e..." }
+]
+```
+
 **Mapping to Codex:**
 
 ```
 // All spawned in ONE message through parallel tool calls
-spawn_agent(message: tasks[0].task, agent_type: "explorer", ...)
-spawn_agent(message: tasks[1].task, agent_type: "explorer", ...)
-spawn_agent(message: tasks[2].task, agent_type: "worker", ...)
+spawn_agent(message: "Xavier remora: " + tasks[0].name + "\n\n" + tasks[0].task, agent_type: "explorer", ...)
+spawn_agent(message: "Xavier remora: " + tasks[1].name + "\n\n" + tasks[1].task, agent_type: "explorer", ...)
+spawn_agent(message: "Xavier remora: " + tasks[2].name + "\n\n" + tasks[2].task, agent_type: "worker", ...)
 ```
 
 Results are collected with `wait_agent`. Codex also sends completion notifications, but `wait_agent` is the explicit synchronization point when the shark needs a result before proceeding.
+
+**User-facing status rule:** never present raw agent hashes as the primary status list. Before any blocking `wait_agent` call, print a concise status line using labels, for example:
+
+```
+Waiting for 3 remoras: Foundations of vibecoded decks; AI deck tools head-to-head; Local context.
+```
+
+If the Codex UI or tool output displays handles anyway, immediately follow with the label map so the user can interpret them:
+
+```
+Agent map: Foundations of vibecoded decks -> Ada; AI deck tools head-to-head -> Grace; Local context -> Linus.
+```
 
 If subagents are unavailable, run the tasks inline one at a time and preserve the same visible warning behavior as `spawn()`.
 
 ## poll(handle)
 
-Use `wait_agent(targets: [handle])` when the next step depends on a remora result. Use longer waits for long-running implementation or research tasks to avoid busy polling.
+Use `wait_agent(targets: [handle])` when the next step depends on a remora result. Use longer waits for long-running implementation or research tasks to avoid busy polling. Before polling, resolve every handle through the agent map and announce the remora labels being waited on; do not say only "waiting for 019e...".
+
+## Interactive Gates
+
+Codex executes Xavier router and skill instructions inline, so interactive gates must be treated as hard command boundaries. Whenever a routed skill says `AskUserQuestion`, ask, prompt, confirm, quiz, wait for the user, or get feedback, Codex must ask the user and stop. Do not infer the answer, choose filenames, execute later steps, or invoke another Xavier command until the user replies.
+
+When a skill reaches a terminal handoff, show the suggested next commands as options only. Do not automatically move from `grill` to `prd`, from `prd` to `tasks`, from `tasks` to `loop`, or from any Xavier skill into code edits unless the user's newest message explicitly asks for that command.
 
 ## Tool Dispatch
 

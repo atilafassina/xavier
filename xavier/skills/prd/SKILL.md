@@ -90,3 +90,17 @@ Then write the PRD body:
 > **Important**: The PRD is written to `~/.xavier/prd/` only — NOT to the user's Obsidian vault. Use `/xavier export` to sync it there.
 
 Tell the user the PRD was written and remind them they can export it with `/xavier export prd/<filename>`.
+
+## Step 4: STOP — Handoff only
+
+<stop-guardrail>
+**You are DONE after writing the PRD.** Do not create tasks. Do not choose a task filename. Do not start `/xavier tasks` or `/xavier loop`. Do not implement anything.
+</stop-guardrail>
+
+Present the user with options:
+
+- **Review first (recommended)**: review `prd/<filename>.md`
+- **Create tasks**: run `/xavier tasks <filename>` in a fresh message
+- **Export**: run `/xavier export prd/<filename>`
+
+Wait for the user's next message. Only run a follow-up Xavier command if the user's newest message explicitly asks for it.

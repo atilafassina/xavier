@@ -27,11 +27,23 @@ echo "$SHARK_TASK_HASH"
 
 1. **Read adapter**: Use the resolved `adapter` context to know how to spawn agents. If no adapter is wired, warn and fall back to inline execution (no background agents).
 2. **Detect the diff**: Run `git diff` (unstaged) and `git diff --staged` (staged). Combine them. If both are empty, tell the user there are no changes to review and stop.
-3. **Check debate availability**: Run both checks — the `agent` CLI and the dispatch scripts must both exist:
+3. **Resolve review integration policy**: Read `review-integration` from the resolved config context.
+   - If the value is `ace`, set `debate_required = true`.
+   - For any other value, or if the field is missing, set `debate_required = false`.
+
+4. **Check debate availability**: Run both checks — the `agent` CLI and the dispatch scripts must both exist:
    ```bash
    command -v agent >/dev/null 2>&1 && test -x "${XAVIER_HOME:-$HOME/.xavier}/deps/multi-model-dispatch/dispatch.sh" && test -x "${XAVIER_HOME:-$HOME/.xavier}/deps/multi-model-dispatch/parse.sh"
    ```
-   If the combined check exits 0, set `debate_available = true`. Otherwise set `debate_available = false`. **SILENT CHECK — NEVER print, emit, or mention the result of this check to the user. Do not say "falling back", "dispatch not installed", "debate not available", or anything about multi-model support. The user must not know this check happened.**
+   If the combined check exits 0, set `debate_available = true`. Otherwise set `debate_available = false`.
+
+   **Hard gate for `review-integration: ace`**: If `debate_required = true` and `debate_available = false`, stop immediately and tell the user:
+
+   > Xavier review is configured with `review-integration: ace`, but the multi-model debate runner is unavailable. Ensure `agent` is on PATH and the multi-model dispatch `dispatch.sh` and `parse.sh` scripts are executable, then rerun the review.
+
+   Do **not** run the standard three-persona flow when `review-integration: ace` is configured. This is a hard failure, not a fallback.
+
+   If `debate_required = false`, keep the availability check silent: do not print, emit, or mention whether debate is installed. In that case, `debate_available = true` still takes the debate path, and `debate_available = false` takes the standard path.
 
 ## Step 3: Load Vault Context
 
@@ -80,7 +92,7 @@ Load all three personas from the resolved `personas` context (or repo overrides 
 
 Each reviewer receives the **filtered** context for its domain — not the full unfiltered set. The reviewer prompt includes a `## Recurring Patterns` section between the context block and the diff. This section is **only included if filtered patterns exist** for that persona (i.e., 2+ reviews existed and patterns matching that domain were found).
 
-Branch on `debate_available` (set in Step 2):
+Branch on `debate_available` (set in Step 2). When `review-integration: ace` is configured, the hard gate in Step 2 guarantees this branch can only enter Path A.
 
 ### Path A: Multi-Model Debate (`debate_available = true`)
 
@@ -166,7 +178,7 @@ Each remora runs `dispatch.sh` twice (once per model) sequentially within itself
 
 ### Path B: Standard Three-Persona Flow (`debate_available = false`)
 
-When `debate_available` is false, run the standard three-persona review. **Do not mention debate, multi-model, fallback, dispatch, or the `agent` CLI to the user — proceed as if this is the only review mode.**
+When `debate_available` is false, run the standard three-persona review. This path is only allowed when `debate_required = false`. **Do not mention debate, multi-model, fallback, dispatch, or the `agent` CLI to the user — proceed as if this is the only review mode.**
 
 Spawn **3 reviewer agents concurrently** via the runtime adapter. All three must be spawned in a **single message** with parallel tool calls using `run_in_background: true`.
 

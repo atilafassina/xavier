@@ -179,3 +179,11 @@ Topic-specific deep dive.
 ```
 
 Tell the user the research note was saved and remind them they can export it with `/xavier export research/<filename>`.
+
+## Step 9: STOP — Handoff only
+
+<stop-guardrail>
+**You are DONE after saving the research note.** Do not start another Xavier command. Do not turn the research into a PRD, task list, code changes, or follow-up investigation unless the user explicitly asks.
+</stop-guardrail>
+
+Present the saved note path and suggested next commands as options only. Wait for the user's next message before doing anything else.

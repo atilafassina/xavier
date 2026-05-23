@@ -214,3 +214,11 @@ Then the diagnosis body:
 ```
 
 Tell the user the investigation note was saved and remind them they can export it with `/xavier export investigations/<filename>`.
+
+## Step 10: STOP — Handoff only
+
+<stop-guardrail>
+**You are DONE after saving the investigation note.** Do not implement fixes. Do not create a PRD or task list. Do not start `/xavier loop` or any other Xavier command unless the user explicitly asks.
+</stop-guardrail>
+
+Present the top hypothesis and suggested next commands as options only. Wait for the user's next message before doing anything else.

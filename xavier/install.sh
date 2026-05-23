@@ -287,15 +287,24 @@ runtime: codex
 ## spawn(task, options) -> handle
 Use the spawn_agent tool. Prefer agent_type: "explorer" for research and codebase discovery, "worker" for implementation and test-fixing tasks, and "default" for general tasks. Do not set model unless the user explicitly asks or the task clearly requires it.
 
+Prefix the spawned message with `Xavier remora: {options.name or derived task label}`. The raw spawn_agent ID is an internal handle only. Track each remora as `{ label, nickname, handle }`, preferring `options.name` for the label and recording the Codex nickname returned by spawn_agent.
+
 If spawn_agent is unavailable in the current Codex session, warn once: "Codex subagents unavailable; running inline, so Shark parallelism is disabled." Then run the task inline.
 
 ## collect(tasks[]) -> results[]
-Spawn independent tasks concurrently in a single parallel tool-call batch. Use explorer agents for read-only research tasks and worker agents for implementation tasks. Collect results with wait_agent.
+Spawn independent tasks concurrently in a single parallel tool-call batch. Use explorer agents for read-only research tasks and worker agents for implementation tasks. Ensure every task has a user-visible label from `task.name` or a derived task purpose, then maintain an agent map of `{ label, nickname, handle }`.
+
+Collect results with wait_agent. Before any blocking wait_agent call, print the remora labels being waited on, for example `Waiting for 3 remoras: Foundations; Tools comparison; Local context.` Never present raw agent hashes as the primary user-facing status list. If Codex displays handles anyway, immediately follow with the label map so the user can interpret them.
 
 If subagents are unavailable, run tasks inline one at a time and preserve the same warning behavior as spawn().
 
 ## poll(handle) -> status
-Use wait_agent(handle). Codex also sends completion notifications, but wait_agent is the explicit backpressure point when the next step depends on a remora result.
+Use wait_agent(handle). Codex also sends completion notifications, but wait_agent is the explicit backpressure point when the next step depends on a remora result. Resolve handles through the agent map and announce remora labels before polling; do not say only "waiting for 019e...".
+
+## Interactive Gates
+Codex executes Xavier router and skill instructions inline, so interactive gates must be treated as hard command boundaries. Whenever a routed skill says `AskUserQuestion`, ask, prompt, confirm, quiz, wait for the user, or get feedback, Codex must ask the user and stop. Do not infer the answer, choose filenames, execute later steps, or invoke another Xavier command until the user replies.
+
+When a skill reaches a terminal handoff, show the suggested next commands as options only. Do not automatically move from `grill` to `prd`, from `prd` to `tasks`, from `tasks` to `loop`, or from any Xavier skill into code edits unless the user's newest message explicitly asks for that command.
 
 ## Tool Dispatch
 
@@ -499,6 +508,7 @@ Route this request through the Xavier router.
 1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset).
 2. Follow the Router Lifecycle with subcommand: ${cmd}.
 3. Pass through any remaining user arguments unchanged.
+4. Stop when the routed `${cmd}` command reaches an AskUserQuestion/confirm/wait gate or terminal handoff. Do not infer answers, choose filenames, invoke another Xavier command, or continue into follow-up work unless the user's newest message explicitly asks for it.
 ALIASEOF
   done
 

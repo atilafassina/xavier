@@ -258,6 +258,120 @@ else
   ERRORS=$((ERRORS + CODEX_ALIAS_ERRORS))
 fi
 
+# 8. Check review-integration: ace stays a hard gate
+echo ""
+echo "=== Checking review integration gate ==="
+REVIEW_GATE_ERRORS=0
+REVIEW_SKILL="$REPO_ROOT/xavier/skills/review/SKILL.md"
+
+if ! grep -q 'review-integration' "$REVIEW_SKILL"; then
+  echo "FAIL: review skill does not read review-integration from config"
+  REVIEW_GATE_ERRORS=$((REVIEW_GATE_ERRORS + 1))
+fi
+
+if ! grep -q 'debate_required = true' "$REVIEW_SKILL"; then
+  echo "FAIL: review skill does not set debate_required for ace integration"
+  REVIEW_GATE_ERRORS=$((REVIEW_GATE_ERRORS + 1))
+fi
+
+if ! grep -q 'Do \*\*not\*\* run the standard three-persona flow when `review-integration: ace` is configured' "$REVIEW_SKILL"; then
+  echo "FAIL: review skill does not hard-fail instead of falling back when ace debate is unavailable"
+  REVIEW_GATE_ERRORS=$((REVIEW_GATE_ERRORS + 1))
+fi
+
+if ! grep -q 'This path is only allowed when `debate_required = false`' "$REVIEW_SKILL"; then
+  echo "FAIL: review skill does not guard the standard review path behind debate_required=false"
+  REVIEW_GATE_ERRORS=$((REVIEW_GATE_ERRORS + 1))
+fi
+
+if [ $REVIEW_GATE_ERRORS -eq 0 ]; then
+  echo "PASS: review-integration ace hard gate present"
+else
+  ERRORS=$((ERRORS + REVIEW_GATE_ERRORS))
+fi
+
+# 9. Check Codex remora status uses labels, not raw handles
+echo ""
+echo "=== Checking Codex remora labels ==="
+CODEX_LABEL_ERRORS=0
+CODEX_ADAPTER="$REPO_ROOT/xavier/references/adapters/codex/adapter.md"
+INSTALLER="$REPO_ROOT/xavier/install.sh"
+
+for file in "$CODEX_ADAPTER" "$INSTALLER"; do
+  if ! grep -q 'Xavier remora:' "$file"; then
+    echo "FAIL: $(basename "$file") does not prefix Codex subagent messages with a remora label"
+    CODEX_LABEL_ERRORS=$((CODEX_LABEL_ERRORS + 1))
+  fi
+
+  if ! grep -q 'label, nickname, handle' "$file"; then
+    echo "FAIL: $(basename "$file") does not require a label/nickname/handle agent map"
+    CODEX_LABEL_ERRORS=$((CODEX_LABEL_ERRORS + 1))
+  fi
+
+  if ! grep -q 'raw agent hashes' "$file" && ! grep -q 'raw handles' "$file"; then
+    echo "FAIL: $(basename "$file") does not forbid raw agent IDs as primary user-facing status"
+    CODEX_LABEL_ERRORS=$((CODEX_LABEL_ERRORS + 1))
+  fi
+done
+
+if [ $CODEX_LABEL_ERRORS -eq 0 ]; then
+  echo "PASS: Codex remora labels required"
+else
+  ERRORS=$((ERRORS + CODEX_LABEL_ERRORS))
+fi
+
+# 10. Check routed skills stop at interactive and terminal gates
+echo ""
+echo "=== Checking command boundary gates ==="
+COMMAND_GATE_ERRORS=0
+ROUTER="$REPO_ROOT/xavier/SKILL.md"
+CODEX_ADAPTER="$REPO_ROOT/xavier/references/adapters/codex/adapter.md"
+INSTALLER="$REPO_ROOT/xavier/install.sh"
+SELF_UPDATE="$REPO_ROOT/xavier/skills/self-update/SKILL.md"
+
+if ! grep -q 'Interactive gates are hard stops' "$ROUTER"; then
+  echo "FAIL: router does not define interactive gates as hard stops"
+  COMMAND_GATE_ERRORS=$((COMMAND_GATE_ERRORS + 1))
+fi
+
+if ! grep -q 'Terminal handoff gate' "$ROUTER"; then
+  echo "FAIL: router does not define terminal handoff gate"
+  COMMAND_GATE_ERRORS=$((COMMAND_GATE_ERRORS + 1))
+fi
+
+for file in "$CODEX_ADAPTER" "$INSTALLER"; do
+  if ! grep -q '## Interactive Gates' "$file"; then
+    echo "FAIL: $(basename "$file") does not document Codex interactive gates"
+    COMMAND_GATE_ERRORS=$((COMMAND_GATE_ERRORS + 1))
+  fi
+
+  if ! grep -q 'Do not infer the answer, choose filenames, execute later steps, or invoke another Xavier command' "$file"; then
+    echo "FAIL: $(basename "$file") does not forbid Codex from inferring gate answers"
+    COMMAND_GATE_ERRORS=$((COMMAND_GATE_ERRORS + 1))
+  fi
+done
+
+for file in "$INSTALLER" "$SELF_UPDATE"; do
+  if ! grep -q 'Stop when the routed `${cmd}` command reaches an AskUserQuestion/confirm/wait gate or terminal handoff' "$file"; then
+    echo "FAIL: $(basename "$file") Codex alias template does not stop at routed command gates"
+    COMMAND_GATE_ERRORS=$((COMMAND_GATE_ERRORS + 1))
+  fi
+done
+
+for skill in grill prd research investigate tasks; do
+  skill_file="$REPO_ROOT/xavier/skills/$skill/SKILL.md"
+  if ! grep -q '<stop-guardrail>' "$skill_file"; then
+    echo "FAIL: $skill skill missing terminal stop guardrail"
+    COMMAND_GATE_ERRORS=$((COMMAND_GATE_ERRORS + 1))
+  fi
+done
+
+if [ $COMMAND_GATE_ERRORS -eq 0 ]; then
+  echo "PASS: command boundary gates present"
+else
+  ERRORS=$((ERRORS + COMMAND_GATE_ERRORS))
+fi
+
 echo ""
 if [ $ERRORS -gt 0 ]; then
   echo "FAILED: $ERRORS error(s) found"

@@ -62,3 +62,17 @@ With the research brief as shared context, interview the user one question at a 
 3. If a question reveals a gap the research phase didn't cover, explore the codebase inline before asking
 4. Do not batch questions — ask one, wait for the answer, then proceed to the next
 5. After each answer, decide whether to drill deeper into that branch or move to the next
+
+## Step 5: STOP — Handoff only
+
+<stop-guardrail>
+**You are DONE when shared understanding is reached.** Do not write a PRD. Do not create tasks. Do not choose filenames. Do not start implementation. Do not invoke another Xavier command.
+</stop-guardrail>
+
+Summarize the agreed plan and present the user with options:
+
+- **Create PRD**: run `/xavier prd` in a fresh message
+- **Keep discussing**: answer with the next design concern to grill
+- **Stop here**: keep the summary as the final output
+
+Wait for the user's next message. Only run a follow-up Xavier command if the user's newest message explicitly asks for it.
