@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.6.0] - 2026-05-25
+
+### Added
+
 - `/xavier ask "<question>"` skill — read-first Q&A grounded in the user's captured vault knowledge (`knowledge/repos/{repo}/decisions.md`, `architecture.md`, team conventions via `related:` wikilinks, `recurring-patterns` from recent reviews) with relevance-matched reads of `research/`, `investigations/`, and `knowledge/qa/`. Synthesizes an answer in TL;DR + Evidence + Sources format with inline `[[wikilinks]]` to source notes
 - User-confirmed research fallback in `/xavier ask` — when the vault is thin on the topic (floor rule: no salient noun from the question is mentioned in any loaded note; otherwise model judgment), the skill prompts before spawning an adaptive count of remoras (1 narrow / 3 design / 5 exploratory) via `adapter.collect()`. Research remoras are scoped to the current repo (grep, git history, vault deep-scan) — narrower than `/xavier research`'s broad-topic axes
 - Asymmetric persistence in `/xavier ask`: research-fallback answers auto-save to `knowledge/qa/{repo}_{YYYY-MM-DD}_{slug}.md` (net-new info); vault-only answers prompt `save? (y/n)` with default No (redundant with source notes). Slug derivation tokenizes the question, filters stop-words, takes the first 5 content words; collisions resolved with deterministic numeric suffix (`-2`, `-3`, …)
@@ -157,7 +171,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/atilafassina/xavier/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/atilafassina/xavier/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/atilafassina/xavier/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/atilafassina/xavier/compare/v0.2.0...v0.3.0
