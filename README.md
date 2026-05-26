@@ -48,7 +48,7 @@ The installer auto-detects all available runtimes and wires adapters for each. I
 | ----------------------------------------------------------------- | ------------ | ---------------- | ---------------------- |
 | **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** | Full support | `claude` on PATH | `Agent` + `Bash` tools |
 | **[Cursor](https://www.cursor.com/)**                             | Full support | `cursor` on PATH | `Task` + `Shell` tools |
-| **Codex**                                                         | Full support | `codex` on PATH  | `spawn_agent` + `exec_command` tools |
+| **Codex**                                                         | Experimental | `codex` on PATH  | `spawn_agent` + `exec_command` tools |
 
 
 Claude Code, Cursor, and Codex can be installed simultaneously — Xavier registers skills in the appropriate paths for each runtime (`~/.claude/commands/` for Claude Code, `~/.cursor/skills/` for Cursor, `~/.agents/skills/` for Codex).
@@ -214,4 +214,4 @@ Xavier builds on ideas and patterns from these open-source projects:
 
 ## Uninstall
 
-Run `bash uninstall.sh` from the repo, or `/xavier uninstall` from your AI agent. The uninstaller removes symlinks for all runtimes (Claude Code, Cursor) and optionally deletes the vault.
+Run `bash uninstall.sh` from the repo, or `/xavier uninstall` from your AI agent. The uninstaller removes symlinks and per-command aliases for all runtimes (Claude Code, Cursor, Codex) and optionally deletes the vault.
