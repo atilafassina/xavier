@@ -184,11 +184,22 @@ command -v cursor >/dev/null 2>&1 && DETECTED_RUNTIMES="${DETECTED_RUNTIMES} cur
 command -v codex >/dev/null 2>&1 && DETECTED_RUNTIMES="${DETECTED_RUNTIMES} codex"
 DETECTED_RUNTIMES="${DETECTED_RUNTIMES# }"
 
-# Read current adapter and available-adapters from config.md
-CURRENT_ADAPTER="$(grep -o '\*\*adapter\*\*: *[^ ]*' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | awk -F': *' '{print $2}')"
+# Read current adapter from config.md. Capture to end-of-line via sed —
+# the previous `grep -o '...: *[^ ]*'` form truncated at the first space,
+# which silently mangled the default `(not yet detected)` placeholder
+# into the literal `(not`. Then normalize placeholder values to empty so
+# the reconcile branch treats a fresh vault as "nothing wired yet"
+# instead of as "primary is `(not`".
+CURRENT_ADAPTER="$(sed -n 's/^- \*\*adapter\*\*: *\(.*\)/\1/p' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1)"
+case "$CURRENT_ADAPTER" in
+  ""|"(not yet detected)"|"(not yet configured)") CURRENT_ADAPTER="" ;;
+esac
+
 CURRENT_AVAILABLE_LINE="$(grep -o '\*\*available-adapters\*\*: *\[[^]]*\]' "$XAVIER_HOME/config.md" 2>/dev/null | head -n 1 | sed 's/.*\[\(.*\)\]/\1/' | tr -d ' ' | tr ',' ' ')"
 
-# If available-adapters is missing, the single primary is the entire set so far
+# If available-adapters is missing, the single primary is the entire set
+# so far. With a normalized-empty CURRENT_ADAPTER this leaves
+# CURRENT_AVAILABLE empty, which is the correct fresh-vault state.
 if [ -z "$CURRENT_AVAILABLE_LINE" ]; then
   CURRENT_AVAILABLE="$CURRENT_ADAPTER"
 else
@@ -206,9 +217,12 @@ done
 NEW_RUNTIMES="${NEW_RUNTIMES# }"
 
 echo "Detected: ${DETECTED_RUNTIMES:-<none>}"
+echo "Current primary: ${CURRENT_ADAPTER:-<unset>}"
 echo "Current available-adapters: ${CURRENT_AVAILABLE:-<unset>}"
 echo "New since last sync: ${NEW_RUNTIMES:-<none>}"
 ```
+
+**If `CURRENT_ADAPTER` is empty after normalization** (fresh vault that never went through `/xavier setup`), do **not** run the reconcile prompt. Self-update should not bootstrap initial configuration — tell the user to run `/xavier setup` first to wire the primary adapter, then proceed to Phase 2 so alias regeneration still happens for whatever's on PATH. The Phase 2 gating handles the empty-config case cleanly.
 
 **If `NEW_RUNTIMES` is empty**, the detected set is already represented in `config.md` — skip the prompt and proceed silently to Phase 2.
 
