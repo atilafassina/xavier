@@ -179,27 +179,29 @@ Detect the active AI agent runtime and install the appropriate adapter. Xavier s
 
 ### Step 3e: Register Skill Symlinks
 
-Create symlinks so Xavier is registered as a global skill across all supported runtimes. Derive the repo path from the skill's own base directory (go up from this skill file through `skills/setup/` to reach the `xavier/` directory, and up one more for the repo root).
+Create symlinks so Xavier is registered as a global skill across the runtimes detected in Step 3. Derive the repo path from the skill's own base directory (go up from this skill file through `skills/setup/` to reach the `xavier/` directory, and up one more for the repo root).
 
-1. **Symlink 1** (Codex local skill): `~/.agents/skills/xavier/` → the `xavier/` directory in the repo
+**Gate every symlink and alias below on the runtimes detected in Step 3** (those recorded in `available-adapters`). Do not create entries for runtimes the user doesn't have — e.g. a Claude-only user should get no `~/.agents/skills/*` (Codex) or `~/.cursor/skills/*` (Cursor) stubs. This mirrors `install.sh`, which gates each runtime's symlinks and per-command aliases on detection.
+
+1. **Symlink 1** (Codex local skill) — *only if `codex` was detected*: `~/.agents/skills/xavier/` → the `xavier/` directory in the repo
    - Create parent directory `~/.agents/skills/` if it doesn't exist
    - If the symlink already exists, warn the user and skip — do NOT overwrite
    - If it doesn't exist, create it: `ln -s <repo>/xavier ~/.agents/skills/xavier`
 
-2. **Symlink 2** (Claude Code): `~/.claude/commands/xavier.md` → `xavier/SKILL.md` in the repo
+2. **Symlink 2** (Claude Code) — *only if `claude-code` was detected*: `~/.claude/commands/xavier.md` → `xavier/SKILL.md` in the repo
    - Create parent directory `~/.claude/commands/` if it doesn't exist
    - If the symlink already exists, warn the user and skip — do NOT overwrite
    - If it doesn't exist, create it: `ln -s <repo>/xavier/SKILL.md ~/.claude/commands/xavier.md`
 
-3. **Symlink 3** (Cursor): `~/.cursor/skills/xavier/SKILL.md` → `xavier/SKILL.md` in the repo
+3. **Symlink 3** (Cursor) — *only if `cursor` was detected*: `~/.cursor/skills/xavier/SKILL.md` → `xavier/SKILL.md` in the repo
    - Create parent directory `~/.cursor/skills/xavier/` if it doesn't exist
    - If the symlink already exists, warn the user and skip — do NOT overwrite
    - If it doesn't exist, create it: `ln -s <repo>/xavier/SKILL.md ~/.cursor/skills/xavier/SKILL.md`
 
-4. **Per-command aliases**: If `command-aliases: yes`, create runtime-native aliases for each Xavier command:
-   - Claude Code: `~/.claude/commands/<prefix>-<cmd>.md`
-   - Cursor: `~/.cursor/skills/<prefix>-<cmd>/SKILL.md`
-   - Codex: `~/.agents/skills/<prefix>-<cmd>/SKILL.md`
+4. **Per-command aliases**: If `command-aliases: yes`, create runtime-native aliases for each Xavier command — but only for runtimes detected in Step 3:
+   - Claude Code (if `claude-code` detected): `~/.claude/commands/<prefix>-<cmd>.md`
+   - Cursor (if `cursor` detected): `~/.cursor/skills/<prefix>-<cmd>/SKILL.md`
+   - Codex (if `codex` detected): `~/.agents/skills/<prefix>-<cmd>/SKILL.md`
 
 5. **Report**: Tell the user what was created and what was skipped.
 
