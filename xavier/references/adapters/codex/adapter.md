@@ -96,7 +96,7 @@ If subagents are unavailable, run the tasks inline one at a time and preserve th
 
 ## poll(handle)
 
-Use `wait_agent(targets: [handle])` when the next step depends on a remora result. Use longer waits for long-running implementation or research tasks to avoid busy polling. Before polling, resolve every handle through the agent map and announce the remora labels being waited on; do not say only "waiting for 019e...".
+Use `wait_agent(handle)` when the next step depends on a remora result. Use longer waits for long-running implementation or research tasks to avoid busy polling. Before polling, resolve every handle through the agent map and announce the remora labels being waited on; do not say only "waiting for 019e...".
 
 ## Interactive Gates
 
