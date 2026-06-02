@@ -48,7 +48,7 @@ remove_link() {
 bold "Xavier Uninstaller"
 echo ""
 
-# 1. Remove ~/.agents/skills/xavier symlink
+# 1. Remove ~/.agents/skills/xavier symlink (Codex local skill)
 remove_link "$HOME/.agents/skills/xavier"
 
 # 2. Remove ~/.claude/commands/xavier.md symlink and /x alias (Claude Code)
@@ -63,7 +63,7 @@ if [ -d "$HOME/.cursor/skills/xavier" ] && [ -z "$(ls -A "$HOME/.cursor/skills/x
   track_removed "$HOME/.cursor/skills/xavier/ (empty directory)"
 fi
 
-# 4. Remove per-command alias files (Claude Code and Cursor)
+# 4. Remove per-command alias files (Claude Code, Cursor, and Codex)
 # Read alias prefix from config to find the right files
 ALIAS_PREFIX="xavier"
 if [ -f "$XAVIER_HOME/config.md" ]; then
@@ -91,6 +91,13 @@ for alias_dir in "$HOME/.cursor/skills"/${ALIAS_PREFIX}-*/; do
   track_removed "$alias_dir"
 done
 
+for alias_dir in "$HOME/.agents/skills"/${ALIAS_PREFIX}-*/; do
+  [ -d "$alias_dir" ] || continue
+  rm -rf "$alias_dir"
+  info "Removed Codex alias directory: $alias_dir"
+  track_removed "$alias_dir"
+done
+
 # Clean up aliases from other known prefixes (previous installs)
 for old_prefix in xavier x; do
   [ "$old_prefix" = "$ALIAS_PREFIX" ] && continue
@@ -104,6 +111,12 @@ for old_prefix in xavier x; do
     [ -d "$alias_dir" ] || continue
     rm -rf "$alias_dir"
     info "Removed legacy alias directory: $alias_dir"
+    track_removed "$alias_dir"
+  done
+  for alias_dir in "$HOME/.agents/skills"/${old_prefix}-*/; do
+    [ -d "$alias_dir" ] || continue
+    rm -rf "$alias_dir"
+    info "Removed legacy Codex alias directory: $alias_dir"
     track_removed "$alias_dir"
   done
 done

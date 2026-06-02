@@ -50,6 +50,10 @@ Then stop — do not execute the skill.
 
 **7. Execute inline**: read the skill body (everything after the frontmatter) and follow its instructions directly in the current conversation, with all resolved context available.
 
+**7a. Interactive gates are hard stops**: when executing a skill inline, any instruction to ask, prompt, confirm, quiz, wait for the user, use `AskUserQuestion`, or get feedback is a command boundary. Ask the user exactly what the skill requests, then stop executing that skill until the user replies. Do not infer the answer, pick defaults, choose filenames, continue to later steps, or invoke another Xavier command while waiting.
+
+**7b. Terminal handoff gate**: when a skill reaches its final output, the current Xavier command is complete. You may show suggested next commands, but you MUST NOT execute them unless the user's newest message explicitly asks for that command. In particular, do not automatically move from `grill` to `prd`, from `prd` to `tasks`, from `tasks` to `loop`, or from any skill into code edits.
+
 **8. Vault commit**: after the skill completes successfully, dispatch a vault commit if the vault exists. Read the git strategy from `<XAVIER_HOME>/config.md`:
 
 - **auto-commit** or **batch-commit**: `cd <XAVIER_HOME> && git add -A && git commit -m "<command>: <short context>"`
@@ -128,4 +132,3 @@ Shared references used across multiple skills live in `<vault>/references/`:
 - **`<vault>/references/formats/zettelkasten.md`** — Base Zettelkasten frontmatter schema for vault notes
 - **`<vault>/references/personas/`** — Default reviewer personas (correctness, security, performance)
 - **`<vault>/references/adapters/`** — Runtime adapter contracts and implementations
-

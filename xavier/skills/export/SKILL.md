@@ -1,5 +1,6 @@
 ---
 name: export
+description: Export a vault note to the user's personal Obsidian vault with wikilink adaptation and `x-` namespace prefix.
 requires: [config, prd-index, tasks-index, repo-conventions:optional, team-conventions:optional, recurring-patterns:optional]
 ---
 

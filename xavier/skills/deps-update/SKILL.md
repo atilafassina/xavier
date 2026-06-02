@@ -1,5 +1,6 @@
 ---
 name: deps-update
+description: Scan the current project's lockfile and regenerate stale dependency-skills.
 requires: [config, deps-index]
 ---
 

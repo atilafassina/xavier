@@ -73,7 +73,9 @@ check_existing() {
              # and newly-installed runtimes (e.g. user installed Cursor since last
              # run) land on the same `s`-path as a fresh install would produce.
              detect_runtimes
+             PRESERVE_CONFIG=true
              wire_adapters
+             PRESERVE_CONFIG=false
              install_skill
              install_command_aliases
              link_xavier_skills_and_refs
@@ -175,7 +177,7 @@ detect_runtimes() {
 
   if command -v codex >/dev/null 2>&1; then
     DETECTED_RUNTIMES="${DETECTED_RUNTIMES} codex"
-    warn "Detected: Codex (adapter not yet available — will use stub)"
+    info "Detected: Codex"
   fi
 
   # Trim leading space
@@ -187,7 +189,7 @@ detect_runtimes() {
   else
     # Use the first runtime that has an adapter implementation as primary
     for rt in $DETECTED_RUNTIMES; do
-      if [ "$rt" = "claude-code" ] || [ "$rt" = "cursor" ]; then
+      if [ "$rt" = "claude-code" ] || [ "$rt" = "cursor" ] || [ "$rt" = "codex" ]; then
         DETECTED_RUNTIME="$rt"
         break
       fi
@@ -206,25 +208,49 @@ wire_adapters() {
     wire_single_adapter "$runtime"
   done
 
-  # Update config with primary runtime and list available adapters
+  RUNTIME_COUNT="$(echo "$DETECTED_RUNTIMES" | wc -w | tr -d ' ')"
+  ADAPTERS_LIST="$(echo "$DETECTED_RUNTIMES" | sed 's/ /, /g')"
+
+  if [ "${PRESERVE_CONFIG:-false}" = "true" ]; then
+    # Preserve the user's primary `adapter:` selection, but always refresh
+    # `available-adapters:` to reflect what's currently detected. Without
+    # this, a Claude-only vault that gains Cursor/Codex via [s] refresh
+    # would wire the new adapter.md files but never advertise them in
+    # config.md — forcing the user back through /xavier setup just to
+    # switch primary.
+    info "Preserving primary adapter; refreshing available-adapters from detection."
+    refresh_available_adapters
+    return 0
+  fi
+
   if command -v sed >/dev/null 2>&1; then
     sed -i.bak "s/- \*\*adapter\*\*: .*/- **adapter**: $DETECTED_RUNTIME/" "$XAVIER_HOME/config.md" 2>/dev/null && rm -f "$XAVIER_HOME/config.md.bak"
   fi
 
-  # Append available-adapters line if multiple runtimes detected
-  RUNTIME_COUNT="$(echo "$DETECTED_RUNTIMES" | wc -w | tr -d ' ')"
-  if [ "$RUNTIME_COUNT" -gt 1 ]; then
-    ADAPTERS_LIST="$(echo "$DETECTED_RUNTIMES" | tr ' ' ', ')"
-    if ! grep -q "available-adapters" "$XAVIER_HOME/config.md" 2>/dev/null; then
-      sed -i.bak "s/- \*\*adapter\*\*: .*/- **adapter**: $DETECTED_RUNTIME\n- **available-adapters**: [$ADAPTERS_LIST]/" "$XAVIER_HOME/config.md" 2>/dev/null && rm -f "$XAVIER_HOME/config.md.bak"
-    fi
+  refresh_available_adapters
+}
+
+# Insert or update `- **available-adapters**:` in config.md to match the
+# currently detected runtime set. Single-runtime installs keep the field
+# absent unless it already exists (in which case it's refreshed in place).
+# Uses awk for line insertion — BSD sed and GNU sed disagree on `\n` in
+# the replacement string, so the prior `s/.../...\n.../` form silently
+# inserted a literal `\n` on macOS.
+refresh_available_adapters() {
+  if grep -q "available-adapters" "$XAVIER_HOME/config.md" 2>/dev/null; then
+    sed -i.bak "s/- \*\*available-adapters\*\*: .*/- **available-adapters**: [$ADAPTERS_LIST]/" "$XAVIER_HOME/config.md" 2>/dev/null && rm -f "$XAVIER_HOME/config.md.bak"
+  elif [ "$RUNTIME_COUNT" -gt 1 ]; then
+    awk -v list="$ADAPTERS_LIST" '
+      /^- \*\*adapter\*\*:/ { print; print "- **available-adapters**: [" list "]"; next }
+      { print }
+    ' "$XAVIER_HOME/config.md" > "$XAVIER_HOME/config.md.tmp" && mv "$XAVIER_HOME/config.md.tmp" "$XAVIER_HOME/config.md"
   fi
 }
 
 wire_single_adapter() {
   runtime="$1"
 
-  if [ "$runtime" != "claude-code" ] && [ "$runtime" != "cursor" ]; then
+  if [ "$runtime" != "claude-code" ] && [ "$runtime" != "cursor" ] && [ "$runtime" != "codex" ]; then
     warn "No adapter implementation for $runtime — skipping"
     return 0
   fi
@@ -274,6 +300,52 @@ Spawn all tasks in a single message (parallel Task tool calls) with run_in_backg
 ADAPTEREOF
   fi
 
+  if [ "$runtime" = "codex" ]; then
+    cat > "$XAVIER_HOME/adapters/codex/adapter.md" << 'ADAPTEREOF'
+---
+name: codex
+type: adapter
+runtime: codex
+---
+
+# Codex Runtime Adapter
+
+## spawn(task, options) -> handle
+Use the spawn_agent tool. Prefer agent_type: "explorer" for research and codebase discovery, "worker" for implementation and test-fixing tasks, and "default" for general tasks. Do not set model unless the user explicitly asks or the task clearly requires it.
+
+Prefix the spawned message with `Xavier remora: {options.name or derived task label}`. The raw spawn_agent ID is an internal handle only. Track each remora as `{ label, nickname, handle }`, preferring `options.name` for the label and recording the Codex nickname returned by spawn_agent.
+
+If spawn_agent is unavailable in the current Codex session, warn once: "Codex subagents unavailable; running inline, so Shark parallelism is disabled." Then run the task inline.
+
+## collect(tasks[]) -> results[]
+Spawn independent tasks concurrently in a single parallel tool-call batch. Use explorer agents for read-only research tasks and worker agents for implementation tasks. Ensure every task has a user-visible label from `task.name` or a derived task purpose, then maintain an agent map of `{ label, nickname, handle }`.
+
+Collect results with wait_agent. Before any blocking wait_agent call, print the remora labels being waited on, for example `Waiting for 3 remoras: Foundations; Tools comparison; Local context.` Never present raw agent hashes as the primary user-facing status list. If Codex displays handles anyway, immediately follow with the label map so the user can interpret them.
+
+If subagents are unavailable, run tasks inline one at a time and preserve the same warning behavior as spawn().
+
+## poll(handle) -> status
+Use wait_agent(handle). Codex also sends completion notifications, but wait_agent is the explicit backpressure point when the next step depends on a remora result. Resolve handles through the agent map and announce remora labels before polling; do not say only "waiting for 019e...".
+
+## Interactive Gates
+Codex executes Xavier router and skill instructions inline, so interactive gates must be treated as hard command boundaries. Whenever a routed skill says `AskUserQuestion`, ask, prompt, confirm, quiz, wait for the user, or get feedback, Codex must ask the user and stop. Do not infer the answer, choose filenames, execute later steps, or invoke another Xavier command until the user replies.
+
+When a skill reaches a terminal handoff, show the suggested next commands as options only. Do not automatically move from `grill` to `prd`, from `prd` to `tasks`, from `tasks` to `loop`, or from any Xavier skill into code edits unless the user's newest message explicitly asks for that command.
+
+## Tool Dispatch
+
+| Operation | Tool |
+|-----------|------|
+| run-command | exec_command |
+| read-file | exec_command with sed/nl or shell file reads |
+| write-file | apply_patch |
+| spawn-agent | spawn_agent |
+| poll-agent | wait_agent |
+| search-text | exec_command with rg |
+| search-files | exec_command with rg --files |
+ADAPTEREOF
+  fi
+
   info "Adapter wired: $runtime"
 }
 
@@ -305,14 +377,24 @@ install_skill() {
 
   info "Registering Xavier skill ($INSTALL_MODE mode)..."
 
-  # Symlink 1: ~/.agents/skills/xavier/ -> $SCRIPT_DIR (the xavier/ directory)
-  create_symlink "$HOME/.agents/skills/xavier" "$SCRIPT_DIR" "$HOME/.agents/skills"
+  # Codex base skill: ~/.agents/skills/xavier/ -> $SCRIPT_DIR
+  # Only created when Codex is detected — otherwise a Claude-only or
+  # Cursor-only user accumulates stale entries in Codex's skill root.
+  case " $DETECTED_RUNTIMES " in
+    *" codex "*)
+      create_symlink "$HOME/.agents/skills/xavier" "$SCRIPT_DIR" "$HOME/.agents/skills"
+      ;;
+  esac
 
-  # Determine SKILL.md source based on install mode
+  # Determine SKILL.md source based on install mode. The vault-router
+  # symlink at $XAVIER_HOME/SKILL.md is kept unconditional: Cursor and
+  # Codex aliases read from it, and a missing symlink in clone mode
+  # leaves refresh installs reading stale router logic.
   if [ "$INSTALL_MODE" = "clone" ]; then
     SKILL_SOURCE="$SCRIPT_DIR/SKILL.md"
+    ln -sfn "$SKILL_SOURCE" "$XAVIER_HOME/SKILL.md"
+    info "Linked SKILL.md to $XAVIER_HOME/SKILL.md"
   else
-    # Tarball mode: copy SKILL.md into XAVIER_HOME so it persists
     if [ -f "$SCRIPT_DIR/SKILL.md" ]; then
       cp "$SCRIPT_DIR/SKILL.md" "$XAVIER_HOME/SKILL.md"
       info "Copied SKILL.md to $XAVIER_HOME/SKILL.md"
@@ -320,13 +402,16 @@ install_skill() {
     SKILL_SOURCE="$XAVIER_HOME/SKILL.md"
   fi
 
-  # Symlink 2: ~/.claude/commands/xavier.md -> SKILL.md (Claude Code)
-  create_symlink "$HOME/.claude/commands/xavier.md" "$SKILL_SOURCE" "$HOME/.claude/commands"
+  # Claude Code base + short alias — gated so users without `claude` on
+  # PATH don't get phantom command entries.
+  case " $DETECTED_RUNTIMES " in
+    *" claude-code "*)
+      create_symlink "$HOME/.claude/commands/xavier.md" "$SKILL_SOURCE" "$HOME/.claude/commands"
+      create_symlink "$HOME/.claude/commands/x.md" "$SKILL_SOURCE" "$HOME/.claude/commands"
+      ;;
+  esac
 
-  # Symlink 3: ~/.claude/commands/x.md -> SKILL.md (Claude Code short alias)
-  create_symlink "$HOME/.claude/commands/x.md" "$SKILL_SOURCE" "$HOME/.claude/commands"
-
-  # Cursor: per-command aliases handle discoverability (installed by install_command_aliases)
+  # Cursor and Codex: per-command aliases handle discoverability (installed by install_command_aliases)
 }
 
 # --- Helper: create a symlink with broken-link cleanup ---
@@ -348,7 +433,7 @@ create_symlink() {
   fi
 }
 
-# --- Generate per-command aliases for Claude Code and Cursor ---
+# --- Generate per-command aliases for Claude Code, Cursor, and Codex ---
 install_command_aliases() {
   if [ -z "$SCRIPT_DIR" ]; then
     return 0
@@ -412,10 +497,13 @@ uninstall|Remove the Xavier vault and all symlinks
   echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
     [ -z "$cmd" ] && continue
 
-    # Claude Code: ~/.claude/commands/<prefix>-<cmd>.md
-    claude_alias="$HOME/.claude/commands/${ALIAS_PREFIX}-${cmd}.md"
-    mkdir -p "$HOME/.claude/commands"
-    cat > "$claude_alias" << ALIASEOF
+    # Each runtime's alias is gated on detection — a Claude-only user
+    # must not accumulate Cursor/Codex stubs in their skill roots.
+    case " $DETECTED_RUNTIMES " in
+      *" claude-code "*)
+        claude_alias="$HOME/.claude/commands/${ALIAS_PREFIX}-${cmd}.md"
+        mkdir -p "$HOME/.claude/commands"
+        cat > "$claude_alias" << ALIASEOF
 ---
 name: ${ALIAS_PREFIX}-${cmd}
 description: ${desc}
@@ -429,14 +517,16 @@ Use the Skill tool to invoke:
 
 Do NOT execute this skill directly. Do NOT read vault files. Delegate to the xavier router.
 ALIASEOF
+        ;;
+    esac
 
-    # Cursor: ~/.cursor/skills/<prefix>-<cmd>/SKILL.md
-    # Always rewrite so refresh-only and self-update flows pick up content/format
-    # changes (e.g. new fields, updated descriptions). Skipping when the file
-    # already exists left existing Cursor users on stale aliases after upgrades.
-    cursor_alias="$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md"
-    mkdir -p "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}"
-    cat > "$cursor_alias" << ALIASEOF
+    case " $DETECTED_RUNTIMES " in
+      *" cursor "*)
+        # Always rewrite so refresh-only and self-update flows pick up
+        # content/format changes (e.g. new fields, updated descriptions).
+        cursor_alias="$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md"
+        mkdir -p "$HOME/.cursor/skills/${ALIAS_PREFIX}-${cmd}"
+        cat > "$cursor_alias" << ALIASEOF
 ---
 name: ${ALIAS_PREFIX}-${cmd}
 description: "${desc}. Use when user says /xavier ${cmd}."
@@ -447,9 +537,42 @@ Execute /xavier ${cmd}.
 1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset)
 2. Follow the Router Lifecycle with subcommand: ${cmd}
 ALIASEOF
+        ;;
+    esac
+
+    case " $DETECTED_RUNTIMES " in
+      *" codex "*)
+        codex_alias="$HOME/.agents/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md"
+        mkdir -p "$HOME/.agents/skills/${ALIAS_PREFIX}-${cmd}"
+        cat > "$codex_alias" << ALIASEOF
+---
+name: ${ALIAS_PREFIX}-${cmd}
+description: ${desc}. Use when user says /xavier ${cmd}.
+---
+
+Route this request through the Xavier router.
+
+1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset).
+2. Follow the Router Lifecycle with subcommand: ${cmd}.
+3. Pass through any remaining user arguments unchanged.
+4. Stop when the routed ${cmd} command reaches an AskUserQuestion/confirm/wait gate or terminal handoff. Do not infer answers, choose filenames, invoke another Xavier command, or continue into follow-up work unless the user's newest message explicitly asks for it.
+ALIASEOF
+        ;;
+    esac
   done
 
-  info "Command aliases installed for Claude Code and Cursor."
+  # Summary message reflects which runtimes actually got aliases written.
+  alias_runtimes=""
+  case " $DETECTED_RUNTIMES " in *" claude-code "*) alias_runtimes="${alias_runtimes}Claude Code, ";; esac
+  case " $DETECTED_RUNTIMES " in *" cursor "*) alias_runtimes="${alias_runtimes}Cursor, ";; esac
+  case " $DETECTED_RUNTIMES " in *" codex "*) alias_runtimes="${alias_runtimes}Codex, ";; esac
+  alias_runtimes="$(echo "$alias_runtimes" | sed 's/, $//')"
+
+  if [ -n "$alias_runtimes" ]; then
+    info "Command aliases installed for $alias_runtimes."
+  else
+    info "No detected runtimes — skipping command aliases."
+  fi
 }
 
 # --- Symlink or copy skills & references into ~/.xavier/ ---
