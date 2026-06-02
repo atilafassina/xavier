@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.7.0] - 2026-06-02
+
+### Added
+
 - **Codex runtime adapter (experimental)** — Shark-pattern support via Codex's built-in `spawn_agent`, `wait_agent`, and `exec_command` tools. `xavier/references/adapters/codex/adapter.md` maps `spawn`/`collect`/`poll` to Codex primitives, with `explorer`/`worker`/`default` agent-type heuristics derived from Xavier task intent (research → explorer, implementation → worker, ambiguous → default). Subagents inherit the parent model by default. When `spawn_agent` is unavailable, Shark flows degrade to inline execution with a one-time warning
 - Codex per-command skill aliases — installer generates `~/.agents/skills/${ALIAS_PREFIX}-${cmd}/SKILL.md` stubs that delegate to the vault router, mirroring the Claude Code (`~/.claude/commands/`) and Cursor (`~/.cursor/skills/`) wiring. Codex is auto-detected via `codex` on PATH; `uninstall.sh` removes the aliases as part of the standard runtime sweep
 - Remora label discipline for Codex — every `spawn_agent` message is prefixed with `Xavier remora: <label>`, and the adapter requires a `{ label, nickname, handle }` map so user-facing status uses human labels (e.g. "Waiting for 3 remoras: Foundations …; AI deck tools …; Local context") rather than raw `019e…` agent hashes
@@ -183,7 +197,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/atilafassina/xavier/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/atilafassina/xavier/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/atilafassina/xavier/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/atilafassina/xavier/compare/v0.3.0...v0.4.0
