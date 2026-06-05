@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- ACE-backed reviews now dispatch GPT reviewers with `gpt-5.5-extra-high` instead of `gpt-5.4-xhigh`, keeping Xavier's multi-model debate pair aligned with the current Cursor `agent` model catalog.
+
 ### Deprecated
 
 ### Removed

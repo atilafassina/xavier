@@ -31,7 +31,7 @@ dispatch.sh <model> <workspace> <output-file> <system-prompt> <user-prompt>
 
 | Arg | Description |
 |-----|-------------|
-| `model` | Model identifier (e.g., `gpt-5.4-xhigh`, `gemini-3.1-pro`) |
+| `model` | Model identifier (e.g., `gpt-5.5-extra-high`, `gemini-3.1-pro`) |
 | `workspace` | Path to the repo/workspace directory |
 | `output-file` | Path where raw stream-json output is written |
 | `system-prompt` | Persona and vault context (prepended to the prompt) |
@@ -72,7 +72,7 @@ bash parse.sh merge <file_a> <file_b> [label_a] [label_b]
 TMPDIR=$(mktemp -d)
 
 # 1. Dispatch to both models in parallel
-./dispatch.sh gpt-5.4-xhigh "$WORKSPACE" "$TMPDIR/gpt.json" "$SYSTEM_PROMPT" "$DIFF" &
+./dispatch.sh gpt-5.5-extra-high "$WORKSPACE" "$TMPDIR/gpt.json" "$SYSTEM_PROMPT" "$DIFF" &
 ./dispatch.sh gemini-3.1-pro "$WORKSPACE" "$TMPDIR/gemini.json" "$SYSTEM_PROMPT" "$DIFF" &
 wait
 
@@ -93,7 +93,7 @@ bash parse.sh merge "$TMPDIR/gpt.json" "$TMPDIR/gemini.json" GPT Gemini
 
 | Model | Notes |
 |-------|-------|
-| `gpt-5.4-xhigh` | OpenAI, high-reasoning tier |
+| `gpt-5.5-extra-high` | OpenAI, high-reasoning tier |
 | `gemini-3.1-pro` | Google, strong at broad coverage |
 
 Additional models can be used by passing any valid model identifier to dispatch.sh. The two listed above are the tested and recommended pair for debate-style reviews.

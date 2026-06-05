@@ -120,7 +120,7 @@ collect([
     DIFF={diff}
 
     # 1. Dispatch to both models (mktemp paths prevent symlink attacks)
-    bash $DISPATCH gpt-5.4-xhigh $WORKSPACE $TMPDIR/gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+    bash $DISPATCH gpt-5.5-extra-high $WORKSPACE $TMPDIR/gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
     bash $DISPATCH gemini-3.1-pro $WORKSPACE $TMPDIR/gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
 
     # 2. Merge into debate format
@@ -141,7 +141,7 @@ collect([
     DIFF={diff}
 
     # 1. Dispatch to both models (mktemp paths prevent symlink attacks)
-    bash $DISPATCH gpt-5.4-xhigh $WORKSPACE $TMPDIR/gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+    bash $DISPATCH gpt-5.5-extra-high $WORKSPACE $TMPDIR/gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
     bash $DISPATCH gemini-3.1-pro $WORKSPACE $TMPDIR/gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
 
     # 2. Merge into debate format
@@ -162,7 +162,7 @@ collect([
     DIFF={diff}
 
     # 1. Dispatch to both models (mktemp paths prevent symlink attacks)
-    bash $DISPATCH gpt-5.4-xhigh $WORKSPACE $TMPDIR/gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
+    bash $DISPATCH gpt-5.5-extra-high $WORKSPACE $TMPDIR/gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
     bash $DISPATCH gemini-3.1-pro $WORKSPACE $TMPDIR/gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
 
     # 2. Merge into debate format
@@ -369,7 +369,7 @@ type: review
 verdict: {approve | request-changes | rethink}
 finding-categories: [{list of categories found, e.g. correctness, security, performance}]
 recurring: [{findings that appeared in past reviews of this repo}]
-models: [gpt-5.4-xhigh, gemini-3.1-pro]
+models: [gpt-5.5-extra-high, gemini-3.1-pro]
 debate-mode: true
 decisions-recorded: true
 tags: [{inferred from findings}]
@@ -406,7 +406,7 @@ updated: {ISO date}
 
 - **Diff scope**: {number of files changed, insertions, deletions}
 - **Reviewers**: correctness, security, performance
-- **Models**: gpt-5.4-xhigh, gemini-3.1-pro
+- **Models**: gpt-5.5-extra-high, gemini-3.1-pro
 ```
 
 **Rules for populating the Decisions table:**
