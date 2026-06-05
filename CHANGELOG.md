@@ -11,6 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.7.1] - 2026-06-05
+
+### Added
+
+### Changed
+
 - ACE-backed reviews now dispatch GPT reviewers with `gpt-5.5-extra-high` instead of `gpt-5.4-xhigh`, keeping Xavier's multi-model debate pair aligned with the current Cursor `agent` model catalog.
 
 ### Deprecated
@@ -199,7 +213,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/atilafassina/xavier/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/atilafassina/xavier/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/atilafassina/xavier/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/atilafassina/xavier/compare/v0.4.0...v0.5.0
