@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CI workflow (`ci.yml`) running `validate-skills.sh` on pull requests and pushes to `main`; the release workflow now also runs the validators before building the tarball, so a broken template can no longer ship in a release.
+- Validator checks asserting Claude aliases delegate by reading the router file (never via a Skill-tool name) and that the `COMMANDS` list in `install.sh` stays in sync with the self-update regeneration block.
+
 ### Changed
 
 ### Deprecated
@@ -16,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 ### Fixed
+
+- Claude Code per-command aliases (`/x-*`, `/xavier-*`) failed with "Unknown skill: xavier": the generated alias bodies delegated via `Skill("xavier")`, but Claude Code registers commands by filename (the router symlinks `x.md`/`xavier.md` collapse to a single registry entry), so the hard-coded name never resolved. Claude aliases now read the router from `$XAVIER_HOME/SKILL.md` and follow the Router Lifecycle directly — the same name-agnostic delegation Cursor and Codex aliases already used.
+- Stale aliases from previous `alias-prefix` values (e.g. a leftover `xavier-*` family after switching the prefix to `x`) are now removed during install and self-update alias regeneration. Cleanup is marker-gated (`xavier router`) so user-owned files matching the glob are never touched.
 
 ### Security
 

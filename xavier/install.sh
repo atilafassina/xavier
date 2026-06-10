@@ -521,6 +521,43 @@ create_symlink() {
   fi
 }
 
+# --- Helper: remove Xavier-generated aliases from previous prefixes ---
+# Scans the three alias roots for per-command aliases whose prefix differs
+# from the current ALIAS_PREFIX. Only entries carrying the Xavier marker
+# ("xavier router", case-insensitive — present in every template generation)
+# are removed, so user-owned files that happen to match the glob (e.g.
+# my-review.md) are never touched. Runs against any root that exists,
+# regardless of runtime detection — removing our own stale files is safe
+# even for runtimes no longer on PATH.
+cleanup_stale_aliases() {
+  echo "$COMMANDS" | while IFS='|' read -r cmd _desc; do
+    [ -z "$cmd" ] && continue
+
+    for stale_file in "$HOME/.claude/commands"/*-"${cmd}.md"; do
+      [ -e "$stale_file" ] || continue
+      [ "$stale_file" = "$HOME/.claude/commands/${ALIAS_PREFIX}-${cmd}.md" ] && continue
+      grep -qi 'xavier router' "$stale_file" 2>/dev/null || continue
+      rm "$stale_file"
+      info "Removed stale alias: $stale_file"
+    done
+
+    for stale_dir in "$HOME/.cursor/skills"/*-"${cmd}" "$HOME/.agents/skills"/*-"${cmd}"; do
+      [ -d "$stale_dir" ] || continue
+      case "$stale_dir" in
+        */"${ALIAS_PREFIX}-${cmd}") continue ;;
+      esac
+      [ -f "$stale_dir/SKILL.md" ] || continue
+      grep -qi 'xavier router' "$stale_dir/SKILL.md" 2>/dev/null || continue
+      rm "$stale_dir/SKILL.md"
+      if rmdir "$stale_dir" 2>/dev/null; then
+        info "Removed stale alias directory: $stale_dir"
+      else
+        info "Removed stale alias: $stale_dir/SKILL.md (directory not empty, left in place)"
+      fi
+    done
+  done
+}
+
 # --- Generate per-command aliases for Claude Code, Cursor, and Codex ---
 install_command_aliases() {
   if [ -z "$SCRIPT_DIR" ]; then
@@ -583,6 +620,9 @@ self-update|Update Xavier skills and references to the latest release
 uninstall|Remove the Xavier vault and all symlinks
 "
 
+  # Remove aliases left behind by previous prefixes before regenerating.
+  cleanup_stale_aliases
+
   echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
     [ -z "$cmd" ] && continue
 
@@ -600,11 +640,12 @@ description: ${desc}
 
 This is an alias for \`/xavier ${cmd}\`.
 
-Use the Skill tool to invoke:
-- skill: "xavier"
-- args: "${cmd}" followed by any arguments provided by the user
+1. Read the Xavier router from \${XAVIER_HOME:-~/.xavier}/SKILL.md (or ~/.xavier/SKILL.md if unset).
+2. Follow the Router Lifecycle with subcommand: ${cmd}.
+3. Pass through any remaining user arguments unchanged.
+4. Stop when the routed ${cmd} command reaches an AskUserQuestion/confirm/wait gate or terminal handoff. Do not infer answers, choose filenames, invoke another Xavier command, or continue into follow-up work unless the user's newest message explicitly asks for it.
 
-Do NOT execute this skill directly. Do NOT read vault files. Delegate to the xavier router.
+Do NOT perform the subcommand's work directly from this alias — load the router first and follow its lifecycle (vault gates, requires resolution, interactive stops).
 ALIASEOF
         ;;
     esac

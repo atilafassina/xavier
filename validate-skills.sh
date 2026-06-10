@@ -397,6 +397,54 @@ else
   ERRORS=$((ERRORS + COMMAND_GATE_ERRORS))
 fi
 
+# 11. Check Claude alias delegation is name-agnostic
+echo ""
+echo "=== Checking Claude alias delegation ==="
+CLAUDE_ALIAS_ERRORS=0
+INSTALLER="$REPO_ROOT/xavier/install.sh"
+SELF_UPDATE="$REPO_ROOT/xavier/skills/self-update/SKILL.md"
+
+for file in "$INSTALLER" "$SELF_UPDATE"; do
+  # Registered skill names track filenames (the router surfaces as `x` or
+  # `xavier` depending on which symlink survives dedup), so delegating by a
+  # Skill-tool name is never stable. Aliases must read the router file.
+  if grep -q 'skill: "' "$file"; then
+    echo "FAIL: $(basename "$file") delegates aliases via a Skill-tool name — aliases must read the router file instead"
+    CLAUDE_ALIAS_ERRORS=$((CLAUDE_ALIAS_ERRORS + 1))
+  fi
+
+  if ! grep -q 'This is an alias for' "$file" || ! grep -q 'Read the Xavier router from' "$file"; then
+    echo "FAIL: $(basename "$file") Claude alias template does not read the router file"
+    CLAUDE_ALIAS_ERRORS=$((CLAUDE_ALIAS_ERRORS + 1))
+  fi
+done
+
+# COMMANDS parity: the canonical command list must be identical between
+# install.sh and the self-update regeneration block — drift means upgraded
+# installs and fresh installs generate different alias sets.
+extract_commands_block() {
+  awk '
+    /^[[:space:]]*COMMANDS="$/ { capture=1; next }
+    capture && /^"$/ { exit }
+    capture { sub(/^[[:space:]]+/, ""); print }
+  ' "$1"
+}
+
+if [ -z "$(extract_commands_block "$INSTALLER")" ]; then
+  echo "FAIL: could not extract COMMANDS block from install.sh (extraction pattern drifted?)"
+  CLAUDE_ALIAS_ERRORS=$((CLAUDE_ALIAS_ERRORS + 1))
+elif ! diff <(extract_commands_block "$INSTALLER") <(extract_commands_block "$SELF_UPDATE") >/dev/null 2>&1; then
+  echo "FAIL: COMMANDS blocks in install.sh and self-update SKILL.md have drifted:"
+  diff <(extract_commands_block "$INSTALLER") <(extract_commands_block "$SELF_UPDATE") || true
+  CLAUDE_ALIAS_ERRORS=$((CLAUDE_ALIAS_ERRORS + 1))
+fi
+
+if [ $CLAUDE_ALIAS_ERRORS -eq 0 ]; then
+  echo "PASS: Claude alias delegation is name-agnostic"
+else
+  ERRORS=$((ERRORS + CLAUDE_ALIAS_ERRORS))
+fi
+
 echo ""
 if [ $ERRORS -gt 0 ]; then
   echo "FAILED: $ERRORS error(s) found"
