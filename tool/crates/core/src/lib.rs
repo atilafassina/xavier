@@ -17,7 +17,14 @@
 //! surfaced there for a downstream model pass rather than guessed at. The
 //! buckets `consensus` / `blindspot` / `dispute` are final and pass through the
 //! model pass untouched.
+//!
+//! A fourth, orthogonal module — [`cache`] — memoizes the deterministic
+//! subcommands on disk: because the merge is a pure function of its input and
+//! the binary version, identical inputs can be served byte-for-byte from a
+//! content-addressed cache instead of recomputed. It is a transparent
+//! optimization layered above the merge, not part of the determinism boundary.
 
+pub mod cache;
 pub mod findings;
 pub mod merge;
 pub mod model;
@@ -25,6 +32,7 @@ pub mod refs;
 pub mod render;
 pub mod similarity;
 
+pub use cache::{Cache, CACHE_DIR_ENV};
 pub use findings::parse_findings;
 pub use merge::merge;
 pub use model::{CanonRef, Finding, MatchedPair, MergeInput, MergeResult, MergeTextInput};
