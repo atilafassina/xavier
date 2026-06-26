@@ -2,10 +2,10 @@
 name: multi-model-dispatch
 description: Dispatch prompts to external LLM models via the Cursor `agent` CLI and parse stream-json output into structured findings for multi-model review.
 type: dependency
-version: 0.1.0
+version: 0.2.0
 source: "forked from ace plugin dispatch mechanics"
 created: 2026-04-15
-updated: 2026-04-15
+updated: 2026-06-26
 tags:
   - dispatch
   - multi-model
@@ -76,10 +76,21 @@ bash merge.sh <file_a> <file_b> [label_a] [label_b]
 
 `merge.sh` decides the engine at runtime:
 
-1. If a native `xavier-tool` binary is installed for the host triple (at `${XAVIER_HOME:-~/.xavier}/bin/<triple>/xavier-tool`) and passes a `--version` compatibility probe, the **mechanical exact-match merge runs in the binary** (the determinism boundary). `merge.sh` extracts findings from each stream-json file into JSON, pipes that to `xavier-tool merge --format debate-md` on stdin (the runtime adapter's `run-command` op), and passes the rendered Markdown through.
+1. If a native `xavier-tool` binary is installed for the host triple (at `${XAVIER_HOME:-~/.xavier}/bin/<triple>/xavier-tool`) and passes the compatibility probe (it runs and supports the `merge-text` subcommand), the **mechanical merge runs in the binary** (the determinism boundary). `merge.sh` uses `parse.sh extract` to get each model's final assistant **text**, JSON-encodes that raw text, and pipes it to `xavier-tool merge-text --format debate-md` on stdin (the runtime adapter's `run-command` op). The binary then does everything mechanical: it **parses the findings out of the Markdown itself** (handling multi-line descriptions, `\uXXXX` escapes, and non-strict formatting that the old `awk` scraper mishandled), canonicalizes `file:line` / `file:line-range` references, runs **exact + textual near-duplicate matching**, and renders the debate Markdown.
 2. Otherwise it transparently `exec`s `parse.sh merge`, whose output is byte-for-byte what Xavier produced before the binary existed.
 
-Every failure mode in the binary path (missing binary, incompatible version, non-zero exit, empty output) degrades to the `parse.sh` fallback, so a skill **never crashes** because the binary is absent. The binary path's Markdown is equivalent to the shell path's (same sections, findings, and attribution); it may differ only by trailing blank lines, which the pilot fish ignores (it detects sections by heading).
+Every failure mode in the binary path (missing binary, incompatible/old version without `merge-text`, non-zero exit, empty output) degrades to the `parse.sh` fallback, so a skill **never crashes** because the binary is absent. The binary path's Markdown is equivalent to the shell path's (same `## Consensus` / `## Disputes` / `## Blindspots` sections, findings, and attribution); it may differ by trailing blank lines and by **adding a `## Unmatched` section** the shell path does not produce. The pilot fish detects debate format by the first three headings, so the extra section is additive and safe.
+
+### The four output buckets (binary path)
+
+The binary classifies every finding into one of four buckets, rendered as Markdown sections:
+
+- **`## Consensus`** — both models flagged the same location. Either an exact canonical `file:line` match (a single line and a line range that starts there collapse to the same key), or a textual **near-duplicate** at the same file (paraphrases of the same issue — "missing field `id`" vs "`id` is absent"). This is the bug fix: paraphrased same-issue findings no longer split into two blindspots.
+- **`## Disputes`** — always empty from the merge; produced later by the pilot fish via vault overlay.
+- **`## Blindspots`** — a located finding only one model flagged, where the other model had no finding in that file at all.
+- **`## Unmatched`** — the residue the matcher could not place **mechanically**: a finding with no usable location, or a same-file counterpart that fell **below the similarity threshold** (same place, different words — same issue or two distinct ones?). This is the ONLY bucket a downstream model should adjudicate; the other three are final and pass through untouched.
+
+The similarity metric is a pure-Rust composition of an overlap coefficient over content tokens and a normalized Levenshtein distance (threshold `0.30`, calibrated against realistic reviewer paraphrases). It is fully isolated inside the binary (`xavier-core::similarity`); the shell does no similarity work.
 
 The native binary is built in CI (build-time Rust toolchain only) and bundled per-triple inside the release tarball; users never compile it. Its source is the Rust workspace in the repo's top-level `tool/` directory. See `xavier/bin/README.md` for the bundled-binary layout.
 
@@ -104,8 +115,8 @@ bash merge.sh "$TMPDIR/gpt.json" "$TMPDIR/gemini.json" GPT Gemini
 - **Stream-json format**: output parsing assumes the agent CLI's `--output-format stream-json` produces newline-delimited JSON objects with `type: "assistant"` messages containing `content` blocks. Changes to the agent CLI output schema will break parsing.
 - **Timeout behavior**: when the agent times out (exit 124), partial output may be present in the output file. parse.sh handles truncated files gracefully (extracts whatever text is available).
 - **No retries**: dispatch.sh does not retry on failure. The caller is responsible for retry logic.
-- **Exact-match merge**: parse.sh uses exact `file:line` matching to classify consensus vs. blindspots. Findings at different lines about the same issue become two blindspots instead of one consensus. This is a deliberate simplicity trade-off — fuzzy matching adds a Python dependency.
-- **Finding-parse heuristics**: parse.sh uses pattern matching on the `### [severity] description` format used by Xavier personas. Models that deviate from this format will produce fewer parsed findings (raw text is still available via `extract`).
+- **Exact-match merge (shell fallback only)**: `parse.sh merge` uses exact `file:line` matching to classify consensus vs. blindspots, so findings about the same issue at different lines become two blindspots instead of one consensus. This is a deliberate simplicity trade-off in the **fallback** path. The native binary (`merge.sh`'s preferred path) removes this limitation: it canonicalizes line ranges and does textual near-duplicate matching, collapsing paraphrased same-issue findings into one consensus and surfacing genuinely ambiguous pairs in the `## Unmatched` section instead of guessing.
+- **Finding-parse heuristics**: `parse.sh`'s `awk` scraper matches the `### [severity] description` format used by Xavier personas and keeps only the heading line of each finding (multi-line descriptions/suggestions and `\uXXXX` escapes are mishandled). The native binary's parser is more robust — it folds multi-line descriptions, decodes `\uXXXX` (including surrogate pairs), and tolerates non-strict markdown (`**File:**`, list bullets, extra spacing). Models that deviate badly from the format still fall back to raw text via `extract`.
 
 ## Models Supported (v1)
 

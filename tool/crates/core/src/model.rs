@@ -8,9 +8,12 @@ use serde::{Deserialize, Serialize};
 /// A canonical, normalized reference to a location in the codebase.
 ///
 /// This is the key the mechanical matcher uses to decide whether two findings
-/// describe "the same place". In Phase 1 the only thing that matters is the
+/// describe "the same place". The only thing that matters for matching is the
 /// normalized `file:line` string ([`CanonRef::key`]); `file` and `line` are
-/// carried along for downstream consumers and future phases.
+/// carried along for downstream consumers.
+///
+/// The parsing/normalization logic (single lines, ranges, missing lines) lives
+/// in [`crate::refs`]; this struct is the serialized shape.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CanonRef {
     /// The file path component, normalized (trimmed, surrounding backticks
@@ -18,58 +21,10 @@ pub struct CanonRef {
     #[serde(default)]
     pub file: String,
 
-    /// The line number component, if one was present in the raw ref.
+    /// The line number component, if one was present in the raw ref. For a line
+    /// range (`40-52`) this is the **start** line — see [`crate::refs`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<u64>,
-}
-
-impl CanonRef {
-    /// Build a [`CanonRef`] from a raw `file:line`-ish reference string, applying
-    /// the same normalization `parse.sh` applies before comparison: strip
-    /// backticks, trim surrounding whitespace.
-    ///
-    /// The trailing `:<line>` segment is parsed into [`CanonRef::line`] when it is
-    /// a pure integer; otherwise the whole string is treated as the file part.
-    /// Comparison is always done on [`CanonRef::key`], so callers never need to
-    /// reason about the split themselves.
-    pub fn parse(raw: &str) -> Self {
-        let cleaned = raw.replace('`', "");
-        let cleaned = cleaned.trim();
-
-        // Split on the LAST ':' so paths containing colons (rare, but possible)
-        // keep their colon in the file part and only a trailing integer is
-        // treated as a line number.
-        if let Some((head, tail)) = cleaned.rsplit_once(':') {
-            if let Ok(line) = tail.trim().parse::<u64>() {
-                return CanonRef {
-                    file: head.trim().to_string(),
-                    line: Some(line),
-                };
-            }
-        }
-
-        CanonRef {
-            file: cleaned.to_string(),
-            line: None,
-        }
-    }
-
-    /// The normalized comparison key, e.g. `src/main.rs:42` or just `README.md`
-    /// when no line was present. Two findings are an exact match iff their keys
-    /// are equal and non-empty.
-    pub fn key(&self) -> String {
-        match self.line {
-            Some(line) => format!("{}:{}", self.file, line),
-            None => self.file.clone(),
-        }
-    }
-
-    /// Whether this reference carries enough information for the mechanical
-    /// matcher to place the finding. An empty file part means the finding has
-    /// no location and must be deferred to a semantic pass.
-    pub fn is_usable(&self) -> bool {
-        !self.file.trim().is_empty()
-    }
 }
 
 /// A single review finding, as parsed out of one model's output by the shell
@@ -141,6 +96,35 @@ fn default_label_b() -> String {
     "Model B".to_string()
 }
 
+/// The stdin payload for `xavier-tool merge-text`: the **raw assistant text**
+/// from each model (already extracted from stream-json) plus optional labels.
+///
+/// This is the binary's finding-ingestion entry point: the tool parses each
+/// side's Markdown into [`Finding`]s itself (via [`crate::findings`]), so the
+/// shell front door no longer has to scrape findings with `awk`. It exists
+/// alongside [`MergeInput`] (pre-parsed findings) so the original JSON ABI
+/// stays pinned while the text path is added.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MergeTextInput {
+    /// Raw assistant text from the first model.
+    #[serde(default)]
+    pub text_a: String,
+
+    /// Raw assistant text from the second model.
+    #[serde(default)]
+    pub text_b: String,
+
+    /// Label for side `a` (default `Model A`). Also used as the `source`
+    /// attribution on every finding parsed from `text_a`.
+    #[serde(default = "default_label_a")]
+    pub label_a: String,
+
+    /// Label for side `b` (default `Model B`). Also used as the `source`
+    /// attribution on every finding parsed from `text_b`.
+    #[serde(default = "default_label_b")]
+    pub label_b: String,
+}
+
 /// A consensus match: one finding from each side that share an exact
 /// normalized reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,15 +138,20 @@ pub struct MatchedPair {
 /// The stdout payload from `xavier-tool merge`.
 ///
 /// The four buckets are the durable contract across every phase:
-/// - `consensus`: findings both sides flagged at the same exact location.
-/// - `blindspot`: findings only one side flagged, but which DO have a usable
-///   location.
+/// - `consensus`: findings both sides flagged at the same location — either an
+///   exact canonical `file:line` match, or a textual near-duplicate at the same
+///   file (paraphrases of the same issue).
+/// - `blindspot`: a located finding only one side flagged, where the other side
+///   had no finding in that file at all.
 /// - `dispute`: always empty from the mechanical merge. Disputes are produced
 ///   later, by the pilot fish overlaying vault knowledge — never here.
-/// - `unmatched`: findings the mechanical matcher could not place because they
-///   lack a usable location. These are the residue handed to the later
-///   semantic / paraphrase pass. ALWAYS present (possibly empty) so the schema
-///   is stable.
+/// - `unmatched`: findings the mechanical matcher could not confidently place —
+///   either because they lack a usable location, or because a same-file
+///   counterpart existed but fell below the similarity threshold (same place,
+///   different words: same issue or two distinct ones?). These are the residue
+///   handed to the model for adjudication. ALWAYS present (possibly empty) so
+///   the schema is stable. The other three buckets are final and are NOT
+///   re-adjudicated.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MergeResult {
     pub consensus: Vec<MatchedPair>,

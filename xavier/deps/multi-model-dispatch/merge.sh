@@ -5,14 +5,21 @@
 #
 #     bash merge.sh <file_a> <file_b> [label_a] [label_b]
 #
-# and emits the SAME Consensus/Disputes/Blindspots Markdown on stdout. The only
-# difference is the engine:
+# and emits Consensus/Disputes/Blindspots Markdown on stdout (the binary path
+# additionally emits an `## Unmatched` section for the model to adjudicate; the
+# pilot fish detects debate format by the first three headings, so this is
+# additive). The difference between the two engines:
 #
-#   1. If the native `xavier-tool` binary is present AND compatible, the
-#      mechanical exact-match merge runs in the binary (the determinism
-#      boundary). This script extracts findings from each model's stream-json,
-#      hands them to `xavier-tool merge` as JSON on stdin, and asks the binary
-#      to render the debate Markdown directly (`--format debate-md`).
+#   1. If the native `xavier-tool` binary is present AND supports the
+#      `merge-text` subcommand, the mechanical merge runs in the binary (the
+#      determinism boundary). This script extracts each model's assistant TEXT
+#      from its stream-json with `parse.sh extract`, hands the raw text to
+#      `xavier-tool merge-text` as JSON on stdin, and asks the binary to render
+#      the debate Markdown directly (`--format debate-md`). The binary parses
+#      the findings out of the Markdown itself (multi-line descriptions,
+#      \uXXXX escapes, non-strict formatting) and does exact + textual
+#      near-duplicate matching — fixing the paraphrase-splitting that the awk
+#      parser and exact-only matcher suffered from.
 #   2. Otherwise it transparently falls back to `parse.sh merge`, whose output
 #      is byte-for-byte what Xavier produced before the binary existed.
 #
@@ -72,11 +79,17 @@ resolve_tool() {
 }
 
 # ----------------------------------------------------------------------------
-# Compatibility probe: the binary must run and advertise a version. A binary
-# that cannot print --version is treated as incompatible (fall back).
+# Compatibility probe: the binary must run, advertise a version, AND support the
+# `merge-text` subcommand this front door now drives. We verify the capability
+# directly by feeding an empty MergeTextInput (`{}`, valid via serde defaults)
+# and requiring a clean exit. An older binary that predates `merge-text` exits
+# non-zero ("unknown subcommand" -> exit 2), so it is treated as incompatible
+# and we fall back to parse.sh. This keeps the version probe and the
+# capability probe in agreement without parsing version strings.
 # ----------------------------------------------------------------------------
 tool_compatible() {
-    "$1" --version >/dev/null 2>&1
+    "$1" --version >/dev/null 2>&1 || return 1
+    printf '{}' | "$1" merge-text >/dev/null 2>&1
 }
 
 # ----------------------------------------------------------------------------
@@ -88,72 +101,25 @@ fallback() {
 }
 
 # ----------------------------------------------------------------------------
-# Extract findings from a model's stream-json file into the binary's JSON
-# Finding[] shape. Reuses parse.sh's `extract` to get the assistant text, then
-# parses the `### [severity] desc` / `**File**:` / `**Suggestion**:` blocks the
-# same way parse.sh does — emitting JSON instead of TSV.
-#
-# Prints a JSON array to stdout. Empty/absent input yields `[]`.
+# JSON-encode a string value. Handles the control characters that can appear in
+# extracted assistant text (newlines, tabs, CR) plus quotes and backslashes, so
+# the result is a valid JSON string literal. The binary's parser owns the
+# Markdown -> findings step, so this is the ONLY encoding the shell now does.
 # ----------------------------------------------------------------------------
-extract_findings_json() {
-    local file="$1" source_label="$2" text
-    text="$(bash "$PARSE_SH" extract "$file" 2>/dev/null || true)"
-    if [ -z "$text" ]; then
-        printf '[]'
-        return 0
-    fi
-
-    printf '%s' "$text" | awk -v source="$source_label" '
-        function jesc(v) {
-            gsub(/\\/, "\\\\", v); gsub(/"/, "\\\"", v)
-            gsub(/\t/, " ", v); gsub(/\r/, "", v)
-            return v
-        }
-        function flush() {
-            if (have) {
-                if (n > 0) printf ","
-                printf "{\"severity\":\"%s\"", jesc(sev)
-                if (ref != "") printf ",\"reference\":{\"file\":\"%s\"}", jesc(ref)
-                printf ",\"description\":\"%s\"", jesc(desc)
-                if (sug != "") printf ",\"suggestion\":\"%s\"", jesc(sug)
-                printf ",\"source\":\"%s\"}", jesc(source)
-                n++
-            }
-            have = 0; sev = ""; ref = ""; desc = ""; sug = ""
-        }
-        BEGIN { printf "["; n = 0; have = 0 }
-        /^### \[/ {
-            flush()
-            line = $0
-            sub(/^### \[/, "", line)
-            idx = index(line, "] ")
-            if (idx > 0) {
-                sev = tolower(substr(line, 1, idx - 1))
-                desc = substr(line, idx + 2)
-            } else {
-                sub(/\].*/, "", line); sev = tolower(line)
-                desc = $0; sub(/^### \[[^\]]*\] */, "", desc)
-            }
-            have = 1
-            next
-        }
-        /^\*\*File\*\*:/ {
-            line = $0; sub(/^\*\*File\*\*: */, "", line)
-            gsub(/`/, "", line); gsub(/^[ \t]+|[ \t]+$/, "", line)
-            ref = line; next
-        }
-        /^\*\*Suggestion\*\*:/ {
-            line = $0; sub(/^\*\*Suggestion\*\*: */, "", line)
-            gsub(/^[ \t]+|[ \t]+$/, "", line)
-            sug = line; next
-        }
-        END { flush(); printf "]" }
-    '
-}
-
-# JSON-encode a bare string value (for the labels).
 json_str() {
-    printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+    printf '%s' "$1" | awk '
+        BEGIN { ORS=""; printf "\"" }
+        {
+            if (NR > 1) printf "\\n"   # restore the newline awk consumed
+            line = $0
+            gsub(/\\/, "\\\\", line)
+            gsub(/"/,  "\\\"", line)
+            gsub(/\t/, "\\t",  line)
+            gsub(/\r/, "\\r",  line)
+            printf "%s", line
+        }
+        END { printf "\"" }
+    '
 }
 
 # ----------------------------------------------------------------------------
@@ -166,17 +132,26 @@ if [ -z "$TOOL" ] || ! tool_compatible "$TOOL"; then
     fallback
 fi
 
-# Build the merge input from both models' findings.
-FA_JSON="$(extract_findings_json "$FILE_A" "$LABEL_A")"
-FB_JSON="$(extract_findings_json "$FILE_B" "$LABEL_B")"
-INPUT_JSON="$(printf '{"a":%s,"b":%s,"label_a":%s,"label_b":%s}' \
-    "$FA_JSON" "$FB_JSON" "$(json_str "$LABEL_A")" "$(json_str "$LABEL_B")")"
+# Extract each model's final assistant TEXT (stream-json -> Markdown). The
+# binary parses findings out of that Markdown itself via `merge-text`.
+TEXT_A="$(bash "$PARSE_SH" extract "$FILE_A" 2>/dev/null || true)"
+TEXT_B="$(bash "$PARSE_SH" extract "$FILE_B" 2>/dev/null || true)"
+
+# As in parse.sh, if neither model produced any text there is nothing to merge.
+if [ -z "$TEXT_A" ] && [ -z "$TEXT_B" ]; then
+    fallback
+fi
+
+# Build the MergeTextInput payload (raw text per side + labels).
+INPUT_JSON="$(printf '{"text_a":%s,"text_b":%s,"label_a":%s,"label_b":%s}' \
+    "$(json_str "$TEXT_A")" "$(json_str "$TEXT_B")" \
+    "$(json_str "$LABEL_A")" "$(json_str "$LABEL_B")")"
 
 # Run the mechanical merge in the binary and let it render the debate Markdown.
 # A non-zero exit (input/internal error) or empty output means the binary could
 # not do its job — fall back rather than emit nothing.
 set +e
-RESULT_MD="$(printf '%s' "$INPUT_JSON" | "$TOOL" merge --format debate-md 2>/dev/null)"
+RESULT_MD="$(printf '%s' "$INPUT_JSON" | "$TOOL" merge-text --format debate-md 2>/dev/null)"
 TOOL_EXIT=$?
 set -e
 

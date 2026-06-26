@@ -77,6 +77,89 @@ fn merge_debate_md_format_emits_markdown() {
 }
 
 #[test]
+fn merge_text_parses_markdown_and_merges() {
+    // The binary parses each side's raw assistant text itself. Two paraphrases
+    // of the same issue at the same file must collapse into one consensus.
+    // Not a raw string: the JSON values embed `###` and backticks, so escape
+    // the inner quotes and newlines explicitly.
+    let input = "{\
+        \"text_a\": \"### [high] The response omits the `id` field\\n**File**: `src/api.rs:42`\\n\",\
+        \"text_b\": \"### [medium] `id` is absent from the response\\n**File**: `src/api.rs:42`\\n\",\
+        \"label_a\": \"GPT\",\
+        \"label_b\": \"Gemini\"\
+    }";
+
+    let (code, stdout, _stderr) = run(&["merge-text"], input);
+    assert_eq!(code, 0, "successful merge-text exits 0");
+
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is valid JSON");
+    assert_eq!(
+        parsed["consensus"].as_array().unwrap().len(),
+        1,
+        "paraphrased same-location findings collapse to one consensus"
+    );
+    assert!(parsed["unmatched"].is_array());
+}
+
+#[test]
+fn merge_text_debate_md_has_unmatched_section() {
+    // A reference-less finding becomes unmatched and must render under the new
+    // `## Unmatched` section, while the three pilot-fish headings remain.
+    let input = "{\
+        \"text_a\": \"### [low] general advice with no file attached\\n\",\
+        \"text_b\": \"\",\
+        \"label_a\": \"GPT\",\
+        \"label_b\": \"Gemini\"\
+    }";
+
+    let (code, stdout, _) = run(&["merge-text", "--format", "debate-md"], input);
+    assert_eq!(code, 0);
+    assert!(stdout.contains("## Consensus"));
+    assert!(stdout.contains("## Disputes"));
+    assert!(stdout.contains("## Blindspots"));
+    assert!(stdout.contains("## Unmatched"));
+    assert!(stdout.contains("### [low] general advice with no file attached"));
+}
+
+#[test]
+fn merge_text_invalid_json_exits_input_error() {
+    let (code, stdout, stderr) = run(&["merge-text"], "}{ not json");
+    assert_eq!(code, 1, "bad stdin JSON -> exit 1");
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("invalid MergeTextInput JSON"));
+}
+
+#[test]
+fn merge_text_accepts_minimal_input_via_serde_defaults() {
+    // Empty texts and missing labels should still succeed (serde defaults).
+    let (code, stdout, _) = run(&["merge-text"], r#"{}"#);
+    assert_eq!(code, 0);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert!(parsed["consensus"].as_array().unwrap().is_empty());
+    assert!(parsed["unmatched"].is_array());
+}
+
+#[test]
+fn merge_json_abi_is_pinned() {
+    // Guard the original `merge` JSON ABI: the four-bucket schema and the
+    // pre-parsed Finding input shape must remain stable across the version bump.
+    let input = r#"{
+        "a": [{"severity":"high","reference":{"file":"src/main.rs","line":42},"description":"x"}],
+        "b": [{"severity":"high","reference":{"file":"src/main.rs","line":42},"description":"y"}],
+        "label_a": "GPT",
+        "label_b": "Gemini"
+    }"#;
+    let (code, stdout, _) = run(&["merge"], input);
+    assert_eq!(code, 0);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    // Exactly these four keys, all arrays.
+    for key in ["consensus", "blindspot", "dispute", "unmatched"] {
+        assert!(parsed[key].is_array(), "bucket `{key}` must be an array");
+    }
+    assert_eq!(parsed["consensus"].as_array().unwrap().len(), 1);
+}
+
+#[test]
 fn merge_unknown_format_exits_usage_error() {
     let (code, _stdout, stderr) = run(&["merge", "--format", "yaml"], r#"{"a":[],"b":[]}"#);
     assert_eq!(code, 2, "bad --format value -> exit 2");

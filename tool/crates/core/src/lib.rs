@@ -1,22 +1,32 @@
 //! Core data models and merge logic for the Xavier native tool.
 //!
-//! This crate is deliberately the *mechanical* half of Xavier's multi-model
-//! review pipeline. It takes findings that have **already been parsed** out of
-//! each model's output and buckets them by exact, normalized `file:line`
-//! reference. It does NOT do any semantic or paraphrase adjudication — that is
-//! a later model pass. The contract that guarantees this separation is the
-//! [`MergeResult::unmatched`] array: any finding the mechanical matcher cannot
-//! place (because it lacks a usable location) is surfaced there rather than
-//! guessed at.
+//! This crate is the *mechanical* half of Xavier's multi-model review
+//! pipeline. It owns three responsibilities, each in its own module:
 //!
-//! Phase 1 implements a **trivial exact-match merge** that mirrors the bucket
-//! semantics of `xavier/deps/multi-model-dispatch/parse.sh`. Fuzzy / near-
-//! duplicate matching is explicitly deferred to a later phase.
+//! - [`findings`] — parse a model's review Markdown into typed [`Finding`]s,
+//!   replacing the brittle `awk` scraping that used to live in the shell.
+//! - [`refs`] — canonicalize free-form `file:line` / `file:line-range`
+//!   references into the stable [`CanonRef`] matching key.
+//! - [`merge`] — bucket findings into `consensus` / `blindspot` / `dispute`,
+//!   plus an explicit `unmatched` residue, using exact-location matching and
+//!   pure-Rust textual near-duplicate detection ([`similarity`]).
+//!
+//! The mechanical / semantic boundary is the [`MergeResult::unmatched`] array:
+//! findings the matcher cannot confidently place — no usable location, or a
+//! same-location counterpart that fell below the similarity threshold — are
+//! surfaced there for a downstream model pass rather than guessed at. The
+//! buckets `consensus` / `blindspot` / `dispute` are final and pass through the
+//! model pass untouched.
 
+pub mod findings;
 pub mod merge;
 pub mod model;
+pub mod refs;
 pub mod render;
+pub mod similarity;
 
+pub use findings::parse_findings;
 pub use merge::merge;
-pub use model::{CanonRef, Finding, MatchedPair, MergeInput, MergeResult};
+pub use model::{CanonRef, Finding, MatchedPair, MergeInput, MergeResult, MergeTextInput};
 pub use render::debate_markdown;
+pub use similarity::{similarity, SIMILARITY_THRESHOLD};

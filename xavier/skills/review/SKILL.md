@@ -218,17 +218,29 @@ The pilot fish handles two different input formats depending on which path was t
 
 When a reviewer result arrives, check whether the output contains `## Consensus`, `## Disputes`, and `## Blindspots` headings. If all three are present, this is **debate format** (Path A). Otherwise, it is **raw findings format** (Path B fallback).
 
+Debate output from the native binary path additionally carries a `## Unmatched` section (the shell-fallback path does not). Its absence is normal and must not change format detection — detect by the first three headings only.
+
 ### Processing Debate Format (Path A output)
 
-Each persona's debate output contains three sections. The pilot fish processes them as follows:
+The mechanical merge has already done all the deterministic bucketing. The pilot fish treats the three mechanical buckets — Consensus, Disputes, Blindspots — as **final** and passes them through unchanged; it does NOT re-merge, re-split, or re-bucket them. The ONLY section it adjudicates is `## Unmatched`.
 
-- **Consensus findings**: These carry high confidence (two models agree). Include them directly, tagged with the persona's category (e.g., `[correctness]`). Use the higher of the two severity levels if they differ.
+- **Consensus findings**: These carry high confidence (two models agree, by exact location or as a textual near-duplicate). Include them directly, tagged with the persona's category (e.g., `[correctness]`). Use the higher of the two severity levels if they differ. Pass through as-is.
 - **Dispute findings**: These require human judgment. Include them with a `[disputed]` marker alongside the category tag. Present both sides concisely.
-- **Blindspot findings**: These are coverage gaps found by only one model. Include them with a `[blindspot]` marker. They are still valid findings but carry lower confidence than consensus.
+- **Blindspot findings**: These are coverage gaps found by only one model. Include them with a `[blindspot]` marker. They are still valid findings but carry lower confidence than consensus. Pass through as-is.
+
+### Adjudicating the Unmatched Section (binary debate path only)
+
+The `## Unmatched` section holds findings the mechanical matcher deliberately refused to place: each is either reference-less, or sits at the same file as a finding from the other model but fell below the similarity threshold (same place, different words — possibly the same issue, possibly two distinct ones). This is the residue the **model** resolves. The pilot fish adjudicates each unmatched finding into one of the existing buckets — it never invents new buckets:
+
+- If two unmatched findings (one per model, same file) clearly describe the **same issue** in different words, treat them as a **consensus** finding (two models agree). Tag with the persona category; use the higher severity.
+- If they describe **related but contested** behavior (each model recommends something different for the same code), treat them as a **dispute** and present both positions.
+- If an unmatched finding has no counterpart that resolves to the same issue (including every reference-less finding that stands alone), treat it as a **blindspot** — a single model's observation.
+
+Adjudication only ever moves an unmatched finding INTO Consensus, Disputes, or Blindspots. It must not pull a finding back OUT of those three mechanical buckets. If `## Unmatched` is absent or empty (e.g. the shell-fallback path), there is nothing to adjudicate — skip this step.
 
 ### Vault Overlay (Debate Path Only)
 
-After classifying all findings from the debate output, overlay vault knowledge by matching each consensus finding against the recurring patterns loaded in Step 3. The pilot fish never creates new findings — it only reclassifies based on vault evidence.
+After classifying all findings from the debate output (including any `## Unmatched` adjudication above), overlay vault knowledge by matching each consensus finding against the recurring patterns loaded in Step 3. The pilot fish never creates new findings — it only reclassifies based on vault evidence.
 
 **Corroboration rule** — a vault recurring pattern **corroborates** a consensus finding when BOTH conditions are met:
 1. The pattern's `category` field matches the finding's persona category (e.g., both are `correctness`)
