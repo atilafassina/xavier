@@ -27,6 +27,24 @@ jobs:
           fi
           echo "Version validated: $FILE_VERSION"
 
+      # Build the native tool for the maintainer's host triple and bundle it
+      # under xavier/bin/<triple>/. Phase 1 ships ONE triple only (the runner's
+      # x86_64-unknown-linux-gnu); the full cross-compile matrix is a later
+      # phase. The Rust toolchain is build-time/CI only — users never compile.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build native tool (host triple)
+        run: |
+          TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
+          echo "Building xavier-tool for $TRIPLE"
+          cargo build --release --manifest-path tool/Cargo.toml --bin xavier-tool
+          DEST="xavier/bin/$TRIPLE"
+          mkdir -p "$DEST"
+          cp "tool/target/release/xavier-tool" "$DEST/xavier-tool"
+          chmod +x "$DEST/xavier-tool"
+          echo "Bundled: $DEST/xavier-tool"
+
       - name: Build tarball
         run: tar czf xavier.tar.gz xavier/
 

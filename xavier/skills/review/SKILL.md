@@ -31,15 +31,15 @@ echo "$SHARK_TASK_HASH"
    - If the value is `ace`, set `debate_required = true`.
    - For any other value, or if the field is missing, set `debate_required = false`.
 
-4. **Check debate availability**: Run both checks — the `agent` CLI and the dispatch scripts must both exist:
+4. **Check debate availability**: Run both checks — the `agent` CLI and the dispatch scripts must both exist. The merge front door (`merge.sh`) and its shell-fallback engine (`parse.sh`) are both required; the native `xavier-tool` binary is optional (`merge.sh` falls back to `parse.sh` when it is absent), so it is NOT part of this gate:
    ```bash
-   command -v agent >/dev/null 2>&1 && test -x "${XAVIER_HOME:-$HOME/.xavier}/deps/multi-model-dispatch/dispatch.sh" && test -x "${XAVIER_HOME:-$HOME/.xavier}/deps/multi-model-dispatch/parse.sh"
+   command -v agent >/dev/null 2>&1 && test -x "${XAVIER_HOME:-$HOME/.xavier}/deps/multi-model-dispatch/dispatch.sh" && test -x "${XAVIER_HOME:-$HOME/.xavier}/deps/multi-model-dispatch/merge.sh" && test -x "${XAVIER_HOME:-$HOME/.xavier}/deps/multi-model-dispatch/parse.sh"
    ```
    If the combined check exits 0, set `debate_available = true`. Otherwise set `debate_available = false`.
 
    **Hard gate for `review-integration: ace`**: If `debate_required = true` and `debate_available = false`, stop immediately and tell the user:
 
-   > Xavier review is configured with `review-integration: ace`, but the multi-model debate runner is unavailable. Ensure `agent` is on PATH and the multi-model dispatch `dispatch.sh` and `parse.sh` scripts are executable, then rerun the review.
+   > Xavier review is configured with `review-integration: ace`, but the multi-model debate runner is unavailable. Ensure `agent` is on PATH and the multi-model dispatch `dispatch.sh`, `merge.sh`, and `parse.sh` scripts are executable, then rerun the review.
 
    Do **not** run the standard three-persona flow when `review-integration: ace` is configured. This is a hard failure, not a fallback.
 
@@ -113,7 +113,7 @@ collect([
 
     WORKSPACE=$(git rev-parse --show-toplevel)
     DISPATCH=~/.xavier/deps/multi-model-dispatch/dispatch.sh
-    PARSE=~/.xavier/deps/multi-model-dispatch/parse.sh
+    MERGE=~/.xavier/deps/multi-model-dispatch/merge.sh
     TMPDIR=$(mktemp -d)
 
     SYSTEM_PROMPT={correctness.md + correctness_conventions + correctness_patterns, or omit patterns section}
@@ -123,8 +123,8 @@ collect([
     bash $DISPATCH gpt-5.5-extra-high $WORKSPACE $TMPDIR/gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
     bash $DISPATCH gemini-3.1-pro $WORKSPACE $TMPDIR/gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
 
-    # 2. Merge into debate format
-    bash $PARSE merge $TMPDIR/gpt.json $TMPDIR/gemini.json GPT Gemini
+    # 2. Merge into debate format (native xavier-tool if present, else parse.sh)
+    bash $MERGE $TMPDIR/gpt.json $TMPDIR/gemini.json GPT Gemini
 
     Return the merged Consensus/Disputes/Blindspots output.",
     name: "xavier correctness debate"
@@ -134,7 +134,7 @@ collect([
 
     WORKSPACE=$(git rev-parse --show-toplevel)
     DISPATCH=~/.xavier/deps/multi-model-dispatch/dispatch.sh
-    PARSE=~/.xavier/deps/multi-model-dispatch/parse.sh
+    MERGE=~/.xavier/deps/multi-model-dispatch/merge.sh
     TMPDIR=$(mktemp -d)
 
     SYSTEM_PROMPT={security.md + security_conventions + security_patterns, or omit patterns section}
@@ -144,8 +144,8 @@ collect([
     bash $DISPATCH gpt-5.5-extra-high $WORKSPACE $TMPDIR/gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
     bash $DISPATCH gemini-3.1-pro $WORKSPACE $TMPDIR/gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
 
-    # 2. Merge into debate format
-    bash $PARSE merge $TMPDIR/gpt.json $TMPDIR/gemini.json GPT Gemini
+    # 2. Merge into debate format (native xavier-tool if present, else parse.sh)
+    bash $MERGE $TMPDIR/gpt.json $TMPDIR/gemini.json GPT Gemini
 
     Return the merged Consensus/Disputes/Blindspots output.",
     name: "xavier security debate"
@@ -155,7 +155,7 @@ collect([
 
     WORKSPACE=$(git rev-parse --show-toplevel)
     DISPATCH=~/.xavier/deps/multi-model-dispatch/dispatch.sh
-    PARSE=~/.xavier/deps/multi-model-dispatch/parse.sh
+    MERGE=~/.xavier/deps/multi-model-dispatch/merge.sh
     TMPDIR=$(mktemp -d)
 
     SYSTEM_PROMPT={performance.md + performance_conventions + performance_patterns, or omit patterns section}
@@ -165,8 +165,8 @@ collect([
     bash $DISPATCH gpt-5.5-extra-high $WORKSPACE $TMPDIR/gpt.json \"$SYSTEM_PROMPT\" \"$DIFF\"
     bash $DISPATCH gemini-3.1-pro $WORKSPACE $TMPDIR/gemini.json \"$SYSTEM_PROMPT\" \"$DIFF\"
 
-    # 2. Merge into debate format
-    bash $PARSE merge $TMPDIR/gpt.json $TMPDIR/gemini.json GPT Gemini
+    # 2. Merge into debate format (native xavier-tool if present, else parse.sh)
+    bash $MERGE $TMPDIR/gpt.json $TMPDIR/gemini.json GPT Gemini
 
     Return the merged Consensus/Disputes/Blindspots output.",
     name: "xavier performance debate"
@@ -174,7 +174,7 @@ collect([
 ])
 ```
 
-Each remora runs `dispatch.sh` twice (once per model) sequentially within itself, then merges the two outputs with `parse.sh merge`. The three remoras run concurrently with each other. The output of each remora is structured Markdown with `## Consensus`, `## Disputes`, and `## Blindspots` sections.
+Each remora runs `dispatch.sh` twice (once per model) sequentially within itself, then merges the two outputs with `merge.sh`. The three remoras run concurrently with each other. `merge.sh` is a thin front door: it runs the mechanical exact-match merge in the native `xavier-tool` binary when one is installed for the host, and transparently falls back to `parse.sh merge` (identical output) when the binary is absent or incompatible — so the remora never crashes over a missing binary. The output of each remora is structured Markdown with `## Consensus`, `## Disputes`, and `## Blindspots` sections.
 
 ### Path B: Standard Three-Persona Flow (`debate_available = false`)
 

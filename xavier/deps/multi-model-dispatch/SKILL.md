@@ -66,6 +66,23 @@ bash parse.sh merge <file_a> <file_b> [label_a] [label_b]
 
 **`merge`** runs the full pipeline: extract text from both files, parse findings from each, then classify findings into consensus and blindspots using exact `file:line` matching. Output is Markdown following the debate protocol. Optional `label_a` and `label_b` identify the models in output (e.g., `GPT`, `Gemini`). Defaults to `Model A` / `Model B` if omitted.
 
+### merge.sh
+
+Binary-first front door for the merge step. **Prefer this over calling `parse.sh merge` directly.** Same interface, same Markdown output:
+
+```
+bash merge.sh <file_a> <file_b> [label_a] [label_b]
+```
+
+`merge.sh` decides the engine at runtime:
+
+1. If a native `xavier-tool` binary is installed for the host triple (at `${XAVIER_HOME:-~/.xavier}/bin/<triple>/xavier-tool`) and passes a `--version` compatibility probe, the **mechanical exact-match merge runs in the binary** (the determinism boundary). `merge.sh` extracts findings from each stream-json file into JSON, pipes that to `xavier-tool merge --format debate-md` on stdin (the runtime adapter's `run-command` op), and passes the rendered Markdown through.
+2. Otherwise it transparently `exec`s `parse.sh merge`, whose output is byte-for-byte what Xavier produced before the binary existed.
+
+Every failure mode in the binary path (missing binary, incompatible version, non-zero exit, empty output) degrades to the `parse.sh` fallback, so a skill **never crashes** because the binary is absent. The binary path's Markdown is equivalent to the shell path's (same sections, findings, and attribution); it may differ only by trailing blank lines, which the pilot fish ignores (it detects sections by heading).
+
+The native binary is built in CI (build-time Rust toolchain only) and bundled per-triple inside the release tarball; users never compile it. Its source is the Rust workspace in the repo's top-level `tool/` directory. See `xavier/bin/README.md` for the bundled-binary layout.
+
 ## Typical Usage
 
 ```bash
@@ -76,8 +93,9 @@ TMPDIR=$(mktemp -d)
 ./dispatch.sh gemini-3.1-pro "$WORKSPACE" "$TMPDIR/gemini.json" "$SYSTEM_PROMPT" "$DIFF" &
 wait
 
-# 2. Merge findings (labels identify models in output)
-bash parse.sh merge "$TMPDIR/gpt.json" "$TMPDIR/gemini.json" GPT Gemini
+# 2. Merge findings via the binary-first front door (labels identify models).
+#    Falls back to `parse.sh merge` automatically when no binary is installed.
+bash merge.sh "$TMPDIR/gpt.json" "$TMPDIR/gemini.json" GPT Gemini
 ```
 
 ## Limitations
