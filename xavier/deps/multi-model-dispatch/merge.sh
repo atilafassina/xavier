@@ -62,10 +62,13 @@ resolve_tool() {
 
     os="$(uname -s 2>/dev/null || echo unknown)"
     arch="$(uname -m 2>/dev/null || echo unknown)"
+    # Architecture normalization mirrors install.sh detect_host_triple():
+    # anything outside the shipped {x86_64, aarch64} set yields no triple, so we
+    # never probe a bin/<triple>/ path we never built.
     case "$arch" in
         x86_64|amd64)  rust_arch="x86_64" ;;
         arm64|aarch64) rust_arch="aarch64" ;;
-        *)             rust_arch="$arch" ;;
+        *)             return 0 ;;
     esac
     case "$os" in
         Darwin) triple="${rust_arch}-apple-darwin" ;;

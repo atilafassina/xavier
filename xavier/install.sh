@@ -351,20 +351,37 @@ ADAPTEREOF
 }
 
 # --- Detect host target triple ---
-# Maps `uname` output to the Rust target triples used for the bundled binary
-# layout (xavier/bin/<triple>/xavier-tool). Mirrors what `rustc -vV` would
-# report on each platform, without requiring a Rust toolchain on the user's
-# machine. Echoes the triple, or nothing if the platform is unrecognized.
+# Maps the full `uname -s`/`uname -m` matrix to the Rust target triples used
+# for the bundled binary layout (xavier/bin/<triple>/xavier-tool). Mirrors what
+# `rustc -vV` would report on each platform, without requiring a Rust toolchain
+# on the user's machine.
+#
+# This map MUST stay in lockstep with the set of triples cross-compiled by
+# .github/workflows/release.yml, the runtime resolver in
+# deps/multi-model-dispatch/merge.sh, and the offline guard
+# validate-install-triples.sh. The shipped set is:
+#   {x86_64, aarch64} x {apple-darwin (Darwin), unknown-linux-gnu (Linux)}
+#
+# Echoes the triple, or NOTHING for any unsupported os/arch combination
+# (e.g. 32-bit x86, armv7, FreeBSD/Windows-via-uname) so the caller falls back
+# to the pure-shell merge instead of selecting a binary we never built.
 detect_host_triple() {
   os="$(uname -s 2>/dev/null || echo unknown)"
   arch="$(uname -m 2>/dev/null || echo unknown)"
 
-  # Normalize architecture names to Rust's vocabulary.
+  # Normalize architecture names to Rust's vocabulary. Anything we do NOT ship
+  # a binary for is left empty so the os case below yields no triple.
   case "$arch" in
-    x86_64|amd64)        rust_arch="x86_64" ;;
-    arm64|aarch64)       rust_arch="aarch64" ;;
-    *)                   rust_arch="$arch" ;;
+    x86_64|amd64)  rust_arch="x86_64" ;;
+    arm64|aarch64) rust_arch="aarch64" ;;
+    *)             rust_arch="" ;;
   esac
+
+  # Unsupported architecture → no triple (graceful shell fallback).
+  if [ -z "$rust_arch" ]; then
+    echo ""
+    return 0
+  fi
 
   case "$os" in
     Darwin)  echo "${rust_arch}-apple-darwin" ;;

@@ -23,8 +23,17 @@ For example `bin/aarch64-apple-darwin/xavier-tool` or
 - The source for these binaries is the Rust workspace in the top-level `tool/`
   directory.
 
-Phase 1 ships a single triple (the maintainer's release host). The full
-cross-compiled matrix is a later phase.
+The release workflow cross-compiles and ships one binary per supported triple:
+
+- `aarch64-apple-darwin` (macOS Apple Silicon)
+- `x86_64-apple-darwin` (macOS Intel)
+- `x86_64-unknown-linux-gnu` (Linux x86_64)
+- `aarch64-unknown-linux-gnu` (Linux aarch64)
+
+This set is kept in lockstep across `.github/workflows/release.yml` (the build
+matrix), `install.sh` `detect_host_triple()` (install-time selection),
+`deps/multi-model-dispatch/merge.sh` `resolve_tool()` (runtime selection), and
+`validate-install-triples.sh` (the offline guard).
 
 This directory is intentionally empty in the source tree except for this
 README; binaries are populated only in release tarballs.
