@@ -54,6 +54,11 @@ pub fn merge(input: &MergeInput) -> MergeResult {
 
     let mut consensus: Vec<MatchedPair> = Vec::new();
 
+    // Precompute side-`b` canonical keys once, instead of recomputing (and
+    // reallocating) `fb.match_key()` for every `fb` on each pass through the
+    // nested `a x b` search below.
+    let b_keys: Vec<Option<String>> = b.iter().map(|fb| fb.match_key()).collect();
+
     // --- Pass 1: exact canonical-key match (high confidence). ---
     for (i, fa) in a.iter().enumerate() {
         let Some(key) = fa.match_key() else { continue };
@@ -61,7 +66,7 @@ pub fn merge(input: &MergeInput) -> MergeResult {
         let hit = b
             .iter()
             .enumerate()
-            .find(|(j, fb)| !b_consumed[*j] && fb.match_key().as_deref() == Some(key.as_str()));
+            .find(|(j, _)| !b_consumed[*j] && b_keys[*j].as_deref() == Some(key.as_str()));
 
         if let Some((j, fb)) = hit {
             a_consumed[i] = true;

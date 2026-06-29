@@ -87,8 +87,12 @@ fn render_one_sided(out: &mut String, f: &Finding) {
     if let Some(file) = ref_string(f) {
         out.push_str(&format!("**File**: {file}\n"));
     }
-    let source = f.source.as_deref().unwrap_or("");
-    out.push_str(&format!("**Source**: {source} only\n"));
+    // Only emit the attribution line when there is a non-blank source; a bare
+    // "**Source**:  only" with an empty label is meaningless and can arise via
+    // the JSON `merge` ABI, whose findings need not carry a source.
+    if let Some(source) = f.source.as_deref().filter(|s| !s.trim().is_empty()) {
+        out.push_str(&format!("**Source**: {source} only\n"));
+    }
     if let Some(s) = &f.suggestion {
         out.push_str(&format!("**Suggestion**: {s}\n"));
     }

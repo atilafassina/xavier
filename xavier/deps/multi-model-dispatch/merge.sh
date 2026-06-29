@@ -85,14 +85,15 @@ resolve_tool() {
 # Compatibility probe: the binary must run, advertise a version, AND support the
 # `merge-text` subcommand this front door now drives. We verify the capability
 # directly by feeding an empty MergeTextInput (`{}`, valid via serde defaults)
-# and requiring a clean exit. An older binary that predates `merge-text` exits
-# non-zero ("unknown subcommand" -> exit 2), so it is treated as incompatible
-# and we fall back to parse.sh. This keeps the version probe and the
-# capability probe in agreement without parsing version strings.
+# and requiring a clean exit. `--no-cache` keeps the probe pure — a capability
+# check must never read or write the on-disk result cache. An older binary that
+# predates `merge-text` exits non-zero ("unknown subcommand" -> exit 2), so it is
+# treated as incompatible and we fall back to parse.sh. This keeps the version
+# probe and the capability probe in agreement without parsing version strings.
 # ----------------------------------------------------------------------------
 tool_compatible() {
     "$1" --version >/dev/null 2>&1 || return 1
-    printf '{}' | "$1" merge-text >/dev/null 2>&1
+    printf '{}' | "$1" merge-text --no-cache >/dev/null 2>&1
 }
 
 # ----------------------------------------------------------------------------

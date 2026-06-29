@@ -78,3 +78,24 @@ fn render_blindspot_includes_unmatched_residue() {
     // The reference-less one is rendered too (no File line).
     assert!(md.contains("### [low] no location"));
 }
+
+#[test]
+fn render_one_sided_omits_source_line_when_source_is_blank() {
+    // A located finding with no source attribution (possible via the JSON
+    // `merge` ABI, whose findings need not carry a source) must NOT render a
+    // dangling "**Source**:  only" with an empty label.
+    let mut f = finding("high", Some("src/x.rs:5"), "blank source finding", "");
+    f.source = None;
+    let input = MergeInput {
+        a: vec![f],
+        b: vec![],
+        label_a: "GPT".into(),
+        label_b: "Gemini".into(),
+    };
+    let md = debate_markdown(&merge(&input), &input.label_a, &input.label_b);
+
+    assert!(md.contains("### [high] blank source finding"));
+    assert!(md.contains("**File**: src/x.rs:5"));
+    // No Source line at all when the source is absent/blank.
+    assert!(!md.contains("**Source**:"));
+}
