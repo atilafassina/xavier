@@ -26,6 +26,10 @@
 # A skill must NEVER crash because the binary is missing or misbehaves — every
 # failure mode in the binary path degrades to the shell fallback.
 #
+# Operational kill switch: set XAVIER_TOOL_DISABLE to any non-empty value to
+# force the shell fallback even when a healthy binary is installed — an instant
+# rollback for output you don't trust, with no uninstall or file deletion.
+#
 # Pure Bash glue (grep/awk/sed, same toolchain as parse.sh); the binary path
 # additionally uses `xavier-tool` when present.
 
@@ -51,6 +55,15 @@ LABEL_B="${4:-Model B}"
 # Echoes the path, or nothing if unresolved.
 # ----------------------------------------------------------------------------
 resolve_tool() {
+    # Kill switch: any non-empty XAVIER_TOOL_DISABLE forces the shell path, even
+    # when a healthy binary is installed. This is the operational rollback for
+    # the one failure the compatibility probe cannot catch — a binary that runs
+    # cleanly but emits wrong output. Returning empty routes Main to the parse.sh
+    # fallback, with no uninstall or file deletion required.
+    if [ -n "${XAVIER_TOOL_DISABLE:-}" ]; then
+        return 0
+    fi
+
     # Explicit override wins (used by tests and power users).
     if [ -n "${XAVIER_TOOL:-}" ]; then
         [ -x "$XAVIER_TOOL" ] && echo "$XAVIER_TOOL"

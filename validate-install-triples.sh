@@ -22,28 +22,34 @@ set -euo pipefail
 ERRORS=0
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_SH="$REPO_ROOT/xavier/install.sh"
+MERGE_SH="$REPO_ROOT/xavier/deps/multi-model-dispatch/merge.sh"
 
 if [ ! -f "$INSTALL_SH" ]; then
   echo "FAIL: $INSTALL_SH not found"
   exit 1
 fi
+if [ ! -f "$MERGE_SH" ]; then
+  echo "FAIL: $MERGE_SH not found"
+  exit 1
+fi
 
 # ----------------------------------------------------------------------------
 # Extract a shell function definition (from `name() {` to its closing `}` at
-# column 0) out of install.sh. This lets us eval the live source without
-# triggering install.sh's `main "$@"` or its `set -eu` top matter.
+# column 0) out of a script. This lets us eval the live source without
+# triggering the script's top-level `main`/`set -eu` matter.
 # ----------------------------------------------------------------------------
 extract_fn() {
-  fn_name="$1"
+  src="$1"; fn_name="$2"
   awk -v fn="$fn_name" '
     $0 ~ "^" fn "\\(\\) \\{" { capture=1 }
     capture { print }
     capture && /^\}$/ { exit }
-  ' "$INSTALL_SH"
+  ' "$src"
 }
 
-DETECT_FN="$(extract_fn detect_host_triple)"
-SELECT_FN="$(extract_fn select_native_tool)"
+DETECT_FN="$(extract_fn "$INSTALL_SH" detect_host_triple)"
+SELECT_FN="$(extract_fn "$INSTALL_SH" select_native_tool)"
+RESOLVE_FN="$(extract_fn "$MERGE_SH" resolve_tool)"
 
 if [ -z "$DETECT_FN" ]; then
   echo "FAIL: could not extract detect_host_triple() from install.sh"
@@ -51,6 +57,10 @@ if [ -z "$DETECT_FN" ]; then
 fi
 if [ -z "$SELECT_FN" ]; then
   echo "FAIL: could not extract select_native_tool() from install.sh"
+  exit 1
+fi
+if [ -z "$RESOLVE_FN" ]; then
+  echo "FAIL: could not extract resolve_tool() from merge.sh"
   exit 1
 fi
 
@@ -253,6 +263,58 @@ fi
 
 if [ $SELECT_ERRORS -gt 0 ]; then
   ERRORS=$((ERRORS + SELECT_ERRORS))
+fi
+
+# ----------------------------------------------------------------------------
+# (d) Kill switch: XAVIER_TOOL_DISABLE must force merge.sh's resolve_tool() to
+#     return empty — routing Main to the parse.sh fallback — EVEN when a healthy
+#     binary is installed for the host triple. It is the operational rollback,
+#     so it has to override a present binary, not merely return empty when none
+#     exists.
+# ----------------------------------------------------------------------------
+echo ""
+echo "=== Checking XAVIER_TOOL_DISABLE kill switch (merge.sh resolve_tool) ==="
+
+run_resolve() {
+  # Args: <XAVIER_HOME> <uname -s> <uname -m>. Inherits XAVIER_TOOL_DISABLE from
+  # the caller's environment so each case can toggle it.
+  _xhome="$1"; _os="$2"; _arch="$3"
+  (
+    set +e
+    unset XAVIER_TOOL
+    XAVIER_HOME="$_xhome"
+    uname() {
+      case "${1:-}" in
+        -s) printf '%s\n' "$_os" ;;
+        -m) printf '%s\n' "$_arch" ;;
+        *)  printf '%s\n' "unknown" ;;
+      esac
+    }
+    eval "$RESOLVE_FN"
+    resolve_tool
+  )
+}
+
+# A sandbox vault that DOES have a matching binary for the stubbed host triple.
+KS_HOME="$SANDBOX/ks/home"
+mkdir -p "$KS_HOME/bin/x86_64-unknown-linux-gnu"
+printf '#!/bin/sh\necho stub\n' > "$KS_HOME/bin/x86_64-unknown-linux-gnu/xavier-tool"
+chmod +x "$KS_HOME/bin/x86_64-unknown-linux-gnu/xavier-tool"
+
+# Control: not disabled → resolve_tool finds the installed binary.
+if [ -n "$(XAVIER_TOOL_DISABLE='' run_resolve "$KS_HOME" Linux x86_64)" ]; then
+  echo "PASS: control — resolve_tool finds the installed binary when not disabled"
+else
+  echo "FAIL: control — resolve_tool found nothing despite a matching installed binary"
+  ERRORS=$((ERRORS + 1))
+fi
+
+# Kill switch: disabled → resolve_tool returns empty despite the present binary.
+if [ -z "$(XAVIER_TOOL_DISABLE=1 run_resolve "$KS_HOME" Linux x86_64)" ]; then
+  echo "PASS: XAVIER_TOOL_DISABLE=1 forces empty resolve (shell fallback) over a present binary"
+else
+  echo "FAIL: XAVIER_TOOL_DISABLE=1 did not disable resolve_tool"
+  ERRORS=$((ERRORS + 1))
 fi
 
 echo ""

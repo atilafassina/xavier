@@ -81,6 +81,8 @@ bash merge.sh <file_a> <file_b> [label_a] [label_b]
 
 Every failure mode in the binary path (missing binary, incompatible/old version without `merge-text`, non-zero exit, empty output) degrades to the `parse.sh` fallback, so a skill **never crashes** because the binary is absent. The binary path's Markdown is equivalent to the shell path's (same `## Consensus` / `## Disputes` / `## Blindspots` sections, findings, and attribution); it may differ by trailing blank lines and by **adding a `## Unmatched` section** the shell path does not produce. The pilot fish detects debate format by the first three headings, so the extra section is additive and safe.
 
+**Operational kill switch.** Set `XAVIER_TOOL_DISABLE` to any non-empty value to force the `parse.sh` fallback even when a healthy binary is installed. The automatic fallback only triggers when the binary *fails* its probe; this switch is the manual rollback for the case the probe cannot catch — a binary that runs cleanly but emits output you don't trust. It needs no uninstall or file deletion: set it per-session, or export it fleet-wide (shell profile / CI env), and every merge reverts to the shell path until you unset it.
+
 ### The four output buckets (binary path)
 
 The binary classifies every finding into one of four buckets, rendered as Markdown sections:
