@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.8.0] - 2026-06-29
+
+### Added
+
 - **`xavier-tool` native binary — a deterministic tool-call layer.** A precompiled Rust binary (workspace in the repo's top-level `tool/`: an `xavier-core` library crate + a thin `xavier-tool` CLI) that moves mechanical work out of LLM-interpreted shell into typed, tested, reproducible code. It ships prebuilt per-triple inside the release tarball, so users compile nothing — the Rust toolchain is a build-time/CI dependency only. Uniform ABI: JSON on stdin, JSON on stdout, status via exit code. `merge` is tool #1; the library/CLI split keeps a future MCP server able to wrap the same code
 - `merge` and `merge-text` subcommands — `merge` takes pre-parsed `MergeInput` JSON; `merge-text` takes each model's raw assistant text and parses the findings inside the binary. Both support `--format json|debate-md`
 - Content-addressed memoization (`xavier-core::cache`) — `merge`/`merge-text` output is cached on disk keyed on `(subcommand, input, binary version)`, self-invalidating across versions with atomic writes, and replayed byte-for-byte on a repeat. `--no-cache` bypasses it; `XAVIER_TOOL_CACHE_DIR` overrides the location; `XAVIER_TOOL_CACHE_DEBUG=1` logs hit/miss to stderr
@@ -228,7 +242,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/atilafassina/xavier/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/atilafassina/xavier/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/atilafassina/xavier/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/atilafassina/xavier/compare/v0.5.0...v0.6.0
