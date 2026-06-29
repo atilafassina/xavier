@@ -9,7 +9,9 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  # Stage 0: validate the tag matches the shipped VERSION before spending any
+  # build minutes on the matrix. Cheap, runs once.
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,7 +29,133 @@ jobs:
           fi
           echo "Version validated: $FILE_VERSION"
 
-      - name: Build tarball
+  # Stage 1: cross-compile xavier-tool --release for every supported target
+  # triple, each on an appropriate runner. This is a hand-written matrix (the
+  # build environment is offline-by-policy; cargo-dist is intentionally not
+  # used). Each leg uploads its single binary as an artifact named for the
+  # triple; the assemble job downloads them all into one bin/ tree.
+  #
+  # The supported set MUST stay in lockstep with:
+  #   * xavier/install.sh detect_host_triple()  (install-time selection)
+  #   * xavier/deps/multi-model-dispatch/merge.sh resolve_tool()  (runtime)
+  #   * validate-install-triples.sh SUPPORTED table  (offline guard)
+  # All four agree on: {x86_64,aarch64} x {apple-darwin, unknown-linux-gnu}.
+  build:
+    needs: validate
+    name: build ${{ matrix.triple }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # macOS Apple Silicon — native on the arm64 runner.
+          - triple: aarch64-apple-darwin
+            runner: macos-latest
+          # macOS Intel — native on the x86_64 runner image (macos-13).
+          - triple: x86_64-apple-darwin
+            runner: macos-13
+          # Linux x86_64 — native on ubuntu.
+          - triple: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          # Linux aarch64 — cross-compiled from the x86_64 ubuntu runner using
+          # the distro's aarch64 GCC toolchain as the linker. No emulation: we
+          # only build (CI never executes the aarch64 binary), so a cross
+          # linker is sufficient and avoids QEMU/Docker.
+          - triple: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            linker: gcc-aarch64-linux-gnu
+            cargo_linker_env: CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER
+            cargo_linker_bin: aarch64-linux-gnu-gcc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust toolchain (with target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - name: Install cross linker (Linux aarch64 only)
+        if: ${{ matrix.linker != '' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y "${{ matrix.linker }}"
+
+      - name: Build xavier-tool (release, ${{ matrix.triple }})
+        env:
+          # Only set for the cross leg; harmless/empty otherwise. Points cargo
+          # at the aarch64 cross linker for the aarch64-unknown-linux-gnu target.
+          CROSS_LINKER_ENV: ${{ matrix.cargo_linker_env }}
+          CROSS_LINKER_BIN: ${{ matrix.cargo_linker_bin }}
+        run: |
+          if [ -n "$CROSS_LINKER_ENV" ]; then
+            export "$CROSS_LINKER_ENV=$CROSS_LINKER_BIN"
+            echo "Using cross linker: $CROSS_LINKER_ENV=$CROSS_LINKER_BIN"
+          fi
+          echo "Building xavier-tool for ${{ matrix.triple }}"
+          cargo build --release --target "${{ matrix.triple }}" \
+            --manifest-path tool/Cargo.toml --bin xavier-tool
+
+      - name: Stage binary under bin/<triple>/
+        run: |
+          DEST="xavier/bin/${{ matrix.triple }}"
+          mkdir -p "$DEST"
+          cp "tool/target/${{ matrix.triple }}/release/xavier-tool" "$DEST/xavier-tool"
+          chmod +x "$DEST/xavier-tool"
+          echo "Staged: $DEST/xavier-tool"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xavier-tool-${{ matrix.triple }}
+          path: xavier/bin/${{ matrix.triple }}/xavier-tool
+          if-no-files-found: error
+          retention-days: 1
+
+  # Stage 2: assemble exactly ONE tarball. Download every per-triple artifact
+  # back into xavier/bin/<triple>/xavier-tool, then tar the whole xavier/ tree
+  # once. This is the single-tarball contract: N build legs, 1 release asset.
+  assemble:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Download all per-triple binaries
+        uses: actions/download-artifact@v4
+        with:
+          # Each artifact is named xavier-tool-<triple> and holds a single
+          # xavier-tool file. With merge-multiple:false, download-artifact lays
+          # each one down under its own xavier/bin/xavier-tool-<triple>/ dir;
+          # the next step renames those to the canonical xavier/bin/<triple>/.
+          pattern: xavier-tool-*
+          path: xavier/bin
+          merge-multiple: false
+
+      - name: Normalize bin/ layout and re-mark executable
+        run: |
+          # download-artifact lays each artifact down as
+          #   xavier/bin/xavier-tool-<triple>/xavier-tool
+          # Rename each to the canonical xavier/bin/<triple>/xavier-tool so the
+          # layout matches install.sh / merge.sh expectations exactly.
+          cd xavier/bin
+          for dir in xavier-tool-*/; do
+            [ -d "$dir" ] || continue
+            triple="${dir#xavier-tool-}"
+            triple="${triple%/}"
+            mkdir -p "$triple"
+            mv "$dir/xavier-tool" "$triple/xavier-tool"
+            rmdir "$dir"
+            chmod +x "$triple/xavier-tool"
+            echo "Assembled: bin/$triple/xavier-tool"
+          done
+          echo "--- final bin/ layout ---"
+          find . -type f | sort
+
+      - name: Build the single tarball
         run: tar czf xavier.tar.gz xavier/
 
       - name: Extract changelog section for this release

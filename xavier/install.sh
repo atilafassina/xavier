@@ -79,6 +79,7 @@ check_existing() {
              install_skill
              install_command_aliases
              link_xavier_skills_and_refs
+             select_native_tool
              exit 0 ;;
         a|A) info "Aborted. No changes made."
              exit 0 ;;
@@ -347,6 +348,91 @@ ADAPTEREOF
   fi
 
   info "Adapter wired: $runtime"
+}
+
+# --- Detect host target triple ---
+# Maps the full `uname -s`/`uname -m` matrix to the Rust target triples used
+# for the bundled binary layout (xavier/bin/<triple>/xavier-tool). Mirrors what
+# `rustc -vV` would report on each platform, without requiring a Rust toolchain
+# on the user's machine.
+#
+# This map MUST stay in lockstep with the set of triples cross-compiled by
+# .github/workflows/release.yml, the runtime resolver in
+# deps/multi-model-dispatch/merge.sh, and the offline guard
+# validate-install-triples.sh. The shipped set is:
+#   {x86_64, aarch64} x {apple-darwin (Darwin), unknown-linux-gnu (Linux)}
+#
+# Echoes the triple, or NOTHING for any unsupported os/arch combination
+# (e.g. 32-bit x86, armv7, FreeBSD/Windows-via-uname) so the caller falls back
+# to the pure-shell merge instead of selecting a binary we never built.
+detect_host_triple() {
+  os="$(uname -s 2>/dev/null || echo unknown)"
+  arch="$(uname -m 2>/dev/null || echo unknown)"
+
+  # Normalize architecture names to Rust's vocabulary. Anything we do NOT ship
+  # a binary for is left empty so the os case below yields no triple.
+  case "$arch" in
+    x86_64|amd64)  rust_arch="x86_64" ;;
+    arm64|aarch64) rust_arch="aarch64" ;;
+    *)             rust_arch="" ;;
+  esac
+
+  # Unsupported architecture → no triple (graceful shell fallback).
+  if [ -z "$rust_arch" ]; then
+    echo ""
+    return 0
+  fi
+
+  case "$os" in
+    Darwin)  echo "${rust_arch}-apple-darwin" ;;
+    Linux)   echo "${rust_arch}-unknown-linux-gnu" ;;
+    *)       echo "" ;;
+  esac
+}
+
+# --- Select the bundled native tool for this host ---
+# Gated, like every per-runtime artifact: if a binary for the host triple is
+# bundled, install it into the vault at a stable, runtime-resolvable path
+# ($XAVIER_HOME/bin/<triple>/xavier-tool) and mark it executable. If none
+# matches (unsupported platform, or a clone checkout whose bin/ holds no
+# prebuilt binaries), NO-OP — never write a stub. Skills fall back to the
+# pure-shell parse.sh merge when the binary is absent.
+#
+# Source binaries live under $SCRIPT_DIR/bin (the extracted tarball / repo);
+# clone mode symlinks, tarball mode copies — matching link_xavier_skills_and_refs.
+select_native_tool() {
+  if [ -z "$SCRIPT_DIR" ]; then
+    return 0
+  fi
+
+  src_root="$SCRIPT_DIR/bin"
+  if [ ! -d "$src_root" ]; then
+    return 0
+  fi
+
+  triple="$(detect_host_triple)"
+  if [ -z "$triple" ]; then
+    warn "Unsupported platform for native tool ($(uname -s 2>/dev/null)/$(uname -m 2>/dev/null)) — using shell fallback."
+    return 0
+  fi
+
+  src_tool="$src_root/$triple/xavier-tool"
+  if [ ! -f "$src_tool" ]; then
+    info "No bundled native tool for $triple — using shell fallback."
+    return 0
+  fi
+
+  dest_dir="$XAVIER_HOME/bin/$triple"
+  dest_tool="$dest_dir/xavier-tool"
+  mkdir -p "$dest_dir"
+
+  if [ "$INSTALL_MODE" = "clone" ]; then
+    ln -sfn "$src_tool" "$dest_tool"
+  else
+    cp "$src_tool" "$dest_tool"
+  fi
+  chmod +x "$dest_tool" 2>/dev/null || true
+  info "Native tool installed: $dest_tool"
 }
 
 # --- Initialize git ---
@@ -763,6 +849,7 @@ main() {
   install_skill
   install_command_aliases
   link_xavier_skills_and_refs
+  select_native_tool
   print_summary
 }
 

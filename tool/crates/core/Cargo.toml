@@ -1,0 +1,15 @@
+[package]
+name = "xavier-core"
+description = "Core data models and merge logic for the Xavier native tool."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "xavier_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

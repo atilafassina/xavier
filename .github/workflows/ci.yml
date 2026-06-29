@@ -1,0 +1,58 @@
+name: CI
+
+# Runs the loop's backpressure on every PR and on pushes to main, so the same
+# checks that gated each implementation phase locally also gate merges. The
+# release matrix lives in release.yml (tag-triggered) — this is correctness CI,
+# not a build/ship pipeline.
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        # The workspace lives in tool/; cargo fmt --check must run from inside
+        # the workspace (not via --manifest-path) or rustfmt path-forwarding
+        # spuriously fails.
+        working-directory: tool
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Build
+        run: cargo build --locked
+      - name: Test
+        run: cargo test --locked
+      - name: Clippy
+        run: cargo clippy --locked -- -D warnings
+      - name: Rustfmt
+        run: cargo fmt --check
+
+  validators:
+    name: vault validators
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: validate-skills
+        run: bash validate-skills.sh
+      - name: validate-xavier-frontmatter
+        run: bash validate-xavier-frontmatter.sh
+      - name: validate-install-triples
+        run: bash validate-install-triples.sh

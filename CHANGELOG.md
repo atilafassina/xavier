@@ -9,13 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`xavier-tool` native binary — a deterministic tool-call layer.** A precompiled Rust binary (workspace in the repo's top-level `tool/`: an `xavier-core` library crate + a thin `xavier-tool` CLI) that moves mechanical work out of LLM-interpreted shell into typed, tested, reproducible code. It ships prebuilt per-triple inside the release tarball, so users compile nothing — the Rust toolchain is a build-time/CI dependency only. Uniform ABI: JSON on stdin, JSON on stdout, status via exit code. `merge` is tool #1; the library/CLI split keeps a future MCP server able to wrap the same code
+- `merge` and `merge-text` subcommands — `merge` takes pre-parsed `MergeInput` JSON; `merge-text` takes each model's raw assistant text and parses the findings inside the binary. Both support `--format json|debate-md`
+- Content-addressed memoization (`xavier-core::cache`) — `merge`/`merge-text` output is cached on disk keyed on `(subcommand, input, binary version)`, self-invalidating across versions with atomic writes, and replayed byte-for-byte on a repeat. `--no-cache` bypasses it; `XAVIER_TOOL_CACHE_DIR` overrides the location; `XAVIER_TOOL_CACHE_DEBUG=1` logs hit/miss to stderr
+- `XAVIER_TOOL_DISABLE` kill switch — any non-empty value forces the `parse.sh` shell fallback even when a healthy binary is installed: an instant operational rollback with no uninstall or file deletion
+- Multi-platform release matrix in `.github/workflows/release.yml` — a hand-written GitHub Actions matrix cross-compiles `xavier-tool` for `{x86_64,aarch64} × {apple-darwin, unknown-linux-gnu}` and assembles all four binaries into the single `xavier.tar.gz` (one tarball, N triples)
+- Host target-triple detection and selection in `xavier/install.sh` — installs the matching bundled binary and no-ops (no stub) on unsupported platforms, leaving them on the shell merge
+- `validate-install-triples.sh` — an offline guard (no network, builds nothing) over the `uname`→triple mapping, the missing-binary fallback, and the `XAVIER_TOOL_DISABLE` kill switch, by eval'ing the live `install.sh` / `merge.sh` functions under a stubbed `uname`
+- `.github/workflows/ci.yml` — runs `cargo build` / `test` / `clippy -- -D warnings` / `fmt --check` on Linux and macOS plus the three `validate-*.sh` guards on every pull request and push to `main`
+
 ### Changed
+
+- Multi-model review merging now routes through `xavier-tool` via a binary-first front door (`xavier/deps/multi-model-dispatch/merge.sh`) that probes the binary and **gracefully falls back to `parse.sh`** on any problem (missing, incompatible, non-zero exit), so output stays equivalent and a skill never crashes because the binary is absent
+- The mechanical merge is the determinism boundary — the binary emits a `## Unmatched` residue bucket and the `review` skill's model pass adjudicates only that bucket; `## Consensus` / `## Disputes` / `## Blindspots` are final and pass through untouched
 
 ### Deprecated
 
 ### Removed
 
 ### Fixed
+
+- Paraphrased near-duplicate findings now collapse into one `## Consensus` entry instead of two separate blindspots. The shell merge matched exact `file:line` only, so "missing field `id`" and "`id` is absent" at one location were recorded as two findings; the binary canonicalizes `file:line(-range)` references and adds textual near-duplicate matching (pure-Rust similarity, threshold-gated), routing genuinely ambiguous pairs to `## Unmatched` instead of guessing
+- Robust finding parsing in the binary path — multi-line descriptions, `\uXXXX` escapes (including UTF-16 surrogate pairs), and non-strict markdown (`**File:**`, list bullets, extra spacing) that `parse.sh`'s `awk` scraper mishandled. The shell fallback path is unchanged
 
 ### Security
 

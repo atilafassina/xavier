@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/xavier-tool"]
+
+# Shared metadata and dependency versions for every crate in the workspace.
+# The runtime dependency tree is intentionally lean: serde + serde_json only.
+# No CLI-arg framework, no error crate, no similarity crate — the near-dup
+# metric is hand-written in `xavier-core::similarity` against std.
+#
+# 0.2.0: added the `merge-text` subcommand (binary-side Markdown parsing) and
+# textual near-duplicate matching + the `unmatched` adjudication bucket. The
+# original `merge` JSON ABI is unchanged; `merge.sh` probes for `merge-text`.
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/atilafassina/xavier"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Optimize release binaries for size — they ship inside the Xavier tarball,
+# so smaller is strictly better and the merge work is not CPU-bound.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

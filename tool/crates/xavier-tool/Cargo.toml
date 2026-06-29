@@ -1,0 +1,15 @@
+[package]
+name = "xavier-tool"
+description = "Xavier's native multi-subcommand tool: mechanical merge and friends."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "xavier-tool"
+path = "src/main.rs"
+
+[dependencies]
+xavier-core = { path = "../core" }
+serde_json.workspace = true

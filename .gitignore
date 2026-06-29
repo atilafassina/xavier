@@ -1,0 +1,5 @@
+# Rust build artifacts for the tool/ workspace (build-time/CI only — never
+# distributed as source). Prebuilt binaries are bundled into the release
+# tarball by CI, not committed here.
+/tool/target/
+target/

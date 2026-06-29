@@ -105,6 +105,22 @@ if [ -z "$UNRELEASED_MEANINGFUL" ]; then
   exit 1
 fi
 
+# native tool builds — CI bundles a per-triple xavier-tool binary into the
+# release tarball on tag push, so refuse to cut a tag whose tool workspace
+# does not even compile. Skipped on --dry-run and when cargo is absent (the
+# build is CI's hard requirement; this is a fast local fail-safe).
+if [ "$DRY_RUN" -eq 0 ] && [ -f "tool/Cargo.toml" ]; then
+  if command -v cargo >/dev/null 2>&1; then
+    echo "Checking native tool builds..."
+    if ! cargo build --release --manifest-path tool/Cargo.toml --bin xavier-tool >/dev/null 2>&1; then
+      echo "error: tool/ workspace failed to build — fix it before releasing" >&2
+      exit 1
+    fi
+  else
+    echo "warning: cargo not found — skipping native tool build check (CI will build it)" >&2
+  fi
+fi
+
 # --- compute new version ------------------------------------------------
 IFS='.' read -r MAJ MIN PAT <<< "$CURRENT"
 case "$BUMP" in
