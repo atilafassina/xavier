@@ -1,6 +1,6 @@
 ---
 name: self-update
-description: Update Xavier's skills, references, and router to the latest release (or a specific version) from GitHub.
+description: Update Xavier's skills, references, router, and native tool binary to the latest release (or a specific version) from GitHub.
 requires: [config, deps-index:optional]
 ---
 
@@ -8,7 +8,7 @@ requires: [config, deps-index:optional]
 
 `/xavier self-update [version]`
 
-Update Xavier's skills, references, and router to the latest release (or a specific version) from GitHub.
+Update Xavier's skills, references, router, and native tool binary to the latest release (or a specific version) from GitHub.
 
 ## Step 1: Determine Current Version
 
@@ -126,7 +126,34 @@ fi
 # 3. Update router
 [ -f "$TMPDIR/xavier/SKILL.md" ] && cp "$TMPDIR/xavier/SKILL.md" "$XAVIER_HOME/SKILL.md"
 
-echo "Replaced: skills/, references/, distributed deps, SKILL.md"
+# 4. Install the native tool binary for this host triple, if the tarball bundled
+#    one. Mirrors install.sh's detect_host_triple/select_native_tool: map uname
+#    to a supported target triple and copy the matching prebuilt binary into the
+#    vault. On an unsupported platform (empty triple) or when no matching binary
+#    ships, no-op — merge.sh then gracefully falls back to parse.sh. (cp, not
+#    rm+cp: the per-triple path is replaced in place, no recursive delete.)
+os="$(uname -s 2>/dev/null || echo unknown)"
+arch="$(uname -m 2>/dev/null || echo unknown)"
+case "$arch" in
+  x86_64|amd64)  rust_arch="x86_64" ;;
+  arm64|aarch64) rust_arch="aarch64" ;;
+  *)             rust_arch="" ;;
+esac
+case "$os" in
+  Darwin) [ -n "$rust_arch" ] && host_triple="${rust_arch}-apple-darwin" || host_triple="" ;;
+  Linux)  [ -n "$rust_arch" ] && host_triple="${rust_arch}-unknown-linux-gnu" || host_triple="" ;;
+  *)      host_triple="" ;;
+esac
+if [ -n "$host_triple" ] && [ -f "$TMPDIR/xavier/bin/$host_triple/xavier-tool" ]; then
+  mkdir -p "$XAVIER_HOME/bin/$host_triple"
+  cp "$TMPDIR/xavier/bin/$host_triple/xavier-tool" "$XAVIER_HOME/bin/$host_triple/xavier-tool"
+  chmod +x "$XAVIER_HOME/bin/$host_triple/xavier-tool"
+  echo "Installed native tool: bin/$host_triple/xavier-tool"
+else
+  echo "No bundled native tool for host ($os/$arch) — merge.sh falls back to parse.sh"
+fi
+
+echo "Replaced: skills/, references/, distributed deps, SKILL.md, native tool binary"
 ```
 
 **Rollback on partial failure**: If any copy command above fails, restore from backup immediately:
