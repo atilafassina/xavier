@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `/xavier self-update` now installs the native `xavier-tool` binary for the host platform. Previously its replace step refreshed `skills/`, `references/`, distributed `deps/`, and the router but **not** `bin/`, so anyone self-updating to a binary-bearing release silently stayed on the `parse.sh` shell merge until a fresh `install.sh` run. Self-update now mirrors `install.sh`'s host-triple detection and copies the matching prebuilt binary from the release tarball, gracefully no-opping on unsupported platforms (leaving the shell fallback intact). The install backs up the prior binary and restores it if the copy fails (surfacing the error rather than masking it), and clears a stale binary when a release ships none for the host triple so `merge.sh` never runs a prior-version binary.
+
 ### Security
 
 ## [0.8.0] - 2026-06-29

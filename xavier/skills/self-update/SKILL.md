@@ -1,6 +1,6 @@
 ---
 name: self-update
-description: Update Xavier's skills, references, and router to the latest release (or a specific version) from GitHub.
+description: Update Xavier's skills, references, router, and native tool binary to the latest release (or a specific version) from GitHub.
 requires: [config, deps-index:optional]
 ---
 
@@ -8,7 +8,7 @@ requires: [config, deps-index:optional]
 
 `/xavier self-update [version]`
 
-Update Xavier's skills, references, and router to the latest release (or a specific version) from GitHub.
+Update Xavier's skills, references, router, and native tool binary to the latest release (or a specific version) from GitHub.
 
 ## Step 1: Determine Current Version
 
@@ -126,7 +126,47 @@ fi
 # 3. Update router
 [ -f "$TMPDIR/xavier/SKILL.md" ] && cp "$TMPDIR/xavier/SKILL.md" "$XAVIER_HOME/SKILL.md"
 
-echo "Replaced: skills/, references/, distributed deps, SKILL.md"
+# 4. Install the native tool binary for this host triple. Mirrors install.sh's
+#    detect_host_triple/select_native_tool, with two safety properties:
+#      - the existing binary is moved aside BEFORE replacement and restored if
+#        the copy fails, so a failed write is surfaced (stderr), never masked;
+#      - when this release ships NO binary for the host triple, any prior-version
+#        binary is cleared (the backup is not restored) so merge.sh falls back to
+#        parse.sh instead of running a stale binary from an earlier version.
+os="$(uname -s 2>/dev/null || echo unknown)"
+arch="$(uname -m 2>/dev/null || echo unknown)"
+case "$arch" in
+  x86_64|amd64)  rust_arch="x86_64" ;;
+  arm64|aarch64) rust_arch="aarch64" ;;
+  *)             rust_arch="" ;;
+esac
+case "$os" in
+  Darwin) [ -n "$rust_arch" ] && host_triple="${rust_arch}-apple-darwin" || host_triple="" ;;
+  Linux)  [ -n "$rust_arch" ] && host_triple="${rust_arch}-unknown-linux-gnu" || host_triple="" ;;
+  *)      host_triple="" ;;
+esac
+if [ -n "$host_triple" ]; then
+  dest="$XAVIER_HOME/bin/$host_triple/xavier-tool"
+  # Back up any existing binary (mv aside) so a failed copy can be rolled back.
+  [ -f "$dest" ] && mv "$dest" "$TMPDIR/bin-backup-xavier-tool"
+  if [ -f "$TMPDIR/xavier/bin/$host_triple/xavier-tool" ]; then
+    mkdir -p "$XAVIER_HOME/bin/$host_triple"
+    if cp "$TMPDIR/xavier/bin/$host_triple/xavier-tool" "$dest"; then
+      chmod +x "$dest"
+      echo "Installed native tool: bin/$host_triple/xavier-tool"
+    else
+      # Copy failed: restore the prior binary (if any) and surface the failure.
+      [ -f "$TMPDIR/bin-backup-xavier-tool" ] && { mv "$TMPDIR/bin-backup-xavier-tool" "$dest"; chmod +x "$dest"; }
+      echo "ERROR: native tool copy failed; restored prior binary if present — merge.sh uses it or falls back to parse.sh" >&2
+    fi
+  else
+    # No bundled binary for this host this release: leave the old one cleared (do
+    # NOT restore the backup) so merge.sh falls back to parse.sh, never a stale one.
+    echo "No bundled native tool for $host_triple this release — cleared any prior binary; merge.sh falls back to parse.sh"
+  fi
+fi
+
+echo "Replaced: skills/, references/, distributed deps, SKILL.md, native tool binary"
 ```
 
 **Rollback on partial failure**: If any copy command above fails, restore from backup immediately:
