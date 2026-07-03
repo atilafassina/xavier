@@ -116,7 +116,7 @@ collect([
     MERGE=~/.xavier/deps/multi-model-dispatch/merge.sh
     TMPDIR=$(mktemp -d)
 
-    SYSTEM_PROMPT={correctness.md + correctness_conventions + correctness_patterns, or omit patterns section}
+    SYSTEM_PROMPT={correctness.md + correctness_conventions + correctness_patterns (omit patterns section if none) + a REQUIRED-FORMAT reminder: each finding must be "### [severity] short description" (severity ∈ critical|high|medium|low) followed by a "**File**: path" line, where the ":line" suffix is OPTIONAL — bare "**File**: path" is valid, append ":line" only when a real code line applies (docs/prose files have no line)}
     DIFF={diff}
 
     # 1. Dispatch to both models (mktemp paths prevent symlink attacks)
@@ -137,7 +137,7 @@ collect([
     MERGE=~/.xavier/deps/multi-model-dispatch/merge.sh
     TMPDIR=$(mktemp -d)
 
-    SYSTEM_PROMPT={security.md + security_conventions + security_patterns, or omit patterns section}
+    SYSTEM_PROMPT={security.md + security_conventions + security_patterns (omit patterns section if none) + a REQUIRED-FORMAT reminder: each finding must be "### [severity] short description" (severity ∈ critical|high|medium|low) followed by a "**File**: path" line, where the ":line" suffix is OPTIONAL — bare "**File**: path" is valid, append ":line" only when a real code line applies (docs/prose files have no line)}
     DIFF={diff}
 
     # 1. Dispatch to both models (mktemp paths prevent symlink attacks)
@@ -158,7 +158,7 @@ collect([
     MERGE=~/.xavier/deps/multi-model-dispatch/merge.sh
     TMPDIR=$(mktemp -d)
 
-    SYSTEM_PROMPT={performance.md + performance_conventions + performance_patterns, or omit patterns section}
+    SYSTEM_PROMPT={performance.md + performance_conventions + performance_patterns (omit patterns section if none) + a REQUIRED-FORMAT reminder: each finding must be "### [severity] short description" (severity ∈ critical|high|medium|low) followed by a "**File**: path" line, where the ":line" suffix is OPTIONAL — bare "**File**: path" is valid, append ":line" only when a real code line applies (docs/prose files have no line)}
     DIFF={diff}
 
     # 1. Dispatch to both models (mktemp paths prevent symlink attacks)
