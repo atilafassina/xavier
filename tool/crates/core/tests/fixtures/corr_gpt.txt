@@ -1,0 +1,7 @@
+Findings:
+
+- `xavier/skills/review/SKILL.md`, hunk `@@ -82,6 +92,8 @@`: The new PR-description step is not wired into any downstream reviewer input. Step 4 still defines each reviewer’s `user_prompt` as only “the diff”, so even if the pilot fish reads the PR description, the correctness/security/performance remoras never receive that intent. Concrete failure: an active PR says “mechanical rename only” or “CLI-only change,” but reviewers grade from the raw diff alone and can still apply the wrong heuristics; the new instruction gives a false sense that intent will shape findings.
+
+- `xavier/skills/review/SKILL.md`, hunk `@@ -82,6 +92,8 @@`: “active PR” and “read the description” are undefined. The skill does not say how to detect an active PR, which remote/branch/PR to choose, or what to do when multiple PRs match, the CLI is unavailable, or the PR body is empty. Concrete failure: running review on a local branch with two open PRs or no GitHub remote leaves the executor guessing whether to call `gh pr view`, skip the step, or block.
+
+Verdict: request changes.

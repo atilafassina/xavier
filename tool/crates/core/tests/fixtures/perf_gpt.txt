@@ -1,0 +1,13 @@
+Finding: `xavier/skills/review/SKILL.md`, hunk near Step 3 adds an unconditional PR-description read for active PRs.
+
+```diff
++5. If this is an active PR, read the description and understand the intention of the PR. A CLI tool, server, or client-side code have different heuristics when grading the findings.
+```
+
+This adds avoidable latency/network I/O to every review run on an active PR, including cases where the description is already present in the review context or where the diff/persona does not need PR intent. Because the instruction does not specify source, caching, timeout, or reuse, orchestrators may fetch the PR body independently from each runtime/session or via slow remote CLI/API calls before review starts.
+
+Concrete failure scenario: on a large batch of PR reviews, each invocation performs an extra `gh pr view`/API request just to classify heuristics, even when the PR body is empty, unchanged, or already embedded in the prompt. Under rate limits or flaky network, this can turn a local diff review into a network-blocked workflow and delay spawning the reviewer panel.
+
+I’d request changing this to a conditional/reused-context step, e.g. “If PR metadata is already available, use it; otherwise fetch once with a short timeout only when needed to disambiguate review heuristics.”
+
+Verdict: request changes.
