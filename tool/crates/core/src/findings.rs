@@ -161,11 +161,19 @@ impl Builder {
         if description.is_empty() {
             return;
         }
-        let reference = self
-            .reference
-            .as_deref()
-            .map(CanonRef::parse)
-            .filter(CanonRef::is_usable);
+        let reference = match self.reference.as_deref() {
+            // A `**File**:` field was present: canonicalize it as before. Any
+            // line it carries is kept — only the Layer B salvage path below is
+            // constrained to file-only refs.
+            Some(raw) => Some(CanonRef::parse(raw)).filter(CanonRef::is_usable),
+            // Layer B — the block had no `**File**:` field. Try to salvage a
+            // location CONSERVATIVELY from a single unambiguous inline path
+            // span mentioned in the block (description or suggestion lines).
+            None => {
+                let suggestion_lines: &[String] = self.suggestion.as_deref().unwrap_or(&[]);
+                salvage_reference(&[self.desc.as_slice(), suggestion_lines])
+            }
+        };
         let suggestion = self
             .suggestion
             .as_ref()
@@ -283,6 +291,99 @@ fn parse_field(line: &str, name: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Layer B salvage. When a finding block carried **no `**File**:` field**, try
+/// to recover a location from a SINGLE unambiguous inline backtick code-span
+/// that looks like a path. Conservative by design — the asymmetry is the whole
+/// point: a MISSED salvage is safely deferred to `## Unmatched` (recoverable),
+/// while a WRONG salvage silently corrupts consensus/disputes. When in doubt we
+/// do NOT salvage.
+///
+/// Rules (see Phase 3 spec):
+/// 1. Consider only inline single-backtick code-spans across the whole block
+///    (description + suggestion lines). A bare prose filename that is NOT inside
+///    a backtick span is deliberately ignored, to avoid false positives from
+///    ordinary prose.
+/// 2. Keep a span only if its file component "looks like a path": it contains a
+///    `/` or ends in a known code/doc extension.
+/// 3. Salvage iff there is **exactly one distinct** path-like file. Zero → no
+///    ref. Two or more distinct → ambiguous → no ref (never guess).
+/// 4. NEVER synthesize a line: the salvaged ref is file-only (`line: None`),
+///    even when the span itself carried a trailing `:line`/range. A fabricated
+///    line breaks the exact-key match when two models cite different hunk lines,
+///    so it is strictly worse than a file-only ref.
+fn salvage_reference(line_groups: &[&[String]]) -> Option<CanonRef> {
+    let mut distinct: Vec<String> = Vec::new();
+    for group in line_groups {
+        for line in *group {
+            for span in code_spans(line) {
+                if let Some(file) = path_like_file(&span) {
+                    if !distinct.iter().any(|f| *f == file) {
+                        distinct.push(file);
+                    }
+                }
+            }
+        }
+    }
+
+    // Exactly one distinct path-like span salvages; zero or many do not.
+    match distinct.as_slice() {
+        [only] => Some(CanonRef {
+            file: only.clone(),
+            line: None,
+        }),
+        _ => None,
+    }
+    .filter(CanonRef::is_usable)
+}
+
+/// Extract the contents of every CLOSED inline single-backtick code-span on one
+/// line. A trailing unpaired backtick opens no span and is ignored. Spans never
+/// cross a line boundary, so scanning per line is correct; a triple-backtick
+/// fence marker yields only an empty span (rejected downstream as non-path).
+fn code_spans(line: &str) -> Vec<String> {
+    let segments: Vec<&str> = line.split('`').collect();
+    // N backticks -> N+1 segments -> N/2 closed pairs; span p is segment 2p+1.
+    let pairs = segments.len().saturating_sub(1) / 2;
+    (0..pairs).map(|p| segments[2 * p + 1].to_string()).collect()
+}
+
+/// If `span` looks like a file path, return its file component with any trailing
+/// `:line`/range peeled off (the line is deliberately discarded — salvage never
+/// synthesizes a line). Returns `None` for spans that do not look like a path.
+///
+/// Reuses [`CanonRef::parse`] purely for its file/line split so the path-likeness
+/// test runs on the same file component the matcher would key on.
+fn path_like_file(span: &str) -> Option<String> {
+    if span.trim().is_empty() {
+        return None;
+    }
+    let file = CanonRef::parse(span).file;
+    if looks_like_path(&file) {
+        Some(file)
+    } else {
+        None
+    }
+}
+
+/// A file component "looks like a path" if it contains a `/` or ends in one of a
+/// tight set of known code/doc extensions. Kept intentionally narrow: broadening
+/// it trades a safe missed-salvage for a risky wrong-salvage.
+fn looks_like_path(file: &str) -> bool {
+    let f = file.trim();
+    if f.is_empty() {
+        return false;
+    }
+    if f.contains('/') {
+        return true;
+    }
+    const EXTS: &[&str] = &[
+        ".rs", ".ts", ".tsx", ".js", ".py", ".go", ".sh", ".md", ".json", ".toml", ".yaml",
+        ".yml", ".txt",
+    ];
+    let lower = f.to_lowercase();
+    EXTS.iter().any(|ext| lower.ends_with(ext))
 }
 
 /// Decode literal `\uXXXX` escape sequences (including UTF-16 surrogate pairs)
@@ -523,5 +624,95 @@ mod tests {
     fn empty_text_yields_no_findings() {
         assert!(parse_findings("", "GPT").is_empty());
         assert!(parse_findings("just prose, no findings here", "GPT").is_empty());
+    }
+
+    // --- Phase 3: Layer B — conservative single-span location salvage. ---
+
+    #[test]
+    fn salvages_single_inline_path_span_when_no_file_field() {
+        // No `**File**:` field, but the block mentions exactly one path-like
+        // backtick span. Salvage it as a file-only reference.
+        let text = "### [high] The index is off\n\
+                    The bug lives in `src/parser.rs` near the top of the loop.\n";
+        let f = parse_findings(text, "GPT");
+        assert_eq!(f.len(), 1);
+        let r = f[0].reference.as_ref().expect("path span should be salvaged");
+        assert_eq!(r.file, "src/parser.rs");
+        assert_eq!(r.line, None);
+        assert_eq!(r.key(), "src/parser.rs");
+    }
+
+    #[test]
+    fn ambiguous_two_inline_path_spans_salvages_nothing() {
+        // Two DISTINCT path-like spans -> ambiguous -> do not guess, leave None.
+        let text = "### [high] The two files disagree\n\
+                    `src/a.rs` and `src/b.rs` use different formats.\n";
+        let f = parse_findings(text, "GPT");
+        assert_eq!(f.len(), 1);
+        assert!(
+            f[0].reference.is_none(),
+            "two path-like spans are ambiguous and must NOT salvage a reference"
+        );
+    }
+
+    #[test]
+    fn bare_prose_filename_is_not_salvaged() {
+        // `main.rs` looks like a path, but it is NOT inside a backtick span, so
+        // ordinary prose must never manufacture a reference.
+        let text = "### [medium] There is a problem in main.rs somewhere\n\
+                    The handler in main.rs does not validate its input.\n";
+        let f = parse_findings(text, "GPT");
+        assert_eq!(f.len(), 1);
+        assert!(
+            f[0].reference.is_none(),
+            "a bare prose filename (no backticks) must not create a reference"
+        );
+    }
+
+    #[test]
+    fn salvage_never_fabricates_a_line_from_span_or_hunk() {
+        // The salvage span carries a `:42`, and a `@@ -40,6 +42,8 @@` hunk is
+        // present. Neither may become a line number: the salvaged ref is
+        // file-only (a fabricated line breaks the exact-key match).
+        let text = "### [high] Off-by-one in the loop bound\n\
+                    See `src/loop.rs:42` inside hunk `@@ -40,6 +42,8 @@`.\n";
+        let f = parse_findings(text, "GPT");
+        assert_eq!(f.len(), 1);
+        let r = f[0]
+            .reference
+            .as_ref()
+            .expect("the single path-like span should salvage a file");
+        assert_eq!(r.file, "src/loop.rs");
+        assert_eq!(r.line, None, "salvage must never synthesize a line");
+        assert_eq!(r.key(), "src/loop.rs");
+    }
+
+    #[test]
+    fn explicit_file_field_is_not_overridden_by_inline_span() {
+        // A real `**File**:` field is authoritative: salvage must not run, must
+        // not override it, and the field's line is preserved.
+        let text = "### [high] Off-by-one in loop\n\
+                    **File**: `src/main.rs:42`\n\
+                    The issue is also near `src/other.rs` in a comment.\n";
+        let f = parse_findings(text, "GPT");
+        assert_eq!(f.len(), 1);
+        let r = f[0].reference.as_ref().expect("File field ref present");
+        assert_eq!(r.file, "src/main.rs");
+        assert_eq!(r.line, Some(42));
+        assert_eq!(r.key(), "src/main.rs:42");
+    }
+
+    #[test]
+    fn non_path_code_span_is_not_salvaged() {
+        // A backtick span that does not look like a path (a bare identifier with
+        // no `/` and no known extension) must not be salvaged.
+        let text = "### [low] Rename the temporary\n\
+                    Rename `tmp` to something descriptive.\n";
+        let f = parse_findings(text, "GPT");
+        assert_eq!(f.len(), 1);
+        assert!(
+            f[0].reference.is_none(),
+            "a non-path code span must not create a reference"
+        );
     }
 }
