@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.9.0] - 2026-07-05
+
+### Added
+
 - **`/xavier teach` — adaptive, cohort-based tutoring with durable knowledge.** A new skill that teaches a topic through researched, ZPD-placed lessons organized into **cohorts** (a learning track with a stated mission), leaving behind one durable, citable lesson-record per lesson. The flow: a **mission gate** (four-field interview: why / success / constraints / out-of-scope + starting level) creates a cohort; an **adaptive research** phase spawns reviewer-style remoras that scale to topic maturity (a settled topic gets a light single-pass sweep; a fast-moving one fans out across canonical / recent-practice / frontier angles); **ZPD placement** reads prior lesson-records to pitch each lesson just past what the learner has already demonstrated; an **interactive tutor loop** (with a one-shot fallback for tight topics) teaches against the researched material and emits `demonstrated` + `misconceptions` signals; and an **A7 writer** commits exactly one `type: lesson` record. Driver's-seat model: the learner always names the topic — `teach` never proposes one.
 - **Spaced retrieval that keeps the `demonstrated` signal honest.** On a returning session, before new material, `teach` scans a cohort's lesson-records for any *due* item on a transparent, hand-computable fluency ladder (`seen` 1d → `familiar` 3d → `solid` 10d → `mastered` 30d; due when `today >= last_reviewed + interval(fluency)`), opens with a capped 2–3 question recall check, and re-scores fluency from the outcome — a pass promotes, a stumble demotes and removes the no-longer-recalled item from `demonstrated`. `--no-review` (and an interactive per-session skip) bypasses the check.
 - **True mid-lesson checkpoint / resume without polluting the knowledge layer.** An interrupted lesson persists a tutor-loop cursor to `teach-state/<cohort>__<lesson-slug>.md` (ephemeral state, no Zettelkasten frontmatter — mirroring the `loop`/`loop-state/` precedent); resume continues from the cursor, retiring the checkpoint only after the single durable record is written. The **clean-knowledge invariant**: an interrupted lesson leaves state *only* in `teach-state/`, never a partial `type: lesson` note under `knowledge/`.
@@ -281,7 +295,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/atilafassina/xavier/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/atilafassina/xavier/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/atilafassina/xavier/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/atilafassina/xavier/compare/v0.7.1...v0.8.0
