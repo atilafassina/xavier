@@ -1,0 +1,17 @@
+File: `xavier/skills/review/SKILL.md`
+
+```markdown
++5. If this is an active PR, read the description and understand the intention of the PR. A CLI tool, server, or client-side code have different heuristics when grading the findings.
+```
+
+**Performance Findings:**
+
+1. **Blocking Network I/O on the Critical Path:** Instructing the orchestrator to "read the description" introduces an unavoidable network round-trip (e.g., querying the GitHub API) right before "Step 4: Spawn Reviewer Remoras". This serializes network I/O and blocks the fan-out of the concurrent reviewer models, directly increasing the total time-to-completion.
+2. **Redundant LLM Work:** The directive to "understand the intention of the PR" is under-specified. An AI orchestrator is likely to interpret this as a requirement to perform a separate, synchronous LLM call to analyze the PR description and determine the project type (CLI, server, client) before proceeding.
+3. **Unused Output (Wasted Compute):** The instruction fails to wire the result of this understanding into the subsequent steps. Step 4 defines the `system_prompt` and `user_prompt` but is not updated to include this new PR context. The orchestrator will spend time and network/compute resources fetching and analyzing the PR, only to discard the result.
+
+**Concrete Failure Scenarios:**
+- **Scenario A (Latency Spike):** The orchestrator blocks on a slow GitHub API response to fetch the PR description. The concurrent review models sit idle, adding seconds of latency to the critical path.
+- **Scenario B (Wasted Generation Cycle):** The orchestrator uses an LLM to summarize a 1,000-word PR description to "understand the intention", adding 5-10 seconds of inference latency. Because Step 4 isn't wired to accept this context, the reviewers never see it, rendering the work entirely wasted.
+
+**Verdict:** request changes.

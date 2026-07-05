@@ -1,0 +1,29 @@
+Here is the review of the semantic changes in the provided diff, focusing strictly on correctness as an executable instruction set.
+
+### File: `xavier/skills/review/SKILL.md`
+**Hunk:** `@@ -82,6 +92,8 @@`
+
+**Instruction Added:**
+> `5. If this is an active PR, read the description and understand the intention of the PR. A CLI tool, server, or client-side code have different heuristics when grading the findings.`
+
+#### Findings
+
+**1. Alias-wiring-drift / Missing Downstream Consumption (Severe)**
+*   **Defect:** The instruction tells the orchestrator to read and understand the PR description in Context Assembly (Step 3), but this context is never wired into the execution payload in Step 4. 
+*   **Failure Scenario:** The orchestrator spends time/tokens fetching and summarizing the PR description, but when it constructs the prompts in Step 4 (`system_prompt: persona definition + filtered conventions...`, `user_prompt: the diff`), the PR context is omitted. The reviewer personas will grade the diff completely blind to the PR intention gathered in this step.
+
+**2. Under-specified Data Retrieval (State/Input)**
+*   **Defect:** The instruction says "If this is an active PR, read the description" but provides no deterministic method for the orchestrator to resolve this state.
+*   **Failure Scenario:** The orchestrator does not know *how* to check if it's an active PR or fetch the description. It may guess, hallucinate a description based on the branch name, or attempt to use an unavailable tool instead of a deterministic command like `gh pr view`.
+
+**3. Ambiguous Execution Contract**
+*   **Defect:** "A CLI tool, server, or client-side code have different heuristics when grading the findings." This is a declarative fact, not an actionable instruction. 
+*   **Failure Scenario:** The orchestrator reads this and either does nothing (because it's not a command) or unpredictably hallucinates its own arbitrary heuristics for grading, breaking the determinism of the Shark-pattern review. It needs explicit instructions on *how* to mutate the system prompt or grading criteria based on the detected environment.
+
+### Verdict
+**Request Changes** 
+
+To fix:
+1. Specify exactly *how* to check for an active PR and fetch its description (e.g., using `gh` CLI).
+2. Explicitly append the gathered PR intention to the `user_prompt` or `system_prompt` payload defined in Step 4.
+3. Replace the declarative heuristics statement with a concrete instruction (e.g., "Append the detected project type (CLI, server, or client) to the system prompt and instruct the reviewer to weight findings accordingly").
