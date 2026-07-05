@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+### Security
+
+## [0.8.2] - 2026-07-05
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
 - `/xavier review` no longer loses findings that two models agree on when a reviewer answers in **prose** instead of the persona's `### [severity]` + `**File**:` block. Previously a whole prose response parsed as one `severity: unknown`, reference-less finding, so consensus never formed — the agreement vanished into `## Unmatched` (binary) or was dropped entirely (shell). The parser now recovers per-issue findings from prose (segmenting on numbered / severity-word / verdict-phrase bold leads, deriving severity from a `Verdict:` line, and hoisting a shared preamble location), salvages an inline single path-like span when no `**File**:` field is present (never fabricating a line from a `@@` hunk), and the `parse.sh` shell fallback gains a `## Unmatched` bucket so it defers uncertain findings instead of silently dropping them. Conforming persona-format reviews are unaffected — the recovery stage runs only when no conforming `### [severity]` block is present, keeping that path byte-identical.
 
 ### Security
@@ -260,7 +274,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/atilafassina/xavier/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/atilafassina/xavier/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/atilafassina/xavier/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/atilafassina/xavier/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/atilafassina/xavier/compare/v0.7.0...v0.7.1
