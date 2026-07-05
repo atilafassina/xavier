@@ -20,7 +20,7 @@
 //! green only once the parse/merge pipeline recovers findings from prose
 //! (Phase 4). Do not weaken or skip it.
 
-use xavier_core::{merge, parse_findings, MergeInput};
+use xavier_core::{debate_markdown, merge, parse_findings, MergeInput};
 
 /// The extracted assistant text from each model for the security persona.
 const SEC_GPT: &str = include_str!("fixtures/sec_gpt.txt");
@@ -151,5 +151,91 @@ fn corr_gpt_corr_gemini_recover_multiple_located_findings() {
             .iter()
             .any(|p| p.a.severity != "unknown" && p.b.severity != "unknown"),
         "the consensus pair must carry a real severity on both sides",
+    );
+}
+
+#[test]
+fn hunk_only_prose_finding_never_synthesizes_a_line_through_the_pipeline() {
+    // Story 5 — never-fabricate-line, fenced at PIPELINE scope (parse -> merge
+    // -> render), complementing the unit-level
+    // `salvage_never_fabricates_a_line_from_span_or_hunk`.
+    //
+    // A prose finding whose ONLY location signal is a diff hunk
+    // (`@@ -82,6 +92,8 @@`) — no `**File**:` line, no path-like code-span — must
+    // never surface a `path:line` reference. The bare `userId` span is a
+    // non-path token that must NOT be salvaged either. Because there is no
+    // conforming `### [severity]` heading, the prose-recovery stage runs; it
+    // recovers the finding on its severity word, but Layer B's rules mean the
+    // hunk's `82`/`92` can never become a line number and the bare token can
+    // never become a file. The finding is therefore location-less and lands in
+    // `unmatched` with no fabricated `path:line` anywhere in the rendered output.
+    let prose = "\
+**Critical: unvalidated user input reaches the SQL query**
+The change at hunk `@@ -82,6 +92,8 @@` passes `userId` straight into the
+query string without sanitization, which is exploitable.
+";
+
+    // Prose stage recovers exactly one finding, on its `Critical` severity word,
+    // and — crucially — with NO reference: the hunk is not a path and `userId`
+    // is not path-like, so neither the per-segment salvage nor the hoist finds a
+    // location. A fabricated line here would show up as `Some(line)`.
+    let a = parse_findings(prose, "GPT");
+    assert_eq!(a.len(), 1, "the prose finding is recovered as exactly one finding");
+    assert_eq!(
+        a[0].severity, "critical",
+        "recovered on its severity word, proving the prose stage actually ran"
+    );
+    match &a[0].reference {
+        None => {}
+        Some(r) => assert_eq!(
+            r.line, None,
+            "a diff-hunk-only finding must never synthesize a line number \
+             (ref may be None or file-only, never file:line)"
+        ),
+    }
+
+    // Full pipeline: parse both sides, merge, render. The location-less finding
+    // cannot be placed mechanically, so it is `unmatched` (not consensus, not a
+    // blindspot), and it is still line-less there.
+    let result = merge(&merge_texts(prose, ""));
+    assert!(result.consensus.is_empty());
+    assert!(result.blindspot.is_empty());
+    assert_eq!(
+        result.unmatched.len(),
+        1,
+        "the location-less finding is the sole unmatched residue"
+    );
+    let unmatched = &result.unmatched[0];
+    assert!(
+        unmatched.description.to_lowercase().contains("unvalidated"),
+        "the unmatched finding is our hunk-only prose finding"
+    );
+    match &unmatched.reference {
+        None => {}
+        Some(r) => assert_eq!(
+            r.line, None,
+            "the merge must not have introduced a fabricated line either"
+        ),
+    }
+
+    // Rendered output: no `:82`/`:92`-style synthesized line for this finding.
+    // The raw hunk text (`@@ -82,6 +92,8 @@`) is legitimately echoed inside the
+    // description, but it never appears as a colon-prefixed line number, which is
+    // the only shape a fabricated `**File**: path:line` reference could take.
+    let md = debate_markdown(&result, "GPT", "Gemini");
+    assert!(
+        !md.contains(":82"),
+        "the hunk's old-side line 82 must never be synthesized as a `:82` reference:\n{md}"
+    );
+    assert!(
+        !md.contains(":92"),
+        "the hunk's new-side line 92 must never be synthesized as a `:92` reference:\n{md}"
+    );
+    // No `**File**:` line was rendered for the sole finding: with no salvageable
+    // location, the pipeline emits no file reference at all (not even file-only
+    // from the bare `userId` token).
+    assert!(
+        !md.contains("**File**:"),
+        "a hunk-only, path-less finding must render no File reference:\n{md}"
     );
 }

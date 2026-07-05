@@ -298,3 +298,88 @@ fn deterministic_output_for_equal_input() {
     let r = merge(&merge_texts(gpt, gemini));
     assert_eq!(r.consensus.len(), 1);
 }
+
+#[test]
+fn conforming_pipeline_renders_classic_markdown_byte_for_byte() {
+    // Story 8 — happy-path golden at pipeline/render scope. Two CONFORMING
+    // persona-format reviews (real `### [severity]` blocks with `**File**:`
+    // lines) that form ONE consensus (same file:line, paraphrased) plus one
+    // one-sided blindspot. Because the input carries conforming headings, the
+    // prose-recovery stage is gated OFF (see `findings.rs`), so the full
+    // parse -> merge -> render pipeline must produce EXACTLY the classic
+    // rendering, byte for byte. This fences at OUTPUT scope the guarantee the
+    // Phase-4b unit test fences at parse scope: the prose stage never perturbs a
+    // well-formed review. (The gating fence in `findings.rs` guarantees the
+    // stage does not run on this input; here we pin what that means for the
+    // rendered artifact the downstream model actually sees.)
+    let gpt = "\
+### [high] Missing bounds check before slice index
+**File**: `src/foo.rs:10`
+**Suggestion**: Guard the index against the slice length.
+";
+    let gemini = "\
+### [high] Slice is indexed without checking its length first
+**File**: `src/foo.rs:10`
+**Suggestion**: Check the length before indexing.
+
+### [low] Public function lacks a doc comment
+**File**: `src/bar.rs:3`
+**Suggestion**: Add a rustdoc summary line.
+";
+
+    // The conforming path (NOT prose recovery) produced these findings: every
+    // one carries a real severity, so had the prose stage wrongly run it would
+    // surface as a structural diff in the byte-for-byte assertion below.
+    let a = parse_findings(gpt, "GPT");
+    let b = parse_findings(gemini, "Gemini");
+    assert_eq!(a.len(), 1, "gpt has exactly one conforming finding");
+    assert_eq!(b.len(), 2, "gemini has exactly two conforming findings");
+    assert!(
+        a.iter().chain(b.iter()).all(|f| f.severity != "unknown"),
+        "conforming headings must yield real severities, never the prose fallback"
+    );
+
+    let result = merge(&MergeInput {
+        a,
+        b,
+        label_a: "GPT".into(),
+        label_b: "Gemini".into(),
+    });
+    let md = debate_markdown(&result, "GPT", "Gemini");
+
+    // The classic debate rendering, exactly. Note `**File**: src/foo.rs:10`
+    // carries the line from the REAL `**File**:` field (legitimate), which is
+    // distinct from the never-fabricate case fenced in `prose_recovery.rs`.
+    let expected = "## Consensus\n\
+\n\
+### [high] Missing bounds check before slice index\n\
+**File**: src/foo.rs:10\n\
+**Suggestion**: GPT: Guard the index against the slice length.\n\
+**Suggestion**: Gemini: Check the length before indexing.\n\
+\n\
+\n\
+## Disputes\n\
+\n\
+No disputes from merge — disputes arise from vault overlay in the pilot fish step.\n\
+\n\
+\n\
+## Blindspots\n\
+\n\
+### [low] Public function lacks a doc comment\n\
+**File**: src/bar.rs:3\n\
+**Source**: Gemini only\n\
+**Suggestion**: Add a rustdoc summary line.\n\
+\n\
+\n\
+## Unmatched\n\
+\n\
+No unmatched findings -- everything was placed mechanically.\n\
+\n\
+\n";
+
+    assert_eq!(
+        md, expected,
+        "a conforming review must render to the classic debate markdown byte-for-byte \
+         (the prose stage is gated off and must not perturb the happy path)"
+    );
+}
