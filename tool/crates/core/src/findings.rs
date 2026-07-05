@@ -38,6 +38,26 @@ use crate::model::{CanonRef, Finding};
 /// finding once it had a non-empty description).
 pub fn parse_findings(text: &str, source: &str) -> Vec<Finding> {
     let decoded = decode_unicode_escapes(text);
+
+    // GATING INVARIANT: the prose-recovery stage runs ONLY when the response
+    // contains NO conforming `### [severity]` block. If even one conforming
+    // heading exists, the input is treated as persona-formatted and flows
+    // through the existing path untouched (byte-identical output). This keeps
+    // the recovery heuristics from ever perturbing already-well-formed reviews.
+    let has_conforming = decoded
+        .lines()
+        .any(|l| is_conforming_heading(l.trim_start()));
+    if !has_conforming {
+        let recovered = recover_from_prose(&decoded, source);
+        // Only take the recovered findings when the stage actually salvaged
+        // something. On pure prose (no location, no severity) it yields nothing,
+        // and we fall through to the existing path so no previously-parsed
+        // finding is ever lost.
+        if !recovered.is_empty() {
+            return recovered;
+        }
+    }
+
     let mut out: Vec<Finding> = Vec::new();
     let mut cur: Option<Builder> = None;
 
@@ -79,6 +99,319 @@ pub fn parse_findings(text: &str, source: &str) -> Vec<Finding> {
     }
 
     out
+}
+
+// ===========================================================================
+// Prose-recovery stage (Phase 4a).
+//
+// Runs ONLY when the response has no conforming `### [severity]` block (see the
+// gate in `parse_findings`). It recovers findings a model emitted as prose:
+// segmenting the body on bold "lead" lines, deriving a per-segment severity
+// hint, and locating each segment via the existing Layer-B salvage with a
+// hoisted shared location as fallback. Conforming input never reaches here, so
+// well-formed reviews stay byte-identical.
+// ===========================================================================
+
+/// True iff `line` is a *conforming* persona finding heading — `##`+ followed by
+/// a `[severity]` bracket. This is the gate: any such line means the response is
+/// persona-formatted and must flow through the existing parser untouched. A
+/// bracket-less heading (`## Findings`, `### File:`) is NOT conforming.
+fn is_conforming_heading(line: &str) -> bool {
+    let Some(rest) = line.strip_prefix("##") else {
+        return false;
+    };
+    let rest = rest.trim_start_matches('#').trim_start();
+    // Needs an opening `[` and a matching `]` — the persona severity bracket.
+    rest.strip_prefix('[').is_some_and(|a| a.contains(']'))
+}
+
+/// Recover findings from a non-conforming (prose) response. Returns an empty
+/// vec when nothing finding-like can be salvaged, in which case `parse_findings`
+/// falls back to its existing path so no already-parseable finding is lost.
+fn recover_from_prose(text: &str, source: &str) -> Vec<Finding> {
+    let lines: Vec<&str> = text.lines().collect();
+
+    // --- 1. Segment on bold-lead openers, ignoring fenced code regions. ---
+    let mut openers: Vec<(usize, Option<String>)> = Vec::new();
+    let mut in_fence = false;
+    for (i, raw) in lines.iter().enumerate() {
+        let t = raw.trim_start();
+        if t.starts_with("```") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        if let Some(hint) = segment_opener(t) {
+            openers.push((i, hint));
+        }
+    }
+
+    // Segment ranges: each opener to the next; text before the first opener is
+    // preamble (a location source, never a finding). With no opener at all, the
+    // whole body is a single implicit segment (covers a review that is entirely
+    // prose but still names a file + verdict, e.g. `sec_gemini`).
+    let preamble_end = openers.first().map_or(0, |(i, _)| *i);
+    let segments: Vec<(usize, usize, Option<String>)> = if openers.is_empty() {
+        vec![(0, lines.len(), None)]
+    } else {
+        (0..openers.len())
+            .map(|k| {
+                let (start, ref hint) = openers[k];
+                let end = openers.get(k + 1).map_or(lines.len(), |(j, _)| *j);
+                (start, end, hint.clone())
+            })
+            .collect()
+    };
+
+    // --- 2. Hoisted shared location (fallback for segments lacking their own). ---
+    let hoist = compute_hoist(&lines, preamble_end);
+
+    // --- 3. Build one finding per qualifying segment. ---
+    let mut out: Vec<Finding> = Vec::new();
+    for (start, end, opener_hint) in segments {
+        let seg_lines: Vec<String> = lines[start..end]
+            .iter()
+            .filter(|l| !l.trim_start().starts_with("```")) // drop bare fence markers
+            .map(|l| l.trim_end().to_string())
+            .collect();
+
+        let description = join_lines(&seg_lines);
+        if description.is_empty() {
+            continue;
+        }
+
+        // Severity: the opener's hint, else a leading severity word / `Verdict:`
+        // line inside the segment, else the `unknown` fallback.
+        let severity = opener_hint
+            .or_else(|| scan_severity(&seg_lines))
+            .unwrap_or_else(|| "unknown".to_string());
+
+        // Location: per-segment Layer-B salvage FIRST (a segment's own inline
+        // path wins), then the hoisted shared location as fallback. Never a
+        // fabricated line — both sources are file-or-file:line refs only.
+        let reference = salvage_reference(&[seg_lines.as_slice()]).or_else(|| hoist.clone());
+
+        // Emit only a segment that is actually finding-like: it must carry a
+        // real severity OR a usable location. This is what keeps pure prose
+        // ("just prose, no findings here") from manufacturing a finding.
+        let real_severity = severity != "unknown";
+        let has_location = reference.as_ref().is_some_and(CanonRef::is_usable);
+        if !(real_severity || has_location) {
+            continue;
+        }
+
+        out.push(Finding {
+            severity,
+            reference,
+            description,
+            suggestion: None,
+            source: Some(source.to_string()),
+        });
+    }
+
+    out
+}
+
+/// If `line` is a bold lead (`**…**` at line start) that OPENS a new finding,
+/// return its severity hint (`Some(level)` from a severity/verdict lead, `None`
+/// from a number-only lead unless a severity word is embedded). Returns `None`
+/// (the outer option) when the line does not open a finding.
+///
+/// Opens iff the bold lead is a **number** (`1.`, `2)`), a **severity word**
+/// (`[high]`, `Critical`, `Severe`, …), or a **verdict phrase** (`Request
+/// changes`, `Approve`, `Rethink`) AND is NOT a bold **field label** (Defect,
+/// Failure Scenario, Hunk, Suggestion, Finding, Verdict, File, …). Field labels
+/// belong to the current finding, so they never start a new one.
+fn segment_opener(line: &str) -> Option<Option<String>> {
+    let content = bold_lead(line)?;
+    let lead = content.split(':').next().unwrap_or(content).trim();
+    if is_field_label(lead) {
+        return None;
+    }
+    if leads_with_number(content) {
+        // A numbered lead opens; its severity comes from an embedded word
+        // (e.g. `**1. … (Severe)**`) if present, else stays unknown for now.
+        return Some(severity_from_text(content));
+    }
+    if let Some(sev) = severity_lead(content) {
+        return Some(Some(sev));
+    }
+    if let Some(sev) = verdict_lead(content) {
+        return Some(Some(sev));
+    }
+    None
+}
+
+/// The text of the first `**bold**` run at the start of `line`, or `None` when
+/// the line does not begin with `**`. Tolerates an unclosed run (takes the rest
+/// of the line).
+fn bold_lead(line: &str) -> Option<&str> {
+    let rest = line.trim_start().strip_prefix("**")?;
+    let end = rest.find("**").unwrap_or(rest.len());
+    Some(rest[..end].trim())
+}
+
+/// Case-insensitive check that a bold lead is a known FIELD label (so it stays
+/// part of the current finding rather than opening a new one). Matches on
+/// keyword containment so `Concrete Failure Scenario`, `Diff Hunk`, and `File
+/// (path)` all resolve to labels.
+fn is_field_label(lead: &str) -> bool {
+    let l = lead.trim().trim_end_matches(':').to_lowercase();
+    if l.is_empty() {
+        return false;
+    }
+    const LABEL_KEYWORDS: &[&str] = &[
+        "finding",
+        "scenario",
+        "hunk",
+        "suggestion",
+        "attack vector",
+        "cwe",
+        "file",
+        "instruction",
+        "impact",
+        "fix",
+        "evidence",
+        "defect",
+        "verdict",
+        "note",
+        "rationale",
+        "recommendation",
+        "reference",
+        "detail",
+        "description",
+        "summary",
+        "context",
+        "mitigation",
+        "remediation",
+    ];
+    LABEL_KEYWORDS.iter().any(|k| l.contains(k))
+}
+
+/// True if `content` leads with an ordinal like `1.` or `2)`.
+fn leads_with_number(content: &str) -> bool {
+    let c = content.trim_start();
+    let digits: String = c.chars().take_while(|ch| ch.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return false;
+    }
+    let after = &c[digits.len()..];
+    matches!(after.chars().next(), Some('.') | Some(')') | Some(':'))
+}
+
+/// If `content` leads with a severity word (optionally in `[…]`), return the
+/// canonical severity level.
+fn severity_lead(content: &str) -> Option<String> {
+    let first = content
+        .split_whitespace()
+        .next()?
+        .trim_matches(|c: char| c == '[' || c == ']' || c == ':' || c == '.');
+    severity_word(first)
+}
+
+/// Scan `text`'s tokens for an embedded severity word (e.g. a `(Severe)` tag),
+/// returning the first canonical level found.
+fn severity_from_text(text: &str) -> Option<String> {
+    text.split(|c: char| !c.is_ascii_alphabetic())
+        .find_map(severity_word)
+}
+
+/// Map a single token to a canonical severity level, or `None`. `severe` folds
+/// to `high` (the persona vocabulary is critical|high|medium|low).
+fn severity_word(tok: &str) -> Option<String> {
+    match tok.trim().to_lowercase().as_str() {
+        "critical" => Some("critical".to_string()),
+        "severe" | "high" => Some("high".to_string()),
+        "medium" | "moderate" => Some("medium".to_string()),
+        "low" | "minor" => Some("low".to_string()),
+        _ => None,
+    }
+}
+
+/// If `content` leads with a verdict phrase, map it to a severity level.
+fn verdict_lead(content: &str) -> Option<String> {
+    map_verdict(&content.to_lowercase())
+}
+
+/// Verdict → severity mapping (documented once):
+/// - `request changes` / `reject` / `block` → `high`
+/// - `rethink` → `medium`
+/// - `approve` → `low`
+///
+/// `needle` is matched with `starts_with` for a leading phrase and `contains`
+/// for a `Verdict: …` line (see [`scan_severity`]).
+fn map_verdict(text: &str) -> Option<String> {
+    let t = text.trim();
+    if t.starts_with("request change")
+        || t.starts_with("requests change")
+        || t.starts_with("reject")
+        || t.starts_with("block")
+    {
+        Some("high".to_string())
+    } else if t.starts_with("rethink") {
+        Some("medium".to_string())
+    } else if t.starts_with("approve") {
+        Some("low".to_string())
+    } else {
+        None
+    }
+}
+
+/// Derive a segment's severity from its body when the opener gave no hint: a
+/// leading severity word wins; otherwise a `Verdict:` line's phrase is mapped.
+fn scan_severity(seg_lines: &[String]) -> Option<String> {
+    // Pass 1: a leading severity word / bracket anywhere in the segment.
+    for line in seg_lines {
+        let stripped = strip_lead_markup(line);
+        if let Some(sev) = severity_lead(stripped) {
+            return Some(sev);
+        }
+    }
+    // Pass 2: a `Verdict: …` line (bold or plain).
+    for line in seg_lines {
+        let stripped = strip_lead_markup(line).trim();
+        let lower = stripped.to_lowercase();
+        if let Some(rest) = lower.strip_prefix("verdict") {
+            let rest = rest.trim_start_matches([':', ' ', '*']).trim();
+            if let Some(sev) = map_verdict(rest) {
+                return Some(sev);
+            }
+        }
+    }
+    None
+}
+
+/// Strip leading list bullets and `*`/`#`/space markup so a line's first
+/// semantic token can be inspected.
+fn strip_lead_markup(line: &str) -> &str {
+    line.trim_start()
+        .trim_start_matches(['-', '*', '+', '#', '>', ' '])
+        .trim_start()
+}
+
+/// Compute a hoisted default location shared across segments: a `File:` /
+/// `### File:` header (anywhere) is preferred, else a single path-like span
+/// salvaged from the preamble. Returns a file-or-file:line ref (never a
+/// fabricated line).
+fn compute_hoist(lines: &[&str], preamble_end: usize) -> Option<CanonRef> {
+    // A drifted `### File:` / `**File…**` / `File:` header is a LOCATION source.
+    for line in lines {
+        let bare = line.trim_start().trim_start_matches('#').trim_start();
+        if let Some(val) = parse_field(bare, "file") {
+            let r = CanonRef::parse(&val);
+            if r.is_usable() {
+                return Some(r);
+            }
+        }
+    }
+    // Fallback: salvage a single unambiguous path-like span from the preamble.
+    let preamble: Vec<String> = lines[..preamble_end.min(lines.len())]
+        .iter()
+        .map(|l| l.to_string())
+        .collect();
+    salvage_reference(&[preamble.as_slice()])
 }
 
 /// Accumulates the parts of one finding across multiple input lines.
