@@ -73,11 +73,17 @@ parse_findings() {
     local out_file="$2"
 
     awk '
+    # Accumulate every line so a prose-only model (no rigid "### [" headings)
+    # can still be captured wholesale in END rather than silently dropped.
+    # This has no pattern, so it runs for every line and then falls through to
+    # the structured rules below.
+    { raw = raw $0 "\n" }
     /^### \[/ {
         # Flush previous finding
         if (desc != "") {
             gsub(/\t/, " ", desc); gsub(/\t/, " ", sug)
             printf "%s\t%s\t%s\t%s\n", sev, ref, desc, sug
+            emitted++
         }
         # Parse: ### [severity] description
         line = $0
@@ -109,6 +115,20 @@ parse_findings() {
         if (desc != "") {
             gsub(/\t/, " ", desc); gsub(/\t/, " ", sug)
             printf "%s\t%s\t%s\t%s\n", sev, ref, desc, sug
+            emitted++
+        }
+        # DEFER-ONLY prose fallback: if the model answered in prose (no rigid
+        # "### [" heading fired), we captured NOTHING structured above and would
+        # otherwise silently drop the entire review. Instead, emit the whole
+        # assistant text as ONE location-less finding (sev=unknown, empty ref).
+        # merge_and_format routes empty-ref findings to ## Unmatched. We do NOT
+        # try to recover severity/file/multiple findings here — that salvage is
+        # the binary parser'"'"'s job (Rust). The shell'"'"'s only contract is: never
+        # silently drop, and render the same section set as the binary.
+        if (emitted == 0 && raw != "") {
+            gsub(/[\t\n]/, " ", raw)
+            gsub(/^[ ]+|[ ]+$/, "", raw)
+            if (raw != "") printf "unknown\t\t%s\t\n", raw
         }
     }
     ' "$text_file" > "$out_file"
@@ -178,27 +198,64 @@ merge_and_format() {
         printf "\n"
 
         # --- Blindspots ---
+        # Only findings with a usable location (non-empty ref) are true
+        # blindspots. Location-less findings are DEFERRED to ## Unmatched below
+        # rather than mislabeled here as a located blindspot.
         printf "## Blindspots\n\n"
         found = 0
         for (i = 1; i <= a_n; i++) {
             if (a_hit[i] != 0) continue
+            if (a_ref[i] == "") continue
             found = 1
             printf "### [%s] %s\n", a_sev[i], a_desc[i]
-            if (a_ref[i] != "") printf "**File**: %s\n", a_ref[i]
+            printf "**File**: %s\n", a_ref[i]
             printf "**Source**: %s only\n", label_a
             if (a_sug[i] != "") printf "**Suggestion**: %s\n", a_sug[i]
             printf "\n"
         }
         for (j = 1; j <= b_n; j++) {
             if (b_hit[j] != 0) continue
+            if (b_ref[j] == "") continue
             found = 1
             printf "### [%s] %s\n", b_sev[j], b_desc[j]
-            if (b_ref[j] != "") printf "**File**: %s\n", b_ref[j]
+            printf "**File**: %s\n", b_ref[j]
             printf "**Source**: %s only\n", label_b
             if (b_sug[j] != "") printf "**Suggestion**: %s\n", b_sug[j]
             printf "\n"
         }
         if (!found) print "No blindspots -- both models covered the same ground.\n"
+        printf "\n"
+
+        # --- Unmatched ---
+        # DEFER-ONLY honesty bucket. Any finding the shell captured but could not
+        # confidently structure -- a heading-less prose review, or a "### ["
+        # finding with no usable **File** location -- lands here instead of being
+        # silently dropped or mislabeled as a located blindspot. This mirrors the
+        # binary'"'"'s ## Unmatched section (same position/shape) so the shell renders
+        # the same section SET. The shell does NOT try to recover severity or
+        # locations for these (no Layer B/C salvage) -- that is the binary'"'"'s job;
+        # the shell'"'"'s only contract is "never silently drop".
+        printf "## Unmatched\n\n"
+        found = 0
+        for (i = 1; i <= a_n; i++) {
+            if (a_hit[i] != 0) continue
+            if (a_ref[i] != "") continue
+            found = 1
+            printf "### [%s] %s\n", a_sev[i], a_desc[i]
+            printf "**Source**: %s only\n", label_a
+            if (a_sug[i] != "") printf "**Suggestion**: %s\n", a_sug[i]
+            printf "\n"
+        }
+        for (j = 1; j <= b_n; j++) {
+            if (b_hit[j] != 0) continue
+            if (b_ref[j] != "") continue
+            found = 1
+            printf "### [%s] %s\n", b_sev[j], b_desc[j]
+            printf "**Source**: %s only\n", label_b
+            if (b_sug[j] != "") printf "**Suggestion**: %s\n", b_sug[j]
+            printf "\n"
+        }
+        if (!found) print "No unmatched findings -- every finding had a usable location.\n"
         printf "\n"
     }
     ' "$fa" "$fb"
