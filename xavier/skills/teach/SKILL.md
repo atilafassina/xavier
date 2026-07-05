@@ -8,7 +8,7 @@ requires: [config, shark, adapter, cohorts-index]
 
 `/xavier teach [<cohort> [<topic>]]`
 
-Teach a topic through researched, adaptive lessons organized into **cohorts**. A cohort is a durable learning track with a stated mission; each lesson within it is a researched, ZPD-placed lesson that leaves behind a lesson-record for spaced retrieval. The skill runs detect-and-defer, command routing, a mission gate that creates a cohort, and the full lesson-delivery flow: adaptive research → ZPD placement → an interactive tutor loop → a durable lesson-record. Spaced retrieval and teach-state are forthcoming (see Forward References).
+Teach a topic through researched, adaptive lessons organized into **cohorts**. A cohort is a durable learning track with a stated mission; each lesson within it is a researched, ZPD-placed lesson that leaves behind a lesson-record for spaced retrieval. The skill runs detect-and-defer, command routing, a mission gate that creates a cohort, and the full lesson-delivery flow: adaptive research → ZPD placement → an interactive tutor loop → a durable lesson-record. It also runs spaced-retrieval due-checks (Step A5) and true mid-lesson checkpoint/resume via `teach-state/` (Step A8), so an interrupted lesson resumes from where it left off without ever writing a partial record into the knowledge layer.
 
 ## Command Surface
 
@@ -42,7 +42,7 @@ Route on the parsed arguments:
   - its **mission** one-liner (from `cohort.md` frontmatter `mission`)
   - **last-taught** date — the most recent lesson-record's `updated` field within the cohort (or `never` if the cohort has no lessons yet)
   - **lesson count** — number of lesson-records in the cohort
-  - **#due** — the count of lesson-records in the cohort that are **due for spaced retrieval**. A record is due when `today >= last_reviewed + interval(fluency)` per the **fluency ladder** defined in Step A5. Compute it as a cheap scan of each record's `fluency` + `last_reviewed` fields against today — no research, no remoras. **Exclude** any lesson with an in-progress `teach-state/` checkpoint (see Phase 6) and any incomplete record. For a legacy record missing `fluency`/`last_reviewed`, treat `fluency` as `seen` and use `updated` (else `created`) as the date. A cohort with nothing due shows `#due: 0`.
+  - **#due** — the count of lesson-records in the cohort that are **due for spaced retrieval**. A record is due when `today >= last_reviewed + interval(fluency)` per the **fluency ladder** defined in Step A5. Compute it as a cheap scan of each record's `fluency` + `last_reviewed` fields against today — no research, no remoras. **Exclude** any lesson with an in-progress `teach-state/` checkpoint (see Step A8) and any incomplete record. For a legacy record missing `fluency`/`last_reviewed`, treat `fluency` as `seen` and use `updated` (else `created`) as the date. A cohort with nothing due shows `#due: 0`.
 
   Present the list via **AskUserQuestion** and let the user either pick an existing cohort (→ resume/teach path below) or choose to create a new one (→ Step 3 mission gate). If no cohorts exist yet, say so and offer to create one.
 
@@ -107,7 +107,11 @@ Wait for the user's next message. Only teach a lesson if the user's newest messa
 
 On a **returning session** (Step 2 resolved an existing cohort), the spaced-retrieval **due-check (Step A5)** runs FIRST — before any new material — unless `--no-review`/skip bypasses it. **Then** the resume/teach path (existing cohort **plus** a `<topic>`) runs these four steps in order: **A3** research → **A4** ZPD placement → **A6** interactive tutor loop → **A7** lesson-record writer. So the full returning-session order is: **A5 (due-check) → A3 → A4 → A6 → A7.** The hard rule threaded through the delivery steps: **never teach from the model alone — every lesson cites researched material.** The `sources` field of the record (A7) is populated from A3's findings; a lesson with no researched sources is not a valid lesson.
 
-> **Deferred mode.** If Step 1 found `SHARK_TASK_HASH` set, this agent is a deferred inline executor: **skip the A5 due-check** (spaced retrieval is an interactive returning-session concern, not a deferred-executor one), do the research of Step A3 **inline** (WebSearch/WebFetch/Explore-style reads yourself, no remora fan-out), and skip the interactive multi-turn loop in favor of the one-shot fallback in A6. The remaining logic (ZPD placement, record writing) is unchanged.
+**Step A8 (checkpoint / resume) wraps this whole path**, it is not a sequential step in the A3→A7 chain. It (1) runs *before* A3 to detect a resumable `teach-state/` checkpoint and continue from the cursor rather than re-researching from scratch, (2) persists/updates that cursor throughout A6 as each chunk is taught, and (3) on completion retires the checkpoint after A7 writes the single durable record. The **clean-knowledge invariant** it enforces: an interrupted lesson leaves state **ONLY** in `teach-state/`, **never** a partial `type: lesson` note under `knowledge/`.
+
+> **`teach-state/` is an ephemeral state directory read directly (no requires key needed), matching the `loop`/`loop-state/` precedent.** The frontmatter's `requires: [config, shark, adapter, cohorts-index]` covers the cohort reads; `teach-state/` (like `loop-state/`) is not one of the vault paths gated by `check_vault_path`, so it needs no additional key.
+
+> **Deferred mode.** If Step 1 found `SHARK_TASK_HASH` set, this agent is a deferred inline executor: **skip the A5 due-check** (spaced retrieval is an interactive returning-session concern, not a deferred-executor one), do the research of Step A3 **inline** (WebSearch/WebFetch/Explore-style reads yourself, no remora fan-out), and skip the interactive multi-turn loop in favor of the one-shot fallback in A6. **Also skip A8 checkpoint/resume** — a one-shot deferred executor has no interactive interrupt boundary to resume across, so it writes no `teach-state/` cursor; it runs straight through to the single A7 record. The remaining logic (ZPD placement, record writing) is unchanged.
 
 ## Step A5: Spaced-Retrieval Due-Check (runs first on a returning session)
 
@@ -133,7 +137,7 @@ The interval is a simple, transparent, hand-computable ladder keyed to `fluency`
 So a `seen` lesson is due the next day; a `mastered` one not for a month. Legacy/incomplete records: if `fluency` is absent treat it as `seen`; if `last_reviewed` is absent use `updated` (else `created`) as the date. All dates compared as calendar dates against today.
 
 **Exclusions (never surface these as due):**
-- Any lesson with an **in-progress checkpoint in `teach-state/`** (see Phase 6) — a lesson still being taught is never due for review. Phase 6 isn't built yet, so today this exclusion matches nothing; it is stated here so the due-scan is forward-compatible.
+- Any lesson with an **in-progress checkpoint in `teach-state/`** (see Step A8) — a lesson still being taught is never due for review. This exclusion is now backed by real checkpoints: a lesson-slug with a live `<vault>/teach-state/<cohort>__<slug>.md` file is **in-progress → never due**. When computing the due set, glob `teach-state/` for `<cohort>__*.md` and drop any lesson whose `<slug>` has a matching checkpoint file.
 - Any **incomplete record** (a partial/abandoned lesson that never reached A7's one-record invariant).
 
 **Running the check.** Glob `<vault>/knowledge/cohorts/<cohort>/` for `<lesson-slug>.md` records (skip `cohort.md`; this read is covered by the `cohorts-index` read-sanction), compute the due set per the ladder, and apply the exclusions. If **nothing is due**, say so briefly and proceed to the topic branch. If **one or more are due**:
@@ -250,6 +254,8 @@ Deliver the lesson **against the researched material from A3** (never from model
 3. Adapt to the response — if they're solid, advance to the next chunk; if they stumble, re-explain or drop down a level. Assess continuously as you go.
 4. Continue until the ZPD-scoped material is covered.
 
+**Persist the A8 cursor as each chunk is taught.** After each round (or each chunk advance), update the `teach-state/` checkpoint per Step A8: append the just-taught chunk to `chunks-taught`, advance the position marker, and fold the round's running `demonstrated`/`misconceptions` into `demonstrated-so-far`/`misconceptions-so-far`. This is what makes a mid-loop interrupt resumable — if the session is abandoned between rounds, the cursor already reflects everything covered so far. The cursor lives **only** in `teach-state/`; nothing is written under `knowledge/cohorts/<cohort>/` mid-lesson.
+
 **One-shot fallback (hybrid).** For a small/tight topic, a narrow delta over what's already demonstrated, or when the learner explicitly wants a quick pass: give a single-pass explanation of the material followed by **one** short comprehension check (still ask-then-wait — do not fabricate the answer). 
 
 **When to prefer which:** prefer the **multi-turn loop** when the lesson spans multiple concepts, sits at the far edge of the ZPD, or the cohort mission implies depth/mastery; prefer the **one-shot fallback** when the material is a single tight concept, a small increment over the demonstrated set, or the learner asks to go fast. When unsure, default to multi-turn.
@@ -296,10 +302,69 @@ Below the frontmatter, write a short body under a `# {topic} — Lesson` heading
 
 **Populate the spaced-retrieval fields on first write.** Set `last_reviewed` to today (the creation date). Set `fluency` to whatever the lesson's `demonstrated` warrants — typically `seen` (introduced, checked once) or `familiar` (a small delta the learner grasped confidently); reserve `solid`/`mastered` for the rare case a single lesson genuinely proved that depth. These two fields are what Step A5's due-scan and the picker's `#due` count read on later sessions; A5 updates them (never A7 again for that record) on each retrieval check.
 
+**Retire the A8 checkpoint AFTER writing the record.** On completion the order is strict: **(1) write the durable A7 lesson-record, then (2) delete the `teach-state/<cohort>__<lesson-slug>.md` checkpoint.** Rationale: a crash *between* the two leaves the durable record plus a stale checkpoint (recoverable — the lesson is saved and the stale cursor can be discarded on next resume), whereas the reverse order would delete the cursor before the record exists and lose the lesson entirely. Never delete the checkpoint before the record lands.
+
 After writing, confirm to the learner: `Lesson recorded at knowledge/cohorts/<cohort>/<lesson-slug>.md.` Then stop and wait for the learner's next message — do not auto-select a follow-up topic.
 
-## Forward References
+## Step A8: Checkpoint / Resume
 
-These are stubs for later phases — clearly labeled so the file reads as a whole. Do NOT implement them here:
+A8 is not a strictly-sequential step in the A3→A7 chain — it is a **concern that wraps A6 and gates the start of delivery**. It gives the tutor loop true mid-lesson checkpoint/resume across turns, the same way `loop` keeps ephemeral progress in `loop-state/` separate from the knowledge layer. It has three parts: (1) resume-detection at the start of the teach path, (2) cursor persistence during A6, (3) checkpoint retirement plus the single A7 write on completion.
 
-- **`teach-state/` (Phase 6)** — a per-cohort ephemeral state directory (analogous to `loop-state/`) will track in-flight teaching sessions across turns. Step A5's due-scan already excludes any lesson with an in-progress `teach-state/` checkpoint, so this phase's directory slots in without changing the due rule.
+**Clean-knowledge invariant (the crux of this phase).** An interrupted lesson leaves state **ONLY** in `<vault>/teach-state/`, **NEVER** a partial `type: lesson` note under `knowledge/`. The durable A7 record is written **once, on completion**. Mid-lesson, nothing is written under `knowledge/cohorts/<cohort>/` — the in-flight state lives exclusively in `teach-state/`. This mirrors how `loop` isolates ephemeral `loop-state/` from the knowledge layer, and it is why the picker's `#due` count and A5's due-scan can treat "has a live checkpoint" as a clean signal for "in-progress, never due".
+
+**`teach-state/` needs no requires key.** It is an ephemeral state directory read directly, matching the `loop`/`loop-state/` precedent — `check_vault_path` does not gate `teach-state/` (nor `knowledge/cohorts/`), so reading/writing it declares no key. The frontmatter stays `requires: [config, shark, adapter, cohorts-index]`.
+
+### Checkpoint filename
+
+`<vault>/teach-state/<cohort>__<lesson-slug>.md` — the two safe basenames joined by a **double underscore**. Both `<cohort>` (validated in Step 2) and `<lesson-slug>` (derived + validated in Step A7, matching `^[a-z0-9][a-z0-9-]{0,63}$`) are already safe basenames; neither can contain `_`, so the `__` separator keeps the two unambiguous in the flat `teach-state/` directory (the same basename-keying idea `loop-state/` uses).
+
+### Checkpoint file format (ephemeral state, NOT a knowledge note)
+
+The checkpoint is **ephemeral state, not a Zettelkasten note**: it has **no YAML frontmatter** and **no `type:` line** (it is not a lesson record — the only `type: lesson` note is the durable A7 record). Model it on a `loop-state/` file: a plain Markdown file whose first line is the fixed anchor heading `# Teach State`, followed by simple body sections. Use exactly this shape:
+
+```text
+# Teach State
+
+cohort: {cohort slug}
+topic: {the topic being taught}
+slug: {lesson-slug the completed A7 record will use}
+zpd: {A4 ZPD placement phrase}
+
+## sources
+{merged, deduplicated A3 source list — URLs / file paths, one per line}
+
+## chunks-taught
+{ordered list of chunk identifiers/titles already delivered in A6}
+
+## demonstrated-so-far
+{running demonstrated evidence from the rounds completed so far}
+
+## misconceptions-so-far
+{running misconceptions surfaced so far, or empty}
+
+## cursor
+position: {marker for where to resume — e.g. the next chunk index/title}
+```
+
+This block is fenced `text` and carries no `type:` field, so the frontmatter validator (which only checks `yaml`/`markdown` blocks containing `type:` for the six base Zettelkasten fields) never treats it as a note template. Do not add frontmatter or a `type:` line to it.
+
+### (1) Resume detection — before A3
+
+At the start of the teach path (an existing cohort **plus** a `<topic>`, after the A5 due-check), and before spawning fresh A3 research: derive the prospective `<lesson-slug>` from the `<topic>` (Step A7's slug rules) and check for a matching checkpoint at `<vault>/teach-state/<cohort>__<lesson-slug>.md`. If one exists, this lesson was interrupted mid-flight. **Ask the learner (ask-then-wait, never fabricate the choice)** whether to:
+
+- **Resume** — load the cursor and continue FROM it: reuse the checkpoint's `zpd` (skip A4) and `sources` (skip fresh A3 research), restore `demonstrated-so-far`/`misconceptions-so-far`, and re-enter the A6 loop at the `cursor` position (skipping the chunks already in `chunks-taught`).
+- **Discard and restart** — delete the stale checkpoint and start fresh from A3.
+
+If no checkpoint exists, proceed normally into A3 → A4 → A6 → A7, writing the checkpoint as A6 begins.
+
+### (2) Cursor persistence — during A6
+
+As A6 teaches, write and update the checkpoint (see A6). Create it when the A6 loop begins (after A4 has produced the ZPD and A3 the source list, so `zpd`/`sources` are known), then after each chunk update `chunks-taught`, `demonstrated-so-far`, `misconceptions-so-far`, and the `cursor` position. An interrupt between rounds therefore leaves a cursor that already reflects everything taught so far.
+
+### (3) Retirement + single A7 write — on completion
+
+On lesson completion, follow A7's strict order: **write the durable A7 lesson-record FIRST, then delete the `teach-state/<cohort>__<lesson-slug>.md` checkpoint.** A crash between the two leaves the record plus a stale checkpoint (recoverable); the reverse would lose the lesson. Exactly **one** `type: lesson` record is written per completed lesson — A7's one-record invariant is unchanged.
+
+---
+
+*All phases of this skill are implemented; there are no outstanding forward references.*
