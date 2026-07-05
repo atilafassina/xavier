@@ -121,8 +121,49 @@ fn is_conforming_heading(line: &str) -> bool {
         return false;
     };
     let rest = rest.trim_start_matches('#').trim_start();
-    // Needs an opening `[` and a matching `]` — the persona severity bracket.
-    rest.strip_prefix('[').is_some_and(|a| a.contains(']'))
+    // Needs an opening `[…]` bracket whose content is a recognized SEVERITY
+    // word. A bracket holding a category or anything else (`## [Correctness]
+    // Findings`) is NOT conforming — otherwise the gate would wrongly route a
+    // prose review with a category heading through the existing parser and skip
+    // prose recovery.
+    let Some(after) = rest.strip_prefix('[') else {
+        return false;
+    };
+    let Some(close) = after.find(']') else {
+        return false;
+    };
+    let inner = after[..close].trim();
+    // An EMPTY bracket (`### []`) is a degenerate persona heading, not a prose
+    // review — keep it on the existing path (it yields nothing on its own), so
+    // the gate only diverts headings whose bracket holds a NON-severity word
+    // (`## [Correctness] Findings`) into prose recovery.
+    inner.is_empty() || is_severity_label(inner)
+}
+
+/// True iff `line` is a TOP-LEVEL list bullet (`- `/`* `/`+ `, no leading
+/// indent) whose content carries at least one path-like backtick span. Used as
+/// a fallback finding boundary for bullet-list prose reviews that have no bold
+/// leads. The path-span requirement keeps ordinary narrative bullets (a list of
+/// symptoms under one finding) from each becoming a spurious finding.
+fn is_bullet_with_path(line: &str) -> bool {
+    // Must be a bullet with no leading whitespace (a nested/indented bullet is a
+    // sub-point of the current finding, not a new one).
+    let after = match line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")).or_else(|| line.strip_prefix("+ ")) {
+        Some(a) => a,
+        None => return false,
+    };
+    code_spans(after).iter().any(|s| path_like_file(s).is_some())
+}
+
+/// True iff `tok` names a severity level used in a finding heading bracket.
+/// Accepts the security/performance vocabulary (critical|high|medium|low), the
+/// correctness vocabulary (major|minor), and common synonyms (severe|moderate).
+/// Rejects category words (correctness, security, performance) and prose.
+fn is_severity_label(tok: &str) -> bool {
+    matches!(
+        tok.to_lowercase().as_str(),
+        "critical" | "high" | "medium" | "low" | "major" | "minor" | "severe" | "moderate"
+    )
 }
 
 /// Recover findings from a non-conforming (prose) response. Returns an empty
@@ -148,6 +189,28 @@ fn recover_from_prose(text: &str, source: &str) -> Vec<Finding> {
         }
     }
 
+    // Fallback segmentation: a bullet-list review with NO bold-lead openers —
+    // each top-level `- `/`* `/`+ ` bullet that carries its own path-like span
+    // is its own finding (the `corr_gpt` shape). Only runs when bold openers are
+    // absent, so a review that DOES use bold leads keeps its sub-bullets folded
+    // into the current finding (the `sec_gpt` shape) rather than shattering.
+    if openers.is_empty() {
+        let mut in_fence = false;
+        for (i, raw) in lines.iter().enumerate() {
+            let t = raw.trim_start();
+            if t.starts_with("```") {
+                in_fence = !in_fence;
+                continue;
+            }
+            if in_fence {
+                continue;
+            }
+            if is_bullet_with_path(t) {
+                openers.push((i, None));
+            }
+        }
+    }
+
     // Segment ranges: each opener to the next; text before the first opener is
     // preamble (a location source, never a finding). With no opener at all, the
     // whole body is a single implicit segment (covers a review that is entirely
@@ -165,8 +228,16 @@ fn recover_from_prose(text: &str, source: &str) -> Vec<Finding> {
             .collect()
     };
 
-    // --- 2. Hoisted shared location (fallback for segments lacking their own). ---
+    // --- 2. Hoisted shared location + severity (fallbacks for segments that
+    // lack their own). A response-level `Verdict:` / severity word applies to
+    // every segment that didn't state its own — this is what lets bullet-split
+    // findings under a single shared verdict inherit a real severity instead of
+    // each landing at `unknown`. ---
     let hoist = compute_hoist(&lines, preamble_end);
+    let hoisted_severity = {
+        let all_lines: Vec<String> = lines.iter().map(|l| l.trim_end().to_string()).collect();
+        scan_severity(&all_lines)
+    };
 
     // --- 3. Build one finding per qualifying segment. ---
     let mut out: Vec<Finding> = Vec::new();
@@ -182,16 +253,24 @@ fn recover_from_prose(text: &str, source: &str) -> Vec<Finding> {
             continue;
         }
 
-        // Severity: the opener's hint, else a leading severity word / `Verdict:`
-        // line inside the segment, else the `unknown` fallback.
+        // Severity precedence: the opener's own hint, else a severity word /
+        // `Verdict:` line inside the segment, else the response-level hoisted
+        // severity (a shared verdict), else `unknown`.
         let severity = opener_hint
             .or_else(|| scan_severity(&seg_lines))
+            .or_else(|| hoisted_severity.clone())
             .unwrap_or_else(|| "unknown".to_string());
 
-        // Location: per-segment Layer-B salvage FIRST (a segment's own inline
-        // path wins), then the hoisted shared location as fallback. Never a
-        // fabricated line — both sources are file-or-file:line refs only.
-        let reference = salvage_reference(&[seg_lines.as_slice()]).or_else(|| hoist.clone());
+        // Location precedence, most specific first:
+        //   1. the segment's OWN `**File**:` field (a drifted-but-explicit path),
+        //   2. a single path-like backtick span inside the segment (Layer-B),
+        //   3. the hoisted shared location.
+        // A segment that names its own file must never inherit a sibling's
+        // hoisted path. Never a fabricated line — all sources are file-or-
+        // file:line refs only.
+        let reference = segment_file_field(&seg_lines)
+            .or_else(|| salvage_reference(&[seg_lines.as_slice()]))
+            .or_else(|| hoist.clone());
 
         // Emit only a segment that is actually finding-like: it must carry a
         // real severity OR a usable location. This is what keeps pure prose
@@ -254,9 +333,12 @@ fn bold_lead(line: &str) -> Option<&str> {
 }
 
 /// Case-insensitive check that a bold lead is a known FIELD label (so it stays
-/// part of the current finding rather than opening a new one). Matches on
-/// keyword containment so `Concrete Failure Scenario`, `Diff Hunk`, and `File
-/// (path)` all resolve to labels.
+/// part of the current finding rather than opening a new one). A keyword marks
+/// a label only when it is the WHOLE lead, or a whole word at the lead's START
+/// or END — `Concrete Failure Scenario`, `Diff Hunk`, `Instruction Added`, and
+/// `File (path)` all resolve to labels. A finding title that merely *contains* a
+/// keyword in the middle (`Missing file check`) is NOT a label, so it can open a
+/// new finding instead of being swallowed.
 fn is_field_label(lead: &str) -> bool {
     let l = lead.trim().trim_end_matches(':').to_lowercase();
     if l.is_empty() {
@@ -287,7 +369,31 @@ fn is_field_label(lead: &str) -> bool {
         "mitigation",
         "remediation",
     ];
-    LABEL_KEYWORDS.iter().any(|k| l.contains(k))
+    LABEL_KEYWORDS.iter().any(|k| lead_matches_label(&l, k))
+}
+
+/// True when keyword `k` marks lead `l` as a field label: `l` equals `k`, or `k`
+/// appears as a whole word at the start or end of `l`. Whole-word boundaries
+/// prevent a keyword buried mid-title (`missing file check`) from matching,
+/// while still catching real labels that prefix/suffix a keyword (`concrete
+/// failure scenario`, `instruction added`, `attack vector`).
+fn lead_matches_label(l: &str, k: &str) -> bool {
+    if l == k {
+        return true;
+    }
+    // Whole-word at the START: `k` followed by a word boundary (non-alnum).
+    if let Some(after) = l.strip_prefix(k) {
+        if after.chars().next().is_none_or(|c| !c.is_alphanumeric()) {
+            return true;
+        }
+    }
+    // Whole-word at the END: `k` preceded by a word boundary (non-alnum).
+    if let Some(before) = l.strip_suffix(k) {
+        if before.chars().last().is_none_or(|c| !c.is_alphanumeric()) {
+            return true;
+        }
+    }
+    false
 }
 
 /// True if `content` leads with an ordinal like `1.` or `2)`.
@@ -395,6 +501,25 @@ fn strip_lead_markup(line: &str) -> &str {
 /// `### File:` header (anywhere) is preferred, else a single path-like span
 /// salvaged from the preamble. Returns a file-or-file:line ref (never a
 /// fabricated line).
+/// A segment's OWN location: the first `File:` / `**File**:` field appearing
+/// inside the segment's own lines. Unlike [`compute_hoist`] (which scans the
+/// whole response for a shared header), this looks only within one segment, so
+/// two segments that each name a different file are located distinctly instead
+/// of both inheriting the first. Returns a file-or-file:line ref (never a
+/// fabricated line).
+fn segment_file_field(seg_lines: &[String]) -> Option<CanonRef> {
+    for line in seg_lines {
+        let bare = line.trim_start().trim_start_matches('#').trim_start();
+        if let Some(val) = parse_field(bare, "file") {
+            let r = CanonRef::parse(&val);
+            if r.is_usable() {
+                return Some(r);
+            }
+        }
+    }
+    None
+}
+
 fn compute_hoist(lines: &[&str], preamble_end: usize) -> Option<CanonRef> {
     // A drifted `### File:` / `**File…**` / `File:` header is a LOCATION source.
     for line in lines {
@@ -1234,5 +1359,119 @@ The second issue is also real.
             "a conforming block must be parsed by the existing path; prose \
              openers must not re-segment it"
         );
+    }
+
+    // ---- Review-round regression fixes (found by dogfooding /xavier review) ----
+
+    #[test]
+    fn field_label_keyword_midtitle_still_opens_finding() {
+        // Fix 1: `is_field_label` used substring `contains`, so a finding title
+        // that merely CONTAINED a label keyword ("file") was swallowed. A
+        // numbered lead whose title contains "file" must still open a finding.
+        assert!(
+            segment_opener("**1. Missing file check**").is_some(),
+            "a numbered title containing 'file' must open a finding, not be swallowed"
+        );
+        // But genuine field labels (keyword as a whole word at start/end) still
+        // must NOT open — including the multi-word ones.
+        for label in [
+            "**Defect:**",
+            "**Failure Scenario:**",
+            "**Attack vector:**",
+            "**Instruction Added:**",
+            "**CWE:**",
+        ] {
+            assert!(
+                segment_opener(label).is_none(),
+                "field label {label:?} must still NOT open a finding"
+            );
+        }
+    }
+
+    #[test]
+    fn non_severity_bracket_heading_is_not_conforming() {
+        // Fix 2: a bracket holding a CATEGORY (not a severity) must NOT count as
+        // a conforming heading, or the gate skips prose recovery for a prose
+        // review that merely used a `## [Correctness] Findings` header.
+        assert!(is_conforming_heading("### [high] real finding"));
+        assert!(is_conforming_heading("## [critical] x"));
+        assert!(!is_conforming_heading("## [Correctness] Findings"));
+        assert!(!is_conforming_heading("### [Security] notes"));
+        // Empty bracket stays on the existing path (degenerate, yields nothing).
+        assert!(is_conforming_heading("### []"));
+    }
+
+    #[test]
+    fn each_segment_keeps_its_own_file_field() {
+        // Fix 3: two prose segments that each name their OWN `**File**:` must be
+        // located distinctly — the second must not inherit the first's path via
+        // the shared hoist.
+        let text = "\
+**1. First issue (high)**
+**File**: `src/alpha.rs`
+Something is wrong here.
+
+**2. Second issue (high)**
+**File**: `src/beta.rs`
+Something else is wrong there.
+";
+        let f = parse_findings(text, "GPT");
+        assert_eq!(f.len(), 2, "two numbered segments -> two findings");
+        assert_eq!(f[0].reference.as_ref().unwrap().file, "src/alpha.rs");
+        assert_eq!(
+            f[1].reference.as_ref().unwrap().file,
+            "src/beta.rs",
+            "the second segment must keep its OWN file, not inherit the first's"
+        );
+    }
+
+    #[test]
+    fn bullet_list_prose_recovers_multiple_findings() {
+        // Fix 4: a bullet-list review with NO bold openers, where each top-level
+        // bullet carries its own path-like span, must recover one finding per
+        // bullet instead of collapsing into a single blob. A shared `Verdict:`
+        // hoists a real severity onto each.
+        let text = "\
+Here are the problems I found.
+
+- `src/a.rs`: the first function mishandles the empty case.
+- `src/b.rs`: the second function leaks a handle on the error path.
+
+Verdict: request changes.
+";
+        let f = parse_findings(text, "GPT");
+        assert_eq!(f.len(), 2, "two path-bearing bullets -> two findings");
+        assert!(
+            f.iter().all(|x| x.severity == "high"),
+            "the shared `Verdict: request changes` hoists 'high' onto each bullet"
+        );
+        assert_eq!(f[0].reference.as_ref().unwrap().file, "src/a.rs");
+        assert_eq!(f[1].reference.as_ref().unwrap().file, "src/b.rs");
+    }
+
+    #[test]
+    fn narrative_bullets_without_paths_do_not_oversplit() {
+        // Fix 4 guard: ordinary narrative bullets (no path span) under a single
+        // prose finding must NOT each become a finding — only path-bearing
+        // top-level bullets are boundaries. This keeps the `sec_gpt` shape (sub-
+        // bullets under one bold lead) intact.
+        let text = "\
+**Request changes: the handler is unsafe.**
+`src/handler.rs`
+
+- it does not validate the input length
+- it logs the raw token
+- it retries without backoff
+
+Verdict: request changes.
+";
+        let f = parse_findings(text, "GPT");
+        assert_eq!(
+            f.len(),
+            1,
+            "a single bold-lead finding with narrative sub-bullets stays one finding"
+        );
+        assert_eq!(f[0].severity, "high");
+        assert_eq!(f[0].reference.as_ref().unwrap().file, "src/handler.rs");
     }
 }
