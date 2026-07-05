@@ -69,12 +69,22 @@ fn run_in(
 
     let mut child = cmd.spawn().expect("spawn xavier-tool");
 
-    child
-        .stdin
-        .take()
-        .expect("stdin piped")
-        .write_all(stdin.as_bytes())
-        .expect("write stdin");
+    // Write the whole stdin, then drop the handle to close the pipe.
+    //
+    // A `BrokenPipe` here is expected, not a failure: for usage/input-error
+    // args (e.g. an unknown `--format` value) the binary validates and exits
+    // *before* draining stdin, so on Linux the child can close the read end
+    // mid-write. These tests assert on the exit code and stderr — both still
+    // captured by `wait_with_output` below — so a closed pipe is benign. Any
+    // *other* write error is a real problem and still panics.
+    {
+        let mut stdin_pipe = child.stdin.take().expect("stdin piped");
+        match stdin_pipe.write_all(stdin.as_bytes()) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
+            Err(e) => panic!("write stdin: {e}"),
+        }
+    }
 
     let out = child.wait_with_output().expect("wait for xavier-tool");
     (
