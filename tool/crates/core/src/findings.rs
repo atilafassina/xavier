@@ -148,11 +148,17 @@ fn is_conforming_heading(line: &str) -> bool {
 fn is_bullet_with_path(line: &str) -> bool {
     // Must be a bullet with no leading whitespace (a nested/indented bullet is a
     // sub-point of the current finding, not a new one).
-    let after = match line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")).or_else(|| line.strip_prefix("+ ")) {
+    let after = match line
+        .strip_prefix("- ")
+        .or_else(|| line.strip_prefix("* "))
+        .or_else(|| line.strip_prefix("+ "))
+    {
         Some(a) => a,
         None => return false,
     };
-    code_spans(after).iter().any(|s| path_like_file(s).is_some())
+    code_spans(after)
+        .iter()
+        .any(|s| path_like_file(s).is_some())
 }
 
 /// True iff `tok` names a severity level used in a finding heading bracket.
@@ -543,10 +549,7 @@ fn compute_hoist(lines: &[&str], preamble_end: usize) -> Option<CanonRef> {
         }
     }
     // Fallback: salvage a single unambiguous path-like span from the preamble.
-    let preamble: Vec<String> = lines[..scan_end]
-        .iter()
-        .map(|l| l.to_string())
-        .collect();
+    let preamble: Vec<String> = lines[..scan_end].iter().map(|l| l.to_string()).collect();
     salvage_reference(&[preamble.as_slice()])
 }
 
@@ -788,7 +791,7 @@ fn salvage_reference(line_groups: &[&[String]]) -> Option<CanonRef> {
         for line in *group {
             for span in code_spans(line) {
                 if let Some(file) = path_like_file(&span) {
-                    if !distinct.iter().any(|f| *f == file) {
+                    if !distinct.contains(&file) {
                         distinct.push(file);
                     }
                 }
@@ -815,7 +818,9 @@ fn code_spans(line: &str) -> Vec<String> {
     let segments: Vec<&str> = line.split('`').collect();
     // N backticks -> N+1 segments -> N/2 closed pairs; span p is segment 2p+1.
     let pairs = segments.len().saturating_sub(1) / 2;
-    (0..pairs).map(|p| segments[2 * p + 1].to_string()).collect()
+    (0..pairs)
+        .map(|p| segments[2 * p + 1].to_string())
+        .collect()
 }
 
 /// If `span` looks like a file path, return its file component with any trailing
@@ -848,8 +853,8 @@ fn looks_like_path(file: &str) -> bool {
         return true;
     }
     const EXTS: &[&str] = &[
-        ".rs", ".ts", ".tsx", ".js", ".py", ".go", ".sh", ".md", ".json", ".toml", ".yaml",
-        ".yml", ".txt",
+        ".rs", ".ts", ".tsx", ".js", ".py", ".go", ".sh", ".md", ".json", ".toml", ".yaml", ".yml",
+        ".txt",
     ];
     let lower = f.to_lowercase();
     EXTS.iter().any(|ext| lower.ends_with(ext))
@@ -1105,7 +1110,10 @@ mod tests {
                     The bug lives in `src/parser.rs` near the top of the loop.\n";
         let f = parse_findings(text, "GPT");
         assert_eq!(f.len(), 1);
-        let r = f[0].reference.as_ref().expect("path span should be salvaged");
+        let r = f[0]
+            .reference
+            .as_ref()
+            .expect("path span should be salvaged");
         assert_eq!(r.file, "src/parser.rs");
         assert_eq!(r.line, None);
         assert_eq!(r.key(), "src/parser.rs");
@@ -1271,7 +1279,10 @@ mod tests {
             Some("critical".to_string())
         );
         // Pure prose with neither a severity word nor a verdict recovers nothing.
-        assert_eq!(scan_severity(&["Just some ordinary prose.".to_string()]), None);
+        assert_eq!(
+            scan_severity(&["Just some ordinary prose.".to_string()]),
+            None
+        );
     }
 
     #[test]
@@ -1318,7 +1329,11 @@ The second issue is also real.
                 .reference
                 .as_ref()
                 .expect("each segment inherits the hoisted location");
-            assert_eq!(r.key(), "src/thing.rs", "every segment gets the hoisted file");
+            assert_eq!(
+                r.key(),
+                "src/thing.rs",
+                "every segment gets the hoisted file"
+            );
             assert_eq!(r.line, None, "hoist is file-only; never a fabricated line");
         }
         assert_eq!(f[0].severity, "critical");
@@ -1570,7 +1585,9 @@ Verdict: approve
             f.is_empty(),
             "an approve-only review must recover no findings; got {}: {:?}",
             f.len(),
-            f.iter().map(|x| (&x.severity, &x.description)).collect::<Vec<_>>()
+            f.iter()
+                .map(|x| (&x.severity, &x.description))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -1586,7 +1603,11 @@ The handler mishandles the empty case.
 Verdict: request changes
 ";
         let f = parse_findings(text, "GPT");
-        assert_eq!(f.len(), 1, "a located request-changes prose finding still recovers");
+        assert_eq!(
+            f.len(),
+            1,
+            "a located request-changes prose finding still recovers"
+        );
         assert_eq!(f[0].severity, "high");
         assert_eq!(f[0].reference.as_ref().unwrap().file, "src/handler.rs");
     }

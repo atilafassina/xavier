@@ -64,9 +64,10 @@ fn sec_gpt_sec_gemini_reach_consensus() {
 
     // The consensus must carry a real severity, not the `unknown` fallback the
     // heading parser assigns to a bracket-less prose line.
-    let real_severity = result.consensus.iter().any(|pair| {
-        pair.a.severity != "unknown" || pair.b.severity != "unknown"
-    });
+    let real_severity = result
+        .consensus
+        .iter()
+        .any(|pair| pair.a.severity != "unknown" || pair.b.severity != "unknown");
     assert!(
         real_severity,
         "consensus formed but every side is `unknown` severity: {:?}",
@@ -107,7 +108,10 @@ fn corr_gpt_corr_gemini_recover_multiple_located_findings() {
             .as_ref()
             .expect("every recovered corr finding must carry the hoisted location");
         assert_eq!(r.file, "xavier/skills/review/SKILL.md");
-        assert_eq!(r.line, None, "the corr fixtures name no line; none may be invented");
+        assert_eq!(
+            r.line, None,
+            "the corr fixtures name no line; none may be invented"
+        );
     }
 
     let result = merge(&merge_texts(CORR_GPT, CORR_GEMINI));
@@ -180,7 +184,11 @@ query string without sanitization, which is exploitable.
     // is not path-like, so neither the per-segment salvage nor the hoist finds a
     // location. A fabricated line here would show up as `Some(line)`.
     let a = parse_findings(prose, "GPT");
-    assert_eq!(a.len(), 1, "the prose finding is recovered as exactly one finding");
+    assert_eq!(
+        a.len(),
+        1,
+        "the prose finding is recovered as exactly one finding"
+    );
     assert_eq!(
         a[0].severity, "critical",
         "recovered on its severity word, proving the prose stage actually ran"
