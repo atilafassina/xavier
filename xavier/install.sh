@@ -103,6 +103,7 @@ ensure_vault_dirs() {
   mkdir -p "$XAVIER_HOME/knowledge/repos"
   mkdir -p "$XAVIER_HOME/knowledge/teams"
   mkdir -p "$XAVIER_HOME/knowledge/reviews"
+  mkdir -p "$XAVIER_HOME/knowledge/cohorts"
   mkdir -p "$XAVIER_HOME/prd"
   mkdir -p "$XAVIER_HOME/prd/done"
   mkdir -p "$XAVIER_HOME/tasks"
@@ -110,6 +111,7 @@ ensure_vault_dirs() {
   mkdir -p "$XAVIER_HOME/research"
   mkdir -p "$XAVIER_HOME/investigations"
   mkdir -p "$XAVIER_HOME/loop-state"
+  mkdir -p "$XAVIER_HOME/teach-state"
   mkdir -p "$XAVIER_HOME/shark-state"
   mkdir -p "$XAVIER_HOME/babysit-pr"
 }
@@ -566,6 +568,7 @@ investigate|Investigate a bug or system behavior with structured diagnosis
 prd|Create a PRD through user interview, codebase exploration, and module design
 tasks|Decompose a PRD into phased implementation tasks
 learn|Explore a codebase and produce knowledge notes in the vault
+teach|Teach a topic through researched adaptive lessons organized into cohorts
 loop|Execute a task file as an autonomous loop using the Shark pattern
 mark|Move a PRD or task between active, done, and superseded states
 add-dep|Create a dependency-skill for a package with best practices and API patterns
