@@ -97,6 +97,9 @@ Written by the `teach` skill. Cohorts and lessons live under `<vault>/knowledge/
   - `zpd`: zone-of-proximal-development placement — the depth the lesson was pitched at
   - `demonstrated`: what the learner demonstrably understood (the fluency signal; updated by spaced-retrieval checks)
   - `misconceptions`: misconceptions surfaced during the lesson (may be empty)
+  - `sources`: list of URLs / references the lesson cited — every lesson is taught from researched material, so this is non-empty
+  - `fluency`: spaced-retrieval ladder level — one of `seen`, `familiar`, `solid`, `mastered`; drives the due-check interval
+  - `last_reviewed`: ISO date the lesson was last taught or retrieval-checked; with `fluency` it determines when the lesson is next due
 
 ## Wikilink Conventions
 
