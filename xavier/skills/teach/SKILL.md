@@ -75,8 +75,7 @@ updated: {ISO date}
 tags:
   - cohort
   - {topic tags}
-related:
-  - "[[knowledge/cohorts/{cohort}/cohort]]"
+related: []
 cohort: {cohort slug}
 mission: {one-paragraph synthesis of why / success / constraints / out-of-scope + starting level}
 ---

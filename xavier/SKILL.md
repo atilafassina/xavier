@@ -88,7 +88,7 @@ The following 16 keys are the only valid values in a skill's `requires` list:
 | `research-index`     | List all `.md` files in `<vault>/research/` with titles and frontmatter                                                        |
 | `investigations-index` | List all `.md` files in `<vault>/investigations/` with titles and frontmatter                                                |
 | `qa-index`           | List all `.md` files in `<vault>/knowledge/qa/` with titles and frontmatter                                                    |
-| `cohorts-index`      | **Loaded context**: list directories in `<vault>/knowledge/cohorts/` (each subdirectory is a cohort); surface each cohort's `cohort.md` mission plus its lesson count. **Read sanction**: declaring `cohorts-index` also grants the skill permission to read the lesson-records (`<lesson-slug>.md`) within a selected cohort for ZPD placement and the spaced-retrieval due-scan. |
+| `cohorts-index`      | **Loaded context**: list directories in `<vault>/knowledge/cohorts/` (each subdirectory is a cohort); surface each cohort's `cohort.md` mission plus its lesson count. **Read sanction**: declaring `cohorts-index` also grants the skill permission to read the lesson-records (`<lesson-slug>.md`) across cohorts — both to compute the picker's per-cohort `last-taught` / `#due` counts, and within a selected cohort for ZPD placement and the spaced-retrieval due-scan. |
 
 
 ### Annotations: required vs optional
