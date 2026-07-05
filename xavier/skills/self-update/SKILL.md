@@ -199,6 +199,7 @@ Report the failure to the user, clean up `$TMPDIR`, and **stop** — do not proc
 - `prd/`
 - `tasks/`
 - `loop-state/`
+- `teach-state/`
 - `shark-state/`
 - `babysit-pr/`
 - `.obsidian/`
@@ -342,7 +343,7 @@ fi
 
 If `ALIASES_ENABLED` is `"no"`, skip the rest of this step and proceed to Step 9.
 
-Otherwise, write an alias file for each of the following 20 commands. This human-readable list MUST stay in sync with the executable `COMMANDS` block below and with the `COMMANDS` table in `xavier/install.sh` — adding a skill in one place without the others causes upgrade-vs-fresh-install drift:
+Otherwise, write an alias file for each of the following 21 commands. This human-readable list MUST stay in sync with the executable `COMMANDS` block below and with the `COMMANDS` table in `xavier/install.sh` — adding a skill in one place without the others causes upgrade-vs-fresh-install drift:
 
 | Command | Description |
 |---|---|
@@ -354,6 +355,7 @@ Otherwise, write an alias file for each of the following 20 commands. This human
 | prd | Create a PRD through user interview, codebase exploration, and module design |
 | tasks | Decompose a PRD into phased implementation tasks |
 | learn | Explore a codebase and produce knowledge notes in the vault |
+| teach | Teach a topic through researched adaptive lessons organized into cohorts |
 | loop | Execute a task file as an autonomous loop using the Shark pattern |
 | mark | Move a PRD or task between active, done, and superseded states |
 | add-dep | Create a dependency-skill for a package with best practices and API patterns |
@@ -379,6 +381,7 @@ investigate|Investigate a bug or system behavior with structured diagnosis
 prd|Create a PRD through user interview, codebase exploration, and module design
 tasks|Decompose a PRD into phased implementation tasks
 learn|Explore a codebase and produce knowledge notes in the vault
+teach|Teach a topic through researched adaptive lessons organized into cohorts
 loop|Execute a task file as an autonomous loop using the Shark pattern
 mark|Move a PRD or task between active, done, and superseded states
 add-dep|Create a dependency-skill for a package with best practices and API patterns
@@ -464,7 +467,7 @@ ALIASEOF
 done
 ```
 
-After regeneration, write up to 60 alias files (20 commands × up to 3 detected runtimes) — the actual count depends on which runtimes the user has on PATH. Proceed to Step 9. If `install_command_aliases()` in `xavier/install.sh` ever changes its format, paths, or runtime set, this block must be updated to match.
+After regeneration, write up to 63 alias files (21 commands × up to 3 detected runtimes) — the actual count depends on which runtimes the user has on PATH. Proceed to Step 9. If `install_command_aliases()` in `xavier/install.sh` ever changes its format, paths, or runtime set, this block must be updated to match.
 
 ## Step 9: Update Version in Config
 
@@ -487,6 +490,7 @@ mkdir -p "$XAVIER_HOME/deps"
 mkdir -p "$XAVIER_HOME/knowledge/repos"
 mkdir -p "$XAVIER_HOME/knowledge/teams"
 mkdir -p "$XAVIER_HOME/knowledge/reviews"
+mkdir -p "$XAVIER_HOME/knowledge/cohorts"
 mkdir -p "$XAVIER_HOME/prd"
 mkdir -p "$XAVIER_HOME/prd/done"
 mkdir -p "$XAVIER_HOME/tasks"
@@ -494,6 +498,7 @@ mkdir -p "$XAVIER_HOME/tasks/done"
 mkdir -p "$XAVIER_HOME/research"
 mkdir -p "$XAVIER_HOME/investigations"
 mkdir -p "$XAVIER_HOME/loop-state"
+mkdir -p "$XAVIER_HOME/teach-state"
 mkdir -p "$XAVIER_HOME/shark-state"
 mkdir -p "$XAVIER_HOME/babysit-pr"
 ```

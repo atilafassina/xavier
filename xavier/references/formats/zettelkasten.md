@@ -7,7 +7,7 @@ Base frontmatter schema for all knowledge notes in the Xavier vault. Every note 
 ```yaml
 ---
 repo: {repository name where the note originated}
-type: {note type — one of: review, prd, tasks, knowledge, dependency, research, investigation, qa}
+type: {note type — one of: review, prd, tasks, knowledge, dependency, research, investigation, qa, cohort, lesson}
 created: {ISO date, e.g. 2026-04-05}
 updated: {ISO date, e.g. 2026-04-05}
 tags:
@@ -25,7 +25,7 @@ related:
 | `repo`    | string | Name of the git repository this note relates to (optional for `type: research`) |
 | `team`    | string | Team name (from config) — optional, include when the note is team-scoped |
 | `module`  | string | Most-changed directory or module — optional, include for reviews         |
-| `type`    | string | Note type: `review`, `prd`, `tasks`, `knowledge`, `dependency`, `research`, `investigation`, `qa` |
+| `type`    | string | Note type: `review`, `prd`, `tasks`, `knowledge`, `dependency`, `research`, `investigation`, `qa`, `cohort`, `lesson` |
 | `created` | date   | ISO date when the note was first created                                 |
 | `updated` | date   | ISO date when the note was last modified                                 |
 | `tags`    | list   | Freeform tags for categorization and search                              |
@@ -84,6 +84,22 @@ The router's `prd-index` and `tasks-index` requires keys glob top-level `*.md` o
 ### Q&A
 
 - `question`: original question text passed to `/xavier ask` — primary identifier for Q&A notes. Used by `qa-index` cache lookups to surface related prior answers.
+
+### Cohorts / Lessons
+
+Written by the `teach` skill. Cohorts and lessons live under `<vault>/knowledge/cohorts/<cohort>/`.
+
+- **`cohort` notes** (`type: cohort`, file `cohort.md`):
+  - `cohort`: the cohort slug — primary identifier for the learning track
+  - `mission`: the learner's stated goal for the cohort (why / success criteria / constraints / out-of-scope), captured at the mission gate
+- **`lesson` notes** (`type: lesson`, file `<lesson-slug>.md`, written once on lesson completion):
+  - `cohort`: the owning cohort slug (matches the parent directory)
+  - `zpd`: zone-of-proximal-development placement — the depth the lesson was pitched at
+  - `demonstrated`: what the learner demonstrably understood (the fluency signal; updated by spaced-retrieval checks)
+  - `misconceptions`: misconceptions surfaced during the lesson (may be empty)
+  - `sources`: list of URLs / references the lesson cited — every lesson is taught from researched material, so this is non-empty
+  - `fluency`: spaced-retrieval ladder level — one of `seen`, `familiar`, `solid`, `mastered`; drives the due-check interval
+  - `last_reviewed`: ISO date the lesson was last taught or retrieval-checked; with `fluency` it determines when the lesson is next due
 
 ## Wikilink Conventions
 
