@@ -5,14 +5,14 @@ set -euo pipefail
 # Checks:
 # 1. Every xavier/skills/*/SKILL.md has valid frontmatter with 'name' and 'requires'
 # 2. The 'name' field matches the directory name
-# 3. Every entry in 'requires' is in the 15-key vocabulary
+# 3. Every entry in 'requires' is in the 16-key vocabulary
 
 ERRORS=0
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="$REPO_ROOT/xavier/skills"
 
-# The 15-key vocabulary
-VALID_REQUIRES="config personas shark adapter recurring-patterns team-conventions repo-conventions prd-index tasks-index skills-index deps-index vault-memory research-index investigations-index qa-index"
+# The 16-key vocabulary
+VALID_REQUIRES="config personas shark adapter recurring-patterns team-conventions repo-conventions prd-index tasks-index skills-index deps-index vault-memory research-index investigations-index qa-index cohorts-index"
 
 if [ ! -d "$SKILLS_DIR" ]; then
   echo "FAIL: $SKILLS_DIR does not exist"

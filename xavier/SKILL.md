@@ -68,7 +68,7 @@ Skills never mention or execute vault commits — the router owns this exclusive
 
 > **Path note:** All paths below are relative to the resolved `XAVIER_HOME` (see step 0 of the Router Lifecycle). When you see `<vault>/`, substitute the resolved vault root (e.g., `~/.xavier/` by default, or whatever `$XAVIER_HOME` resolved to).
 
-The following 15 keys are the only valid values in a skill's `requires` list:
+The following 16 keys are the only valid values in a skill's `requires` list:
 
 
 | Key                  | What to load                                                                                                                   |
@@ -88,6 +88,7 @@ The following 15 keys are the only valid values in a skill's `requires` list:
 | `research-index`     | List all `.md` files in `<vault>/research/` with titles and frontmatter                                                        |
 | `investigations-index` | List all `.md` files in `<vault>/investigations/` with titles and frontmatter                                                |
 | `qa-index`           | List all `.md` files in `<vault>/knowledge/qa/` with titles and frontmatter                                                    |
+| `cohorts-index`      | **Loaded context**: list directories in `<vault>/knowledge/cohorts/` (each subdirectory is a cohort); surface each cohort's `cohort.md` mission plus its lesson count. **Read sanction**: declaring `cohorts-index` also grants the skill permission to read the lesson-records (`<lesson-slug>.md`) within a selected cohort for ZPD placement and the spaced-retrieval due-scan. |
 
 
 ### Annotations: required vs optional
