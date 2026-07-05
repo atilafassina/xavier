@@ -42,13 +42,13 @@ Route on the parsed arguments:
   - its **mission** one-liner (from `cohort.md` frontmatter `mission`)
   - **last-taught** date — the most recent lesson-record's `updated` field within the cohort (or `never` if the cohort has no lessons yet)
   - **lesson count** — number of lesson-records in the cohort
-  - **#due** — the count of lessons due for spaced retrieval. **Placeholder for now**: display `—` (or `#due: pending`) and note that Phase 5 wires the due-scan up. Do not attempt to compute it in this phase.
+  - **#due** — the count of lesson-records in the cohort that are **due for spaced retrieval**. A record is due when `today >= last_reviewed + interval(fluency)` per the **fluency ladder** defined in Step A5. Compute it as a cheap scan of each record's `fluency` + `last_reviewed` fields against today — no research, no remoras. **Exclude** any lesson with an in-progress `teach-state/` checkpoint (see Phase 6) and any incomplete record. For a legacy record missing `fluency`/`last_reviewed`, treat `fluency` as `seen` and use `updated` (else `created`) as the date. A cohort with nothing due shows `#due: 0`.
 
   Present the list via **AskUserQuestion** and let the user either pick an existing cohort (→ resume/teach path below) or choose to create a new one (→ Step 3 mission gate). If no cohorts exist yet, say so and offer to create one.
 
-- **`<cohort>` that already exists** (a directory `<vault>/knowledge/cohorts/<cohort>/` with a `cohort.md`): this is the **resume/teach path**. Load the cohort's mission and lesson-records, then branch on whether a `<topic>` was supplied:
-  - **A `<topic>` is present** → teach a lesson. Run the full delivery flow in order: **Step A3** (adaptive research) → **Step A4** (ZPD placement) → **Step A6** (interactive tutor loop) → **Step A7** (lesson-record writer). Do NOT stop at Step 4 in this case — Step 4 is the handoff only for the no-topic and just-created outcomes.
-  - **No `<topic>`** → surface the cohort's mission and lesson count and ask the user to name a topic to teach, then stop with the handoff note in Step 4. **Teach never proposes or auto-selects the topic** — the learner is always in the driver's seat. Do not research, do not pick a lesson; just wait.
+- **`<cohort>` that already exists** (a directory `<vault>/knowledge/cohorts/<cohort>/` with a `cohort.md`): this is the **resume/teach path**. Load the cohort's mission and lesson-records. **This is a returning session, so run the spaced-retrieval due-scan (Step A5) FIRST**, before any new material — unless `--no-review` was parsed or the learner skips. The ordering is strict: **due-check (A5) → then** new lesson delivery. Only after A5 completes (or is bypassed) do you branch on whether a `<topic>` was supplied:
+  - **A `<topic>` is present** → after A5, teach a lesson. Run the full delivery flow in order: **Step A3** (adaptive research) → **Step A4** (ZPD placement) → **Step A6** (interactive tutor loop) → **Step A7** (lesson-record writer). Do NOT stop at Step 4 in this case — Step 4 is the handoff only for the no-topic and just-created outcomes.
+  - **No `<topic>`** → after A5, surface the cohort's mission and lesson count and ask the user to name a topic to teach, then stop with the handoff note in Step 4. **Teach never proposes or auto-selects the topic** — the learner is always in the driver's seat. Do not research, do not pick a lesson; just wait.
 
 - **`<cohort>` that does NOT exist**: fall through to the **mission gate** (Step 3) to create it. A mistyped name must **not** silently create a phantom cohort — the mission gate is the deliberate creation point, and the user can abandon it cleanly. **Abandoning the mission gate writes nothing to disk.**
 
@@ -105,9 +105,49 @@ Wait for the user's next message. Only teach a lesson if the user's newest messa
 
 # Lesson Delivery
 
-The resume/teach path (existing cohort **plus** a `<topic>`, dispatched from Step 2) runs these four steps in order: **A3** research → **A4** ZPD placement → **A6** interactive tutor loop → **A7** lesson-record writer. The hard rule threaded through all four: **never teach from the model alone — every lesson cites researched material.** The `sources` field of the record (A7) is populated from A3's findings; a lesson with no researched sources is not a valid lesson.
+On a **returning session** (Step 2 resolved an existing cohort), the spaced-retrieval **due-check (Step A5)** runs FIRST — before any new material — unless `--no-review`/skip bypasses it. **Then** the resume/teach path (existing cohort **plus** a `<topic>`) runs these four steps in order: **A3** research → **A4** ZPD placement → **A6** interactive tutor loop → **A7** lesson-record writer. So the full returning-session order is: **A5 (due-check) → A3 → A4 → A6 → A7.** The hard rule threaded through the delivery steps: **never teach from the model alone — every lesson cites researched material.** The `sources` field of the record (A7) is populated from A3's findings; a lesson with no researched sources is not a valid lesson.
 
-> **Deferred mode.** If Step 1 found `SHARK_TASK_HASH` set, this agent is a deferred inline executor: do the research of Step A3 **inline** (WebSearch/WebFetch/Explore-style reads yourself, no remora fan-out), and skip the interactive multi-turn loop in favor of the one-shot fallback in A6. The remaining logic (ZPD placement, record writing) is unchanged.
+> **Deferred mode.** If Step 1 found `SHARK_TASK_HASH` set, this agent is a deferred inline executor: **skip the A5 due-check** (spaced retrieval is an interactive returning-session concern, not a deferred-executor one), do the research of Step A3 **inline** (WebSearch/WebFetch/Explore-style reads yourself, no remora fan-out), and skip the interactive multi-turn loop in favor of the one-shot fallback in A6. The remaining logic (ZPD placement, record writing) is unchanged.
+
+## Step A5: Spaced-Retrieval Due-Check (runs first on a returning session)
+
+When Step 2 resolves an **existing** cohort — whether or not a new `<topic>` was named — run this due-check **before** any new lesson delivery (A3). Its job is to keep the `demonstrated`/fluency signal **honest over time**: a concept the learner nailed a month ago is not still "demonstrated" unless they can still recall it, so due lessons get a short recall check and their fluency is re-scored from the result.
+
+**Bypass.** If `--no-review` was parsed (Step 2), skip this step entirely and go straight to the topic branch. Also offer an interactive per-session skip: if any lessons are due, tell the learner how many and ask whether to run the check now or skip; a "skip" answer bypasses it for this session (records are untouched, so they simply stay due). Never fabricate the skip answer — ask and wait.
+
+**Which records are due — the fluency ladder.** Each lesson-record carries a `fluency` level and a `last_reviewed` ISO date (A7 writes both). A record is **due** when:
+
+```text
+today >= last_reviewed + interval(fluency)
+```
+
+The interval is a simple, transparent, hand-computable ladder keyed to `fluency` (no SM-2/Anki machinery):
+
+| fluency    | review interval |
+|------------|-----------------|
+| `seen`     | 1 day           |
+| `familiar` | 3 days          |
+| `solid`    | 10 days         |
+| `mastered` | 30 days         |
+
+So a `seen` lesson is due the next day; a `mastered` one not for a month. Legacy/incomplete records: if `fluency` is absent treat it as `seen`; if `last_reviewed` is absent use `updated` (else `created`) as the date. All dates compared as calendar dates against today.
+
+**Exclusions (never surface these as due):**
+- Any lesson with an **in-progress checkpoint in `teach-state/`** (see Phase 6) — a lesson still being taught is never due for review. Phase 6 isn't built yet, so today this exclusion matches nothing; it is stated here so the due-scan is forward-compatible.
+- Any **incomplete record** (a partial/abandoned lesson that never reached A7's one-record invariant).
+
+**Running the check.** Glob `<vault>/knowledge/cohorts/<cohort>/` for `<lesson-slug>.md` records (skip `cohort.md`; this read is covered by the `cohorts-index` read-sanction), compute the due set per the ladder, and apply the exclusions. If **nothing is due**, say so briefly and proceed to the topic branch. If **one or more are due**:
+
+1. Open with a **capped 2–3 question** retrieval check per due lesson (recall of that prior lesson's `demonstrated` content — pull the questions from the record's key points, not from new research). Ask-then-wait, one question at a time; **never fabricate the learner's answer**. Cap at 2–3 questions even for a large lesson — this is a recall check, not a re-teach. If several lessons are due, prioritize the ones due longest first; you may cap the session to a few lessons and leave the rest due.
+2. **Re-score fluency from the outcome** (the mapping below) and update the record.
+
+**Fluency-signal mapping (pass promotes ↑ / stumble demotes ↓).** After the retrieval check for a lesson, map the outcome onto the ladder:
+
+- **Pass** (recalled cleanly, no material error) → **promote one rung**: `seen → familiar → solid → mastered`. `mastered` stays `mastered` (already the top). Append any freshly-confirmed understanding to `demonstrated`.
+- **Partial** (recalled with hesitation or a minor gap) → **hold** at the current rung (no promotion), and fold the gap into `misconceptions` if it is a genuine misunderstanding. Holding still resets the clock (see below), so it won't re-fire tomorrow.
+- **Stumble / fail** (could not recall, or recalled incorrectly) → **demote one rung** (`mastered → solid → familiar → seen`; `seen` stays `seen`). Move the no-longer-recalled item **out of** `demonstrated` and record the gap in `misconceptions`, so `demonstrated` stays truthful — it must reflect what the learner can *currently* recall, not what they once could.
+
+**Always** set `last_reviewed` to today and bump `updated` on every record you check (pass, partial, or fail) — this reschedules it up the ladder and prevents it from re-firing immediately. Confirm to the learner what changed (e.g. `binary-search: familiar → solid (last_reviewed 2026-07-05)`). Only after the due-check is complete (or bypassed) do you continue to the topic branch: **A3 → A4 → A6 → A7** if a `<topic>` is present, or the Step 4 handoff if not.
 
 ## Step A3: Adaptive Research Phase
 
@@ -247,10 +287,14 @@ zpd: {depth the lesson was pitched at}
 demonstrated: {what the learner demonstrably understood}
 misconceptions: {misconceptions surfaced, or empty}
 sources: {list of URLs/refs the lesson cited}
+fluency: {ladder level — one of seen | familiar | solid | mastered; see Step A5}
+last_reviewed: {ISO date — the date this record was last taught or retrieval-checked}
 ---
 ```
 
 Below the frontmatter, write a short body under a `# {topic} — Lesson` heading: the ZPD placement, the key points taught (grounded in the A3 material), what the learner demonstrated, any misconceptions surfaced, and a `## Sources` list mirroring the `sources` frontmatter. The `sources` field must be non-empty and drawn from A3 — enforcing the hard rule that **every lesson cites researched material**.
+
+**Populate the spaced-retrieval fields on first write.** Set `last_reviewed` to today (the creation date). Set `fluency` to whatever the lesson's `demonstrated` warrants — typically `seen` (introduced, checked once) or `familiar` (a small delta the learner grasped confidently); reserve `solid`/`mastered` for the rare case a single lesson genuinely proved that depth. These two fields are what Step A5's due-scan and the picker's `#due` count read on later sessions; A5 updates them (never A7 again for that record) on each retrieval check.
 
 After writing, confirm to the learner: `Lesson recorded at knowledge/cohorts/<cohort>/<lesson-slug>.md.` Then stop and wait for the learner's next message — do not auto-select a follow-up topic.
 
@@ -258,5 +302,4 @@ After writing, confirm to the learner: `Lesson recorded at knowledge/cohorts/<co
 
 These are stubs for later phases — clearly labeled so the file reads as a whole. Do NOT implement them here:
 
-- **Spaced retrieval (Phase 5)** — the `#due` count in the picker will be computed from lesson-records' retrieval schedule, and due lessons will be resurfaced for recall checks. (The `#due` placeholder in the Step 2 picker stays a placeholder until this phase lands.)
-- **`teach-state/` (Phase 6)** — a per-cohort ephemeral state directory (analogous to `loop-state/`) will track in-flight teaching sessions across turns.
+- **`teach-state/` (Phase 6)** — a per-cohort ephemeral state directory (analogous to `loop-state/`) will track in-flight teaching sessions across turns. Step A5's due-scan already excludes any lesson with an in-progress `teach-state/` checkpoint, so this phase's directory slots in without changing the due rule.
