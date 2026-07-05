@@ -416,7 +416,7 @@ fn severity_lead(content: &str) -> Option<String> {
     let first = content
         .split_whitespace()
         .next()?
-        .trim_matches(|c: char| c == '[' || c == ']' || c == ':' || c == '.');
+        .trim_matches(|c: char| c == '[' || c == ']' || c == ':' || c == '.' || c == '*');
     severity_word(first)
 }
 
@@ -447,7 +447,11 @@ fn verdict_lead(content: &str) -> Option<String> {
 /// Verdict → severity mapping (documented once):
 /// - `request changes` / `reject` / `block` → `high`
 /// - `rethink` → `medium`
-/// - `approve` → `low`
+/// - `approve` → **`None`** — an approval is NOT a finding. Mapping it to a
+///   severity would let a clean "Verdict: approve" review manufacture a phantom
+///   low finding (the response-level severity hoist would stamp it onto every
+///   segment and pass the emission guard). A verdict that raises no concern
+///   contributes no severity.
 ///
 /// `needle` is matched with `starts_with` for a leading phrase and `contains`
 /// for a `Verdict: …` line (see [`scan_severity`]).
@@ -461,9 +465,8 @@ fn map_verdict(text: &str) -> Option<String> {
         Some("high".to_string())
     } else if t.starts_with("rethink") {
         Some("medium".to_string())
-    } else if t.starts_with("approve") {
-        Some("low".to_string())
     } else {
+        // `approve` (and any other phrase) contributes no severity.
         None
     }
 }
@@ -1260,10 +1263,8 @@ mod tests {
             scan_severity(&["Verdict: rethink".to_string()]),
             Some("medium".to_string())
         );
-        assert_eq!(
-            scan_severity(&["Verdict: approve".to_string()]),
-            Some("low".to_string())
-        );
+        // `approve` is NOT a finding severity — a clean approval recovers nothing.
+        assert_eq!(scan_severity(&["Verdict: approve".to_string()]), None);
         // A leading severity word is recovered directly, no verdict needed.
         assert_eq!(
             scan_severity(&["Critical flaw in the parser".to_string()]),
@@ -1276,12 +1277,13 @@ mod tests {
     #[test]
     fn verdict_and_severity_word_mapping_is_pinned() {
         // Verdict phrases (`map_verdict`): request changes / reject / block ->
-        // high, rethink -> medium, approve -> low.
+        // high, rethink -> medium. `approve` maps to None (an approval is not a
+        // finding), as does any unrecognized phrase.
         assert_eq!(map_verdict("request changes"), Some("high".to_string()));
         assert_eq!(map_verdict("reject"), Some("high".to_string()));
         assert_eq!(map_verdict("block"), Some("high".to_string()));
         assert_eq!(map_verdict("rethink"), Some("medium".to_string()));
-        assert_eq!(map_verdict("approve"), Some("low".to_string()));
+        assert_eq!(map_verdict("approve"), None);
         assert_eq!(map_verdict("looks good and nothing else"), None);
         // Severity words (`severity_word`): severe -> high, moderate -> medium,
         // minor -> low, and the canonical vocabulary maps to itself.
@@ -1546,5 +1548,46 @@ Verdict: request changes.
              -> no single salvaged location; got {:?}",
             f[0].reference
         );
+    }
+
+    // ---- Round-3 regression fix (found by re-reviewing the fixed branch) ----
+
+    #[test]
+    fn approve_only_prose_manufactures_no_finding() {
+        // Fix (round 3): a clean review that finds nothing and ends `Verdict:
+        // approve` must yield ZERO findings. Previously `approve` mapped to
+        // `low`, and the response-level severity hoist stamped that onto the
+        // single prose segment, so the emission guard (real severity OR
+        // location) passed and a phantom `low` finding was manufactured.
+        let text = "\
+I reviewed the diff. It looks correct and well tested.
+No issues found.
+
+Verdict: approve
+";
+        let f = parse_findings(text, "GPT");
+        assert!(
+            f.is_empty(),
+            "an approve-only review must recover no findings; got {}: {:?}",
+            f.len(),
+            f.iter().map(|x| (&x.severity, &x.description)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn request_changes_prose_still_recovers_after_approve_fix() {
+        // Guard: the approve->None change must not regress the request-changes
+        // path — a located prose finding with `Verdict: request changes` still
+        // recovers at `high`.
+        let text = "\
+The handler mishandles the empty case.
+`src/handler.rs`
+
+Verdict: request changes
+";
+        let f = parse_findings(text, "GPT");
+        assert_eq!(f.len(), 1, "a located request-changes prose finding still recovers");
+        assert_eq!(f[0].severity, "high");
+        assert_eq!(f[0].reference.as_ref().unwrap().file, "src/handler.rs");
     }
 }
