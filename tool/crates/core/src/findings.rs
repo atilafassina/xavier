@@ -205,7 +205,10 @@ fn recover_from_prose(text: &str, source: &str) -> Vec<Finding> {
             if in_fence {
                 continue;
             }
-            if is_bullet_with_path(t) {
+            // Pass the RAW (untrimmed) line: is_bullet_with_path rejects a
+            // leading-indent bullet as a sub-point, and that guard only works if
+            // it sees the original indentation (not the fence-trimmed `t`).
+            if is_bullet_with_path(raw) {
                 openers.push((i, None));
             }
         }
@@ -521,8 +524,13 @@ fn segment_file_field(seg_lines: &[String]) -> Option<CanonRef> {
 }
 
 fn compute_hoist(lines: &[&str], preamble_end: usize) -> Option<CanonRef> {
-    // A drifted `### File:` / `**File…**` / `File:` header is a LOCATION source.
-    for line in lines {
+    // A drifted `### File:` / `**File…**` / `File:` header is a shared LOCATION
+    // source — but ONLY when it sits in the PREAMBLE (before the first segment).
+    // A `File:` inside a later segment belongs to THAT segment (handled by
+    // `segment_file_field`); scanning the whole response here would let an
+    // earlier segment with no file of its own wrongly inherit a sibling's path.
+    let scan_end = preamble_end.min(lines.len());
+    for line in &lines[..scan_end] {
         let bare = line.trim_start().trim_start_matches('#').trim_start();
         if let Some(val) = parse_field(bare, "file") {
             let r = CanonRef::parse(&val);
@@ -532,7 +540,7 @@ fn compute_hoist(lines: &[&str], preamble_end: usize) -> Option<CanonRef> {
         }
     }
     // Fallback: salvage a single unambiguous path-like span from the preamble.
-    let preamble: Vec<String> = lines[..preamble_end.min(lines.len())]
+    let preamble: Vec<String> = lines[..scan_end]
         .iter()
         .map(|l| l.to_string())
         .collect();
@@ -1473,5 +1481,70 @@ Verdict: request changes.
         );
         assert_eq!(f[0].severity, "high");
         assert_eq!(f[0].reference.as_ref().unwrap().file, "src/handler.rs");
+    }
+
+    // ---- Round-2 regression fixes (found by re-reviewing the fixed branch) ----
+
+    #[test]
+    fn hoist_does_not_leak_a_later_segments_file_backward() {
+        // Fix 5: a segment with NO file of its own must not inherit a LATER
+        // segment's `**File**:` via the shared hoist. The hoist header scan is
+        // preamble-only; a segment file belongs to that segment alone.
+        let text = "\
+**1. First issue (high)**
+This one names no file of its own.
+
+**2. Second issue (high)**
+**File**: `src/second.rs`
+This one owns src/second.rs.
+";
+        let f = parse_findings(text, "GPT");
+        assert_eq!(f.len(), 2, "two numbered segments -> two findings");
+        // Segment 2 keeps its own file.
+        assert_eq!(f[1].reference.as_ref().unwrap().file, "src/second.rs");
+        // Segment 1 must NOT have back-inherited src/second.rs. With no preamble
+        // header and no own location, it stays reference-less.
+        assert!(
+            f[0].reference.is_none(),
+            "segment 1 (no own file, no preamble header) must not inherit \
+             segment 2's file; got {:?}",
+            f[0].reference
+        );
+    }
+
+    #[test]
+    fn indented_path_bullet_does_not_open_a_finding() {
+        // Fix 6: only TOP-LEVEL bullets (no indent) are finding boundaries. An
+        // indented sub-bullet that happens to carry a path span is a sub-point
+        // of the current finding, not a new finding. The key assertion is the
+        // COUNT: the nested `src/nested.rs` bullet must not open a third finding.
+        let text = "\
+- `src/top_a.rs`: the first real finding.
+    - see also `src/nested.rs` for the related helper
+- `src/top_b.rs`: the second real finding.
+
+Verdict: request changes.
+";
+        let f = parse_findings(text, "GPT");
+        assert_eq!(
+            f.len(),
+            2,
+            "two top-level path bullets -> two findings; the indented \
+             `src/nested.rs` sub-bullet must not open a third"
+        );
+        // Segment 2 is a single clean top-level bullet -> located at its path.
+        assert_eq!(f[1].reference.as_ref().unwrap().file, "src/top_b.rs");
+        // Segment 1 now legitimately contains TWO path spans (its own bullet
+        // plus the absorbed nested one), so Layer-B salvage sees an ambiguous
+        // pair and correctly declines to guess a location — the important thing
+        // is that the nested bullet stayed folded in, not that it opened a
+        // finding. (A missed salvage is safely reference-less; a wrong one would
+        // corrupt matching.)
+        assert!(
+            f[0].reference.is_none(),
+            "segment 1 has two path spans (own + absorbed nested) -> ambiguous \
+             -> no single salvaged location; got {:?}",
+            f[0].reference
+        );
     }
 }
