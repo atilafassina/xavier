@@ -1048,4 +1048,191 @@ mod tests {
             "a non-path code span must not create a reference"
         );
     }
+
+    // --- Phase 4b: prose-recovery helper unit tests + the gating fence. ---
+    //
+    // These pin the closed boundary rule (`segment_opener`), the severity
+    // recovery table (`map_verdict`/`severity_word`/`scan_severity`), the shared
+    // location hoist, and — most importantly — the gating invariant that a
+    // conforming `### [severity]` block never reaches the prose stage.
+
+    #[test]
+    fn boundary_numbered_bold_lead_opens_finding() {
+        // A numbered bold lead (`**1. …**`) OPENS a new finding. With no embedded
+        // severity word its hint is `None` (severity is recovered from the body
+        // later); an embedded `(Severe)` rides along as the hint.
+        assert_eq!(
+            segment_opener("**1. The retry loop never backs off**"),
+            Some(None),
+            "a numbered bold lead must open a finding"
+        );
+        assert_eq!(
+            segment_opener("**1. Missing downstream consumption (Severe)**"),
+            Some(Some("high".to_string())),
+            "an embedded severity word rides along on the numbered lead"
+        );
+    }
+
+    #[test]
+    fn boundary_severity_word_bold_lead_opens_finding() {
+        // A bracketed severity word opens with that severity...
+        assert_eq!(
+            segment_opener("**[high] SQL injection in the query**"),
+            Some(Some("high".to_string()))
+        );
+        // ...and so does a bare severity word before a colon.
+        assert_eq!(
+            segment_opener("**Critical: buffer overflow on parse**"),
+            Some(Some("critical".to_string()))
+        );
+    }
+
+    #[test]
+    fn boundary_verdict_phrase_bold_lead_opens_finding() {
+        // A verdict-phrase bold lead opens and maps to a severity.
+        assert_eq!(
+            segment_opener("**Request changes: wire the PR intent into step 4**"),
+            Some(Some("high".to_string()))
+        );
+    }
+
+    #[test]
+    fn boundary_field_label_bolds_do_not_open_a_finding() {
+        // Field-label bolds belong to the CURRENT finding; they must NEVER open a
+        // new one, or the recovery stage would shatter one finding into many.
+        for label in [
+            "**Defect:**",
+            "**Failure Scenario:**",
+            "**Suggestion:**",
+            "**Attack vector:**",
+            "**CWE:**",
+            "**Impact:**",
+            "**Fix:**",
+        ] {
+            assert!(
+                segment_opener(label).is_none(),
+                "field label {label:?} must NOT open a new finding"
+            );
+        }
+    }
+
+    #[test]
+    fn severity_recovery_from_verdict_line_maps_exactly() {
+        // A `Verdict: …` line inside a segment yields the mapped severity.
+        assert_eq!(
+            scan_severity(&["Verdict: request changes".to_string()]),
+            Some("high".to_string())
+        );
+        assert_eq!(
+            scan_severity(&["Verdict: rethink".to_string()]),
+            Some("medium".to_string())
+        );
+        assert_eq!(
+            scan_severity(&["Verdict: approve".to_string()]),
+            Some("low".to_string())
+        );
+        // A leading severity word is recovered directly, no verdict needed.
+        assert_eq!(
+            scan_severity(&["Critical flaw in the parser".to_string()]),
+            Some("critical".to_string())
+        );
+        // Pure prose with neither a severity word nor a verdict recovers nothing.
+        assert_eq!(scan_severity(&["Just some ordinary prose.".to_string()]), None);
+    }
+
+    #[test]
+    fn verdict_and_severity_word_mapping_is_pinned() {
+        // Verdict phrases (`map_verdict`): request changes / reject / block ->
+        // high, rethink -> medium, approve -> low.
+        assert_eq!(map_verdict("request changes"), Some("high".to_string()));
+        assert_eq!(map_verdict("reject"), Some("high".to_string()));
+        assert_eq!(map_verdict("block"), Some("high".to_string()));
+        assert_eq!(map_verdict("rethink"), Some("medium".to_string()));
+        assert_eq!(map_verdict("approve"), Some("low".to_string()));
+        assert_eq!(map_verdict("looks good and nothing else"), None);
+        // Severity words (`severity_word`): severe -> high, moderate -> medium,
+        // minor -> low, and the canonical vocabulary maps to itself.
+        assert_eq!(severity_word("severe"), Some("high".to_string()));
+        assert_eq!(severity_word("moderate"), Some("medium".to_string()));
+        assert_eq!(severity_word("minor"), Some("low".to_string()));
+        assert_eq!(severity_word("critical"), Some("critical".to_string()));
+        assert_eq!(severity_word("high"), Some("high".to_string()));
+        assert_eq!(severity_word("medium"), Some("medium".to_string()));
+        assert_eq!(severity_word("low"), Some("low".to_string()));
+        assert_eq!(severity_word("banana"), None);
+    }
+
+    #[test]
+    fn hoist_shares_a_single_file_header_across_all_segments() {
+        // A prose review names the file ONCE in a `### File:` header, then lists
+        // multiple boundaried segments that carry no location of their own. Every
+        // recovered finding must inherit that hoisted, file-only location.
+        let text = "\
+### File: `src/thing.rs`
+
+**1. First problem (Critical)**
+The first issue is genuinely real.
+
+**2. Second problem (Minor)**
+The second issue is also real.
+";
+        let f = parse_findings(text, "GPT");
+        assert_eq!(f.len(), 2, "two boundaried segments -> two findings");
+        for finding in &f {
+            let r = finding
+                .reference
+                .as_ref()
+                .expect("each segment inherits the hoisted location");
+            assert_eq!(r.key(), "src/thing.rs", "every segment gets the hoisted file");
+            assert_eq!(r.line, None, "hoist is file-only; never a fabricated line");
+        }
+        assert_eq!(f[0].severity, "critical");
+        assert_eq!(f[1].severity, "low");
+    }
+
+    #[test]
+    fn gating_conforming_block_is_not_resegmented_by_prose_rules() {
+        // THE GATING FENCE. If ANY conforming `### [severity]` heading is present,
+        // the prose-recovery stage must NOT run. We prove it by appending lines
+        // that ARE prose-segment openers (a numbered lead and a verdict lead) to a
+        // conforming block: they must be swallowed as ordinary continuation, NOT
+        // turned into extra findings.
+        let conforming_only = "\
+### [high] Real conforming finding
+**File**: `src/main.rs:10`
+";
+        // Sanity: the trailing lines really WOULD open prose segments if the stage
+        // ran, so the gate is what makes the difference (not inert text).
+        assert!(segment_opener("**1. A numbered lead that would open a segment**").is_some());
+        assert!(
+            segment_opener("**Request changes: a verdict lead that would open a segment**")
+                .is_some()
+        );
+
+        let mixed = format!(
+            "{conforming_only}**1. A numbered lead that would open a segment**\n\
+             **Request changes: a verdict lead that would open a segment**\n"
+        );
+
+        // The known conforming sample parses to exactly one high finding — the
+        // pre-4a behavior the prose stage must never perturb.
+        let expected = parse_findings(conforming_only, "GPT");
+        assert_eq!(expected.len(), 1);
+        assert_eq!(expected[0].severity, "high");
+        assert_eq!(expected[0].description, "Real conforming finding");
+        assert_eq!(
+            expected[0].reference.as_ref().unwrap().key(),
+            "src/main.rs:10"
+        );
+
+        // The mixed input must produce byte-identical findings: the conforming
+        // block flowed through the existing parser untouched and the prose
+        // openers did NOT re-segment it.
+        let got = parse_findings(&mixed, "GPT");
+        assert_eq!(
+            got, expected,
+            "a conforming block must be parsed by the existing path; prose \
+             openers must not re-segment it"
+        );
+    }
 }
