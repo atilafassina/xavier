@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Clone-mode `install.sh` refresh no longer silently no-ops on a tarball-installed vault. When a skill or `references` destination in `~/.xavier` was a real directory (as tarball installs leave them) rather than a symlink, `ln -sfn` nested a link *inside* the directory instead of replacing it, so stale copies survived while the installer still logged `skill: X -> repo` as if the link succeeded. Skills, references, and distributed deps now route through a shared `link_or_replace()` helper that moves a real directory aside to `<dest>.prev` before linking and logs success only after the link is made. The deps loop already had this guard inline; it is now the single shared implementation.
+
 ### Security
 
 ## [0.9.1] - 2026-07-06

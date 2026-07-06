@@ -8,13 +8,17 @@ set -euo pipefail
 # validate-xavier-frontmatter.sh: pure bash, no network, builds nothing.
 #
 # It exercises the REAL functions from xavier/install.sh by extracting their
-# bodies and evaluating them under a stubbed `uname`, so this test stays honest
-# to the shipped source instead of re-encoding the map. Three things are
-# checked:
+# bodies and evaluating them under stubs, so this test stays honest to the
+# shipped source instead of re-encoding behavior. What is checked:
 #   (a) every supported uname -s/-m pair maps to the exact triple we ship,
 #   (b) unsupported pairs (bad arch and bad OS) map to the empty string,
 #   (c) select_native_tool() no-ops (NO stub written) when no bundled binary
 #       matches the host triple — i.e. it falls back to the pure-shell merge.
+#   (d) XAVIER_TOOL_DISABLE kill switch forces merge.sh's resolve_tool() empty.
+#   (e) link_or_replace() replaces a real-dir destination with a symlink (moving
+#       it aside to .prev) instead of nesting the link inside it — the clone-mode
+#       linker bug that made an install.sh refresh silently no-op on a
+#       tarball-installed vault (real dirs, not symlinks).
 #
 # The supported set MUST match .github/workflows/release.yml's build matrix and
 # merge.sh's resolve_tool(): {x86_64,aarch64} x {apple-darwin, unknown-linux-gnu}.
@@ -50,6 +54,7 @@ extract_fn() {
 DETECT_FN="$(extract_fn "$INSTALL_SH" detect_host_triple)"
 SELECT_FN="$(extract_fn "$INSTALL_SH" select_native_tool)"
 RESOLVE_FN="$(extract_fn "$MERGE_SH" resolve_tool)"
+LINK_FN="$(extract_fn "$INSTALL_SH" link_or_replace)"
 
 if [ -z "$DETECT_FN" ]; then
   echo "FAIL: could not extract detect_host_triple() from install.sh"
@@ -61,6 +66,10 @@ if [ -z "$SELECT_FN" ]; then
 fi
 if [ -z "$RESOLVE_FN" ]; then
   echo "FAIL: could not extract resolve_tool() from merge.sh"
+  exit 1
+fi
+if [ -z "$LINK_FN" ]; then
+  echo "FAIL: could not extract link_or_replace() from install.sh"
   exit 1
 fi
 
@@ -315,6 +324,154 @@ if [ -z "$(XAVIER_TOOL_DISABLE=1 run_resolve "$KS_HOME" Linux x86_64)" ]; then
 else
   echo "FAIL: XAVIER_TOOL_DISABLE=1 did not disable resolve_tool"
   ERRORS=$((ERRORS + 1))
+fi
+
+# ----------------------------------------------------------------------------
+# (e) link_or_replace(): clone-mode linker must REPLACE a real-directory
+#     destination with a symlink (moving the stale dir aside to .prev), not nest
+#     the link inside it. This is the tarball→clone refresh bug: on a
+#     tarball-installed vault the skill/reference dests are real dirs, and
+#     `ln -sfn <src> <real-dir>` silently created <real-dir>/<basename> and left
+#     the stale copy in place while the installer logged success.
+#
+#     Evaluates the REAL link_or_replace() from install.sh in a subshell with
+#     the info/warn/error helpers quieted, so the test tracks the shipped source.
+# ----------------------------------------------------------------------------
+echo ""
+echo "=== Checking link_or_replace replaces a real-dir dest with a symlink ==="
+
+LINK_ERRORS=0
+
+run_link() {
+  # Args: <src> <dest>. Runs the extracted link_or_replace against the sandbox.
+  _src="$1"; _dest="$2"
+  (
+    set +e
+    info()  { :; }
+    warn()  { :; }
+    error() { :; }
+    eval "$LINK_FN"
+    link_or_replace "$_src" "$_dest"
+  )
+}
+
+# Fake repo (SCRIPT_DIR) skill carries the NEW body; fake vault (XAVIER_HOME)
+# skill is a REAL directory holding a STALE body — the tarball-installed shape.
+LNK_SRC="$SANDBOX/link/src"
+LNK_HOME="$SANDBOX/link/home"
+mkdir -p "$LNK_SRC/skills/review" "$LNK_HOME/skills/review"
+printf 'NEW-BODY-marker\n'   > "$LNK_SRC/skills/review/SKILL.md"
+printf 'STALE-BODY-marker\n' > "$LNK_HOME/skills/review/SKILL.md"
+
+# Guard the call: this script runs under `set -e`, and run_link ends in a
+# subshell whose non-zero exit would otherwise abort the whole validator before
+# the assertions and LINK_ERRORS tally below could report. Recording the failure
+# here keeps the run going and surfaces it in the aggregated count.
+if ! run_link "$LNK_SRC/skills/review" "$LNK_HOME/skills/review"; then
+  echo "FAIL: link_or_replace exited non-zero on the real-dir scenario"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
+
+# (1) dest is now a symlink — under the bug it stayed a real dir.
+if [ -L "$LNK_HOME/skills/review" ]; then
+  echo "PASS: real-dir dest became a symlink"
+else
+  echo "FAIL: dest is not a symlink (link nested inside the stale dir?)"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
+
+# (2) no nested self-link — the bug created dest/<basename src> -> src.
+if [ -e "$LNK_HOME/skills/review/review" ]; then
+  echo "FAIL: nested self-link created inside dest (the bug)"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+else
+  echo "PASS: no nested self-link inside dest"
+fi
+
+# (3) stale copy preserved (reversibly) as a real .prev directory.
+if [ -d "$LNK_HOME/skills/review.prev" ] && [ ! -L "$LNK_HOME/skills/review.prev" ]; then
+  echo "PASS: stale dir moved aside to review.prev"
+else
+  echo "FAIL: review.prev is missing or not a real directory"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
+
+# (4) the swap is real: dest resolves to the FRESH body, .prev holds the STALE one.
+if grep -q NEW-BODY-marker "$LNK_HOME/skills/review/SKILL.md" 2>/dev/null; then
+  echo "PASS: dest now resolves to the fresh repo body"
+else
+  echo "FAIL: dest does not resolve to the fresh body"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
+if grep -q STALE-BODY-marker "$LNK_HOME/skills/review.prev/SKILL.md" 2>/dev/null; then
+  echo "PASS: stale body preserved under review.prev"
+else
+  echo "FAIL: stale body not preserved under review.prev"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
+
+# (5) idempotence: a second run finds dest is a symlink, so the mv-aside guard is
+#     skipped and ln -sfn just re-points — no redundant backup. (If the guard
+#     wrongly fired on a symlink it would try to mv onto the existing review.prev
+#     and exit 1 — caught by the guarded call above, which records it in
+#     LINK_ERRORS instead of aborting.)
+echo ""
+echo "=== Checking link_or_replace is idempotent on a second run ==="
+if ! run_link "$LNK_SRC/skills/review" "$LNK_HOME/skills/review"; then
+  echo "FAIL: link_or_replace exited non-zero on the idempotent re-run"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
+if [ -L "$LNK_HOME/skills/review" ]; then
+  echo "PASS: dest remains a symlink after a second run"
+else
+  echo "FAIL: second run disturbed the symlink"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
+if [ ! -e "$LNK_HOME/skills/review.prev.prev" ]; then
+  echo "PASS: second run created no extra backup (review.prev.prev absent)"
+else
+  echo "FAIL: second run created a redundant review.prev.prev"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
+if grep -q STALE-BODY-marker "$LNK_HOME/skills/review.prev/SKILL.md" 2>/dev/null; then
+  echo "PASS: review.prev still holds the original stale body after re-run"
+else
+  echo "FAIL: review.prev body changed on the second run"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
+
+# (6) healthy clone vault: dest is ALREADY a symlink (references shape). The
+#     guard must not fire — repoint in place, create NO .prev at all.
+echo ""
+echo "=== Checking link_or_replace repoints an existing symlink with no backup ==="
+REF_SRC_OLD="$SANDBOX/link/refs_old"
+REF_SRC_NEW="$SANDBOX/link/refs_new"
+REF_HOME="$SANDBOX/link/refhome"
+mkdir -p "$REF_SRC_OLD" "$REF_SRC_NEW" "$REF_HOME"
+printf 'old\n' > "$REF_SRC_OLD/marker"
+printf 'new\n' > "$REF_SRC_NEW/marker"
+ln -sfn "$REF_SRC_OLD" "$REF_HOME/references"   # pre-existing healthy symlink
+
+if ! run_link "$REF_SRC_NEW" "$REF_HOME/references"; then
+  echo "FAIL: link_or_replace exited non-zero on the existing-symlink scenario"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
+
+if [ -L "$REF_HOME/references" ] && grep -q '^new$' "$REF_HOME/references/marker" 2>/dev/null; then
+  echo "PASS: existing symlink repointed to the new target"
+else
+  echo "FAIL: existing symlink was not repointed correctly"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
+if [ ! -e "$REF_HOME/references.prev" ]; then
+  echo "PASS: no .prev created when dest was already a symlink"
+else
+  echo "FAIL: spurious references.prev created for a symlink dest"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
+
+if [ $LINK_ERRORS -gt 0 ]; then
+  ERRORS=$((ERRORS + LINK_ERRORS))
 fi
 
 echo ""
