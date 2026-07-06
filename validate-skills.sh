@@ -417,6 +417,14 @@ for file in "$INSTALLER" "$SELF_UPDATE"; do
     echo "FAIL: $(basename "$file") Claude alias template does not read the router file"
     CLAUDE_ALIAS_ERRORS=$((CLAUDE_ALIAS_ERRORS + 1))
   fi
+
+  # Generated aliases must carry the machine marker so cleanup_stale_aliases
+  # can identify Xavier's own files precisely (not by matching free-text prose
+  # that a user-authored command file could also contain).
+  if ! grep -q '<!-- xavier:generated-alias -->' "$file"; then
+    echo "FAIL: $(basename "$file") alias template is missing the <!-- xavier:generated-alias --> marker"
+    CLAUDE_ALIAS_ERRORS=$((CLAUDE_ALIAS_ERRORS + 1))
+  fi
 done
 
 # COMMANDS parity: the canonical command list must be identical between

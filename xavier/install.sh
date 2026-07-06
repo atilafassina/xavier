@@ -521,14 +521,26 @@ create_symlink() {
   fi
 }
 
+# --- Helper: is this file a Xavier-generated alias? ---
+# True when the file carries the current machine marker, OR the legacy
+# "xavier router" prose emitted by pre-marker Xavier versions (so cleanup
+# still recognizes stale aliases written before the marker existed).
+is_xavier_alias() {
+  grep -q '<!-- xavier:generated-alias -->' "$1" 2>/dev/null && return 0
+  grep -qi 'xavier router' "$1" 2>/dev/null && return 0
+  return 1
+}
+
 # --- Helper: remove Xavier-generated aliases from previous prefixes ---
 # Scans the three alias roots for per-command aliases whose prefix differs
-# from the current ALIAS_PREFIX. Only entries carrying the Xavier marker
-# ("xavier router", case-insensitive — present in every template generation)
-# are removed, so user-owned files that happen to match the glob (e.g.
-# my-review.md) are never touched. Runs against any root that exists,
-# regardless of runtime detection — removing our own stale files is safe
-# even for runtimes no longer on PATH.
+# from the current ALIAS_PREFIX. Only entries Xavier itself generated are
+# removed, identified by the machine marker "<!-- xavier:generated-alias -->"
+# that every current template emits, OR — for aliases written by pre-marker
+# Xavier versions — the legacy "xavier router" prose (case-insensitive). A
+# user-owned file that happens to match the glob (e.g. my-review.md) is left
+# untouched unless it carries one of those Xavier signals. Runs against any
+# root that exists, regardless of runtime detection — removing our own stale
+# files is safe even for runtimes no longer on PATH.
 cleanup_stale_aliases() {
   echo "$COMMANDS" | while IFS='|' read -r cmd _desc; do
     [ -z "$cmd" ] && continue
@@ -536,7 +548,7 @@ cleanup_stale_aliases() {
     for stale_file in "$HOME/.claude/commands"/*-"${cmd}.md"; do
       [ -e "$stale_file" ] || continue
       [ "$stale_file" = "$HOME/.claude/commands/${ALIAS_PREFIX}-${cmd}.md" ] && continue
-      grep -qi 'xavier router' "$stale_file" 2>/dev/null || continue
+      is_xavier_alias "$stale_file" || continue
       rm "$stale_file"
       info "Removed stale alias: $stale_file"
     done
@@ -547,7 +559,7 @@ cleanup_stale_aliases() {
         */"${ALIAS_PREFIX}-${cmd}") continue ;;
       esac
       [ -f "$stale_dir/SKILL.md" ] || continue
-      grep -qi 'xavier router' "$stale_dir/SKILL.md" 2>/dev/null || continue
+      is_xavier_alias "$stale_dir/SKILL.md" || continue
       rm "$stale_dir/SKILL.md"
       if rmdir "$stale_dir" 2>/dev/null; then
         info "Removed stale alias directory: $stale_dir"
@@ -637,6 +649,7 @@ uninstall|Remove the Xavier vault and all symlinks
 name: ${ALIAS_PREFIX}-${cmd}
 description: ${desc}
 ---
+<!-- xavier:generated-alias -->
 
 This is an alias for \`/xavier ${cmd}\`.
 
@@ -661,6 +674,7 @@ ALIASEOF
 name: ${ALIAS_PREFIX}-${cmd}
 description: "${desc}. Use when user says /xavier ${cmd}."
 ---
+<!-- xavier:generated-alias -->
 
 Execute /xavier ${cmd}.
 
@@ -679,6 +693,7 @@ ALIASEOF
 name: ${ALIAS_PREFIX}-${cmd}
 description: ${desc}. Use when user says /xavier ${cmd}.
 ---
+<!-- xavier:generated-alias -->
 
 Route this request through the Xavier router.
 

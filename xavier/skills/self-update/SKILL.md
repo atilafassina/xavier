@@ -397,16 +397,22 @@ uninstall|Remove the Xavier vault and all symlinks
 "
 ```
 
-Before regenerating, remove Xavier-generated aliases left behind by previous prefixes (e.g. a `xavier-*` family left over after switching `alias-prefix` to `x`). Only entries carrying the Xavier marker (`xavier router`, case-insensitive — present in every template generation) are removed, so user-owned files that happen to match the glob are never touched. Clean any alias root that exists, regardless of runtime detection — removing Xavier's own stale files is safe even for runtimes no longer on PATH. This mirrors `cleanup_stale_aliases()` in `xavier/install.sh`:
+Before regenerating, remove Xavier-generated aliases left behind by previous prefixes (e.g. a `xavier-*` family left over after switching `alias-prefix` to `x`). Only entries Xavier itself generated are removed — identified by the machine marker `<!-- xavier:generated-alias -->` that every current template emits, OR (for aliases written by pre-marker Xavier versions) the legacy `xavier router` prose, case-insensitive — so user-owned files that happen to match the glob are never touched. Clean any alias root that exists, regardless of runtime detection — removing Xavier's own stale files is safe even for runtimes no longer on PATH. This mirrors `is_xavier_alias()` + `cleanup_stale_aliases()` in `xavier/install.sh`:
 
 ```bash
+is_xavier_alias() {
+  grep -q '<!-- xavier:generated-alias -->' "$1" 2>/dev/null && return 0
+  grep -qi 'xavier router' "$1" 2>/dev/null && return 0
+  return 1
+}
+
 echo "$COMMANDS" | while IFS='|' read -r cmd _desc; do
   [ -z "$cmd" ] && continue
 
   for stale_file in "$HOME/.claude/commands"/*-"${cmd}.md"; do
     [ -e "$stale_file" ] || continue
     [ "$stale_file" = "$HOME/.claude/commands/${ALIAS_PREFIX}-${cmd}.md" ] && continue
-    grep -qi 'xavier router' "$stale_file" 2>/dev/null || continue
+    is_xavier_alias "$stale_file" || continue
     rm "$stale_file"
     echo "Removed stale alias: $stale_file"
   done
@@ -417,17 +423,20 @@ echo "$COMMANDS" | while IFS='|' read -r cmd _desc; do
       */"${ALIAS_PREFIX}-${cmd}") continue ;;
     esac
     [ -f "$stale_dir/SKILL.md" ] || continue
-    grep -qi 'xavier router' "$stale_dir/SKILL.md" 2>/dev/null || continue
+    is_xavier_alias "$stale_dir/SKILL.md" || continue
     rm "$stale_dir/SKILL.md"
-    rmdir "$stale_dir" 2>/dev/null || true
-    echo "Removed stale alias: $stale_dir"
+    if rmdir "$stale_dir" 2>/dev/null; then
+      echo "Removed stale alias directory: $stale_dir"
+    else
+      echo "Removed stale alias: $stale_dir/SKILL.md (directory not empty, left in place)"
+    fi
   done
 done
 ```
 
 Regenerate aliases **only for runtimes the user actually has installed**, using each runtime's own alias layout. The Claude Code, Cursor, and Codex formats differ — they are NOT interchangeable — so this step must mirror `install_command_aliases()` in `xavier/install.sh` exactly:
 
-- **Claude Code**: a single Markdown file at `~/.claude/commands/<prefix>-<cmd>.md` containing frontmatter + router-read delegation instructions (read the router file, follow the Router Lifecycle — never delegate via a Skill-tool name; registered skill names track filenames and are not stable).
+- **Claude Code**: a single Markdown file at `~/.claude/commands/<prefix>-<cmd>.md` containing frontmatter + the `<!-- xavier:generated-alias -->` marker + router-read delegation instructions (read the router file, follow the Router Lifecycle — never delegate via a Skill-tool name; registered skill names track filenames and are not stable).
 - **Cursor**: a directory at `~/.cursor/skills/<prefix>-<cmd>/` with `SKILL.md` inside, containing frontmatter + a "When user says /xavier <cmd>" trigger description.
 - **Codex**: a directory at `~/.agents/skills/<prefix>-<cmd>/` with `SKILL.md` inside, containing frontmatter + a thin Xavier router delegation.
 
@@ -445,6 +454,7 @@ echo "$COMMANDS" | while IFS='|' read -r cmd desc; do
 name: ${ALIAS_PREFIX}-${cmd}
 description: ${desc}
 ---
+<!-- xavier:generated-alias -->
 
 This is an alias for \`/xavier ${cmd}\`.
 
@@ -466,6 +476,7 @@ ALIASEOF
 name: ${ALIAS_PREFIX}-${cmd}
 description: "${desc}. Use when user says /xavier ${cmd}."
 ---
+<!-- xavier:generated-alias -->
 
 Execute /xavier ${cmd}.
 
@@ -483,6 +494,7 @@ ALIASEOF
 name: ${ALIAS_PREFIX}-${cmd}
 description: ${desc}. Use when user says /xavier ${cmd}.
 ---
+<!-- xavier:generated-alias -->
 
 Route this request through the Xavier router.
 
