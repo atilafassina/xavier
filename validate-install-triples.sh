@@ -363,7 +363,14 @@ mkdir -p "$LNK_SRC/skills/review" "$LNK_HOME/skills/review"
 printf 'NEW-BODY-marker\n'   > "$LNK_SRC/skills/review/SKILL.md"
 printf 'STALE-BODY-marker\n' > "$LNK_HOME/skills/review/SKILL.md"
 
-run_link "$LNK_SRC/skills/review" "$LNK_HOME/skills/review"
+# Guard the call: this script runs under `set -e`, and run_link ends in a
+# subshell whose non-zero exit would otherwise abort the whole validator before
+# the assertions and LINK_ERRORS tally below could report. Recording the failure
+# here keeps the run going and surfaces it in the aggregated count.
+if ! run_link "$LNK_SRC/skills/review" "$LNK_HOME/skills/review"; then
+  echo "FAIL: link_or_replace exited non-zero on the real-dir scenario"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
 
 # (1) dest is now a symlink — under the bug it stayed a real dir.
 if [ -L "$LNK_HOME/skills/review" ]; then
@@ -406,10 +413,14 @@ fi
 # (5) idempotence: a second run finds dest is a symlink, so the mv-aside guard is
 #     skipped and ln -sfn just re-points — no redundant backup. (If the guard
 #     wrongly fired on a symlink it would try to mv onto the existing review.prev
-#     and exit 1, so a clean second run returning 0 is itself the proof.)
+#     and exit 1 — caught by the guarded call above, which records it in
+#     LINK_ERRORS instead of aborting.)
 echo ""
 echo "=== Checking link_or_replace is idempotent on a second run ==="
-run_link "$LNK_SRC/skills/review" "$LNK_HOME/skills/review"
+if ! run_link "$LNK_SRC/skills/review" "$LNK_HOME/skills/review"; then
+  echo "FAIL: link_or_replace exited non-zero on the idempotent re-run"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
 if [ -L "$LNK_HOME/skills/review" ]; then
   echo "PASS: dest remains a symlink after a second run"
 else
@@ -441,7 +452,10 @@ printf 'old\n' > "$REF_SRC_OLD/marker"
 printf 'new\n' > "$REF_SRC_NEW/marker"
 ln -sfn "$REF_SRC_OLD" "$REF_HOME/references"   # pre-existing healthy symlink
 
-run_link "$REF_SRC_NEW" "$REF_HOME/references"
+if ! run_link "$REF_SRC_NEW" "$REF_HOME/references"; then
+  echo "FAIL: link_or_replace exited non-zero on the existing-symlink scenario"
+  LINK_ERRORS=$((LINK_ERRORS + 1))
+fi
 
 if [ -L "$REF_HOME/references" ] && grep -q '^new$' "$REF_HOME/references/marker" 2>/dev/null; then
   echo "PASS: existing symlink repointed to the new target"
