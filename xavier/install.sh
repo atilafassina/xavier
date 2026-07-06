@@ -720,6 +720,28 @@ ALIASEOF
   fi
 }
 
+# --- Helper: replace $dest with a symlink to $src ---
+# If $dest is a real dir/file (not a symlink), move it aside to $dest.prev
+# first. `ln -sfn` onto a real directory does NOT replace it — the -n flag only
+# avoids dereferencing a symlink-to-dir, so for a real dir ln nests the new link
+# INSIDE it ($dest/$(basename $src)), silently leaving the stale copy in place.
+# Moving aside makes the replacement real and reversible. The success line is
+# logged by the caller only after this returns, so the log can't report a link
+# that never happened.
+link_or_replace() {
+  src="$1"
+  dest="$2"
+  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+    if [ -e "${dest}.prev" ]; then
+      error "Cannot back up: ${dest}.prev already exists. Remove it and rerun: rm -r \"${dest}.prev\""
+      exit 1
+    fi
+    mv "$dest" "${dest}.prev"
+    warn "Moved existing $(basename "$dest") aside to ${dest}.prev — remove with: rm -r \"${dest}.prev\""
+  fi
+  ln -sfn "$src" "$dest"
+}
+
 # --- Symlink or copy skills & references into ~/.xavier/ ---
 link_xavier_skills_and_refs() {
   if [ -z "$SCRIPT_DIR" ]; then
@@ -752,12 +774,12 @@ link_xavier_skills_and_refs() {
     for skill_dir in "$SCRIPT_DIR/skills/"*/; do
       [ -d "$skill_dir" ] || continue
       skill_name="$(basename "$skill_dir")"
-      ln -sfn "$skill_dir" "$XAVIER_HOME/skills/$skill_name"
+      link_or_replace "$skill_dir" "$XAVIER_HOME/skills/$skill_name"
       info "  skill: $skill_name -> $skill_dir"
     done
 
     # --- Symlink references directory ---
-    ln -sfn "$SCRIPT_DIR/references" "$XAVIER_HOME/references"
+    link_or_replace "$SCRIPT_DIR/references" "$XAVIER_HOME/references"
     info "  references -> $SCRIPT_DIR/references"
 
     # --- Clean up broken symlinks in ~/.xavier/deps ---
@@ -776,18 +798,7 @@ link_xavier_skills_and_refs() {
       for dep_dir in "$SCRIPT_DIR/deps/"*/; do
         [ -d "$dep_dir" ] || continue
         dep_name="$(basename "$dep_dir")"
-        dep_target="$XAVIER_HOME/deps/$dep_name"
-        # If target is a real directory (not a symlink), move it aside
-        # so ln -sfn doesn't create the link inside it
-        if [ -d "$dep_target" ] && [ ! -L "$dep_target" ]; then
-          if [ -e "${dep_target}.prev" ]; then
-            error "Cannot back up dep: ${dep_name}.prev already exists. Remove it and rerun: rm -r \"${dep_target}.prev\""
-            exit 1
-          fi
-          mv "$dep_target" "${dep_target}.prev"
-          warn "Moved existing dep directory to ${dep_name}.prev — remove with: rm -r \"${dep_target}.prev\""
-        fi
-        ln -sfn "$dep_dir" "$dep_target"
+        link_or_replace "$dep_dir" "$XAVIER_HOME/deps/$dep_name"
         info "  dep: $dep_name -> $dep_dir"
       done
     fi
