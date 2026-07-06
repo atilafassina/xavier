@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- CI workflow (`ci.yml`) running `validate-skills.sh` on pull requests and pushes to `main`; the release workflow now also runs the validators before building the tarball, so a broken template can no longer ship in a release.
+- The release workflow now runs the vault validators (`validate-skills.sh`, `validate-xavier-frontmatter.sh`, `validate-install-triples.sh`) before building the tarball, so a broken template can no longer ship in a release even if a tag is pushed from a branch that skipped PR CI.
 - Validator checks asserting Claude aliases delegate by reading the router file (never via a Skill-tool name) and that the `COMMANDS` list in `install.sh` stays in sync with the self-update regeneration block.
 
 ### Changed
