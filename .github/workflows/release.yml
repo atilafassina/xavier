@@ -29,6 +29,16 @@ jobs:
           fi
           echo "Version validated: $FILE_VERSION"
 
+      # Re-run the vault validators here (they also gate PRs via ci.yml) so a
+      # broken template can never ship in a release, even if a tag is pushed
+      # from a branch that skipped PR CI.
+      - name: validate-skills
+        run: bash validate-skills.sh
+      - name: validate-xavier-frontmatter
+        run: bash validate-xavier-frontmatter.sh
+      - name: validate-install-triples
+        run: bash validate-install-triples.sh
+
   # Stage 1: cross-compile xavier-tool --release for every supported target
   # triple, each on an appropriate runner. This is a hand-written matrix (the
   # build environment is offline-by-policy; cargo-dist is intentionally not
